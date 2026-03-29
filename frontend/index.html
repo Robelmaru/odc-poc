@@ -1,0 +1,4577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODC Complaint Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Primary palette */
+      --color-primary: #1e368e;
+      --color-primary-dark: #152560;
+      --color-primary-light: #2a4bb3;
+      --color-secondary: #f74d56;
+      --color-secondary-dark: #d93d45;
+      --color-secondary-light: #ff6b72;
+
+      /* Backgrounds */
+      --color-bg: #f8f9fc;
+      --color-surface: #FFFFFF;
+
+      /* Text */
+      --color-text: #1e368e;
+      --color-text-secondary: #4a5578;
+      --color-text-muted: #7a839b;
+      --color-text-on-primary: #FFFFFF;
+
+      /* Borders & accents */
+      --color-border: #d8dce8;
+      --color-border-light: #e8ebf2;
+
+      /* Semantic colors */
+      --color-danger: #f74d56;
+      --color-danger-bg: #fef2f2;
+      --color-warning: #e67e22;
+      --color-warning-bg: #fef8f0;
+      --color-success: #27ae60;
+      --color-success-bg: #f0fdf4;
+
+      /* Typography */
+      --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 3px rgba(30, 54, 142, 0.08);
+      --shadow-md: 0 4px 12px rgba(30, 54, 142, 0.1);
+      --shadow-lg: 0 8px 24px rgba(30, 54, 142, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: var(--color-primary);
+      padding: 28px 32px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #fff;
+      flex-shrink: 0;
+    }
+
+    .header-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .header h1 {
+      font-size: 1.625rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .header-subtitle {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* Main Container */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px;
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 32px;
+    }
+
+    @media (max-width: 1000px) {
+      .container {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      .header {
+        padding: 16px;
+      }
+      .header-content {
+        flex-direction: column;
+        gap: 4px;
+      }
+    }
+
+    /* Panels */
+    .panel {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--color-primary);
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .results-panel {
+      max-height: calc(100vh - 180px);
+      overflow-y: auto;
+    }
+
+    /* File Upload */
+    .upload-zone {
+      border: 2px dashed var(--color-border);
+      border-radius: 8px;
+      padding: 32px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 16px;
+      background: var(--color-bg);
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--color-secondary);
+      background: rgba(247, 77, 86, 0.05);
+    }
+
+    .upload-zone-icon {
+      font-size: 36px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .upload-zone-text {
+      font-size: 15px;
+      color: var(--color-text-secondary);
+    }
+
+    .upload-zone-text strong {
+      color: var(--color-secondary);
+      font-weight: 600;
+    }
+
+    .file-list {
+      margin-bottom: 16px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--color-bg);
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      border-left: 4px solid var(--color-primary);
+      border-radius: 0 4px 4px 0;
+    }
+
+    .file-item .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .file-item .file-icon {
+      font-size: 18px;
+    }
+
+    .file-item .file-size {
+      color: var(--color-text-muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .file-item .remove-file {
+      background: none;
+      border: none;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 20px;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    .file-item .remove-file:hover {
+      color: var(--color-danger);
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 24px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--color-border);
+    }
+
+    /* Textarea */
+    textarea {
+      width: 100%;
+      height: 280px;
+      padding: 16px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-surface);
+      resize: vertical;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(30, 54, 142, 0.15);
+    }
+
+    textarea::placeholder {
+      color: var(--color-text-muted);
+    }
+
+    /* Buttons */
+    .btn {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .btn-primary {
+      background: var(--color-secondary);
+      color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(247, 77, 86, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: var(--color-secondary-dark);
+      box-shadow: 0 4px 12px rgba(247, 77, 86, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary:disabled {
+      background: var(--color-text-muted);
+      box-shadow: none;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: var(--color-surface);
+      color: var(--color-primary);
+      border: 2px solid var(--color-primary);
+    }
+
+    .btn-secondary:hover {
+      background: var(--color-primary);
+      color: #FFFFFF;
+    }
+
+    .btn-export {
+      background: var(--color-surface);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary);
+      padding: 8px 16px;
+      font-size: 12px;
+    }
+
+    .btn-export:hover {
+      background: var(--color-primary);
+      color: #FFFFFF;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .button-row .btn-primary {
+      flex: 1;
+    }
+
+    /* Results Header */
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--color-dark);
+    }
+
+    .export-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Loading State */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 80px 40px;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .loading-spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--color-border);
+      border-top-color: var(--color-secondary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 24px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--color-primary);
+      margin-bottom: 8px;
+    }
+
+    .loading-subtext {
+      font-size: 14px;
+      color: var(--color-text-muted);
+    }
+
+    /* Placeholder */
+    .placeholder {
+      text-align: center;
+      padding: 80px 40px;
+      color: var(--color-text-muted);
+    }
+
+    .placeholder-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+
+    .placeholder-text {
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    /* Results */
+    .results {
+      display: none;
+    }
+
+    .results.active {
+      display: block;
+    }
+
+    /* Section */
+    .section {
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .section-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .section-icon {
+      font-size: 18px;
+      opacity: 0.6;
+    }
+
+    /* Parties Grid */
+    .parties-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .party-box {
+      background: var(--color-bg);
+      padding: 16px;
+      border-left: 4px solid var(--color-primary);
+      border-radius: 0 6px 6px 0;
+    }
+
+    .party-box h4 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-text-muted);
+      margin-bottom: 8px;
+    }
+
+    .party-box p {
+      margin: 4px 0;
+      font-size: 15px;
+    }
+
+    .party-box p strong {
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    /* Summary Box */
+    .summary-box {
+      background: var(--color-bg);
+      padding: 20px;
+      border-left: 4px solid var(--color-secondary);
+      border-radius: 0 6px 6px 0;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    /* Timeline */
+    .timeline {
+      background: var(--color-bg);
+      padding: 20px;
+      border-radius: 6px;
+    }
+
+    .timeline-event {
+      display: flex;
+      gap: 24px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .timeline-event:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .timeline-event:first-child {
+      padding-top: 0;
+    }
+
+    .timeline-date {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      color: var(--color-primary);
+      min-width: 120px;
+      font-size: 14px;
+    }
+
+    .timeline-content {
+      flex: 1;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .timeline-source {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--color-text-muted);
+    }
+
+    /* Source Links */
+    .source-link {
+      color: var(--color-secondary);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    .source-link:hover {
+      border-bottom-color: var(--color-secondary);
+    }
+
+    /* Violations */
+    .violation {
+      background: var(--color-danger-bg);
+      border-left: 4px solid var(--color-danger);
+      border-radius: 0 6px 6px 0;
+      padding: 20px;
+      margin: 16px 0;
+    }
+
+    .violation.MEDIUM {
+      background: var(--color-warning-bg);
+      border-left-color: var(--color-warning);
+    }
+
+    .violation.LOW {
+      background: var(--color-success-bg);
+      border-left-color: var(--color-success);
+    }
+
+    .violation h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 0 0 12px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .violation p {
+      margin: 12px 0;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .likelihood {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .likelihood.HIGH {
+      background: var(--color-danger);
+      color: white;
+    }
+
+    .likelihood.MEDIUM {
+      background: var(--color-warning);
+      color: white;
+    }
+
+    .likelihood.LOW {
+      background: var(--color-success);
+      color: white;
+    }
+
+    .elements-list {
+      background: rgba(255,255,255,0.7);
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .elements-list-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-text-muted);
+      margin-bottom: 12px;
+    }
+
+    .element-item {
+      display: flex;
+      gap: 12px;
+      padding: 8px 0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .element-status {
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .element-status.supported { color: var(--color-success); }
+    .element-status.unsupported { color: var(--color-danger); }
+
+    /* Info/Warning/Urgent Boxes */
+    .info-box {
+      background: rgba(30, 54, 142, 0.05);
+      border-left: 4px solid var(--color-primary);
+      border-radius: 0 6px 6px 0;
+      padding: 16px;
+      margin: 12px 0;
+    }
+
+    .warning-box {
+      background: var(--color-warning-bg);
+      border-left: 4px solid var(--color-warning);
+      border-radius: 0 6px 6px 0;
+      padding: 16px;
+      margin: 12px 0;
+    }
+
+    .urgent-box {
+      background: var(--color-danger-bg);
+      border-left: 4px solid var(--color-danger);
+      border-radius: 0 6px 6px 0;
+      padding: 16px;
+      margin: 12px 0;
+    }
+
+    /* Recommendation */
+    .recommendation {
+      background: var(--color-primary);
+      color: #FFFFFF;
+      padding: 24px;
+      border-radius: 6px;
+    }
+
+    .disposition-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+
+    .disposition-badge.DISMISS {
+      background: var(--color-success);
+    }
+
+    .disposition-badge.DIVERSION {
+      background: var(--color-warning);
+    }
+
+    .disposition-badge.INFORMAL_ADMONITION {
+      background: var(--color-warning);
+    }
+
+    .disposition-badge.FORMAL_CHARGES {
+      background: var(--color-danger);
+    }
+
+    .recommendation p {
+      margin: 12px 0;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #E0E0E0;
+    }
+
+    .recommendation strong {
+      color: #FFFFFF;
+    }
+
+    /* Next Steps */
+    .next-steps {
+      background: var(--color-success-bg);
+      border-left: 4px solid var(--color-success);
+      border-radius: 0 6px 6px 0;
+      padding: 16px 20px;
+    }
+
+    .next-steps ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .next-steps li {
+      margin: 8px 0;
+      font-size: 15px;
+    }
+
+    /* Factors Grid */
+    .factors-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .factors-box {
+      padding: 16px;
+    }
+
+    .factors-box.aggravating {
+      background: var(--color-danger-bg);
+      border-left: 4px solid var(--color-danger);
+    }
+
+    .factors-box.mitigating {
+      background: var(--color-success-bg);
+      border-left: 4px solid var(--color-success);
+    }
+
+    .factors-box h4 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 12px;
+    }
+
+    .factors-box.aggravating h4 { color: var(--color-danger); }
+    .factors-box.mitigating h4 { color: var(--color-success); }
+
+    .factors-box ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 14px;
+    }
+
+    .factors-box li {
+      margin: 6px 0;
+    }
+
+    /* Error */
+    .error {
+      background: var(--color-danger-bg);
+      color: var(--color-danger);
+      padding: 16px;
+      margin-top: 16px;
+      display: none;
+      font-size: 14px;
+      font-weight: 500;
+      border-left: 4px solid var(--color-danger);
+    }
+
+    .error.active {
+      display: block;
+    }
+
+    /* Meta */
+    .meta {
+      font-size: 13px;
+      color: var(--color-text-muted);
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .confidence {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Disclaimer */
+    .disclaimer {
+      background: var(--color-bg);
+      padding: 16px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      text-align: center;
+      margin-top: 20px;
+      border: 1px dashed var(--color-border);
+    }
+
+    .disclaimer strong {
+      color: var(--color-text);
+    }
+
+    /* File Preview Modal */
+    .file-preview-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .file-preview-modal.active {
+      display: flex;
+    }
+
+    .file-preview-container {
+      background: var(--color-surface);
+      width: 90%;
+      max-width: 1000px;
+      height: 85%;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .file-preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      background: var(--color-primary);
+      color: #FFFFFF;
+    }
+
+    .file-preview-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .file-preview-header .page-indicator {
+      color: #999999;
+      font-size: 0.875rem;
+      margin-left: 12px;
+    }
+
+    .file-preview-close {
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      color: #999999;
+      padding: 0;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    .file-preview-close:hover {
+      color: #FFFFFF;
+    }
+
+    .file-preview-body {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+    }
+
+    .file-preview-body iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .file-preview-body pre {
+      margin: 0;
+      padding: 24px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 14px;
+      line-height: 1.7;
+      font-family: var(--font-mono);
+      background: var(--color-bg);
+    }
+
+    .file-preview-body mark {
+      background: #FFEB3B;
+      padding: 2px 4px;
+    }
+
+    /* Tab Navigation */
+    .tab-nav {
+      background: var(--color-primary-dark);
+      padding: 0 32px;
+      display: flex;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 14px 24px;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.6);
+      border: none;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      position: relative;
+    }
+
+    .tab-btn:hover {
+      color: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .tab-btn.active {
+      color: var(--color-primary);
+      background: var(--color-bg);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* Q&A Specific Styles */
+    .qa-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px;
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 32px;
+    }
+
+    @media (max-width: 1000px) {
+      .qa-container {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+    }
+
+    .qa-textarea {
+      width: 100%;
+      height: 120px;
+      padding: 16px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-surface);
+      resize: vertical;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .qa-textarea:focus {
+      outline: none;
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(30, 54, 142, 0.15);
+    }
+
+    .suggested-questions {
+      margin-top: 16px;
+    }
+
+    .suggested-questions h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+
+    .suggested-btn {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      padding: 8px 12px;
+      background: var(--color-bg);
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 4px 4px 4px 0;
+      transition: all 0.2s;
+    }
+
+    .suggested-btn:hover {
+      background: var(--color-primary);
+      color: #FFFFFF;
+      border-color: var(--color-primary);
+    }
+
+    .qa-conversation {
+      max-height: 350px;
+      overflow-y: auto;
+    }
+
+    .qa-conversation .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Chat-style input for timeline Q&A */
+    .qa-chat-input {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 12px 0 0;
+      border-top: 1px solid var(--color-border-light);
+      margin-top: 12px;
+    }
+
+    .qa-chat-input .qa-textarea {
+      flex: 1;
+      height: 56px;
+      min-height: 40px;
+      max-height: 120px;
+      padding: 10px 14px;
+      font-size: 14px;
+      border-radius: 12px;
+      resize: vertical;
+    }
+
+    .qa-chat-input .btn-send {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: var(--color-primary);
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      margin-bottom: 4px;
+    }
+
+    .qa-chat-input .btn-send:hover {
+      background: var(--color-primary-dark, #162d6e);
+    }
+
+    .qa-chat-input .btn-send:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .qa-chat-input .btn-send svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .qa-chat-clear {
+      text-align: right;
+      margin-top: 6px;
+    }
+
+    .qa-chat-clear button {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--color-text-muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+    }
+
+    .qa-chat-clear button:hover {
+      color: var(--color-text);
+    }
+
+    /* Event annotations */
+    .event-annotation {
+      margin-top: 6px;
+      padding: 6px 10px;
+      background: var(--color-warning-bg);
+      border-left: 3px solid var(--color-warning);
+      border-radius: 0 4px 4px 0;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+    .annot-flag { font-weight: 600; margin-right: 6px; }
+    .annot-flag.verify { color: var(--color-warning); }
+    .annot-flag.important { color: var(--color-primary); }
+    .annot-flag.conflict { color: var(--color-danger); }
+
+    .event-actions {
+      margin-top: 4px;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .timeline-event:hover .event-actions { opacity: 1; }
+    .event-action-btn {
+      background: none;
+      border: 1px solid var(--color-border-light);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 6px;
+      color: var(--color-text-muted);
+    }
+    .event-action-btn:hover {
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+
+    /* Dark mode */
+    [data-theme="dark"] {
+      --color-primary: #6b8cff;
+      --color-primary-dark: #4a6bff;
+      --color-primary-light: #8ba5ff;
+      --color-secondary: #ff6b72;
+      --color-secondary-dark: #e55a60;
+      --color-bg: #0f1117;
+      --color-surface: #1a1d27;
+      --color-text: #e2e5f0;
+      --color-text-secondary: #a0a8c0;
+      --color-text-muted: #6b7394;
+      --color-text-on-primary: #FFFFFF;
+      --color-border: #2d3148;
+      --color-border-light: #252839;
+      --color-danger: #ff6b72;
+      --color-danger-bg: #2a1a1d;
+      --color-warning: #f0a050;
+      --color-warning-bg: #2a2215;
+      --color-success: #50d080;
+      --color-success-bg: #152a1d;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    [data-theme="dark"] .header { background: #151829; }
+    [data-theme="dark"] img { filter: brightness(0.9); }
+
+    /* Collapsible panels */
+    .collapse-arrow {
+      display: inline-block;
+      font-size: 11px;
+      margin-right: 4px;
+      transition: transform 0.2s;
+    }
+
+    /* Drag and drop for timeline events */
+    .timeline-event[draggable="true"] { cursor: grab; }
+    .timeline-event[draggable="true"]:active { cursor: grabbing; }
+    .timeline-event.drag-over { border-top: 2px solid var(--color-primary); margin-top: -2px; }
+    .timeline-event.dragging { opacity: 0.4; }
+
+    .qa-messages {
+      padding: 24px;
+    }
+
+    .qa-message {
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .qa-message:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .qa-message-user {
+      background: var(--color-bg);
+      padding: 16px;
+      border-left: 4px solid var(--color-primary);
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 16px;
+    }
+
+    .qa-message-user .qa-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-primary);
+      margin-bottom: 8px;
+    }
+
+    .qa-message-assistant {
+      padding: 0 16px;
+    }
+
+    .qa-message-assistant .qa-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-secondary);
+      margin-bottom: 8px;
+    }
+
+    .qa-message-assistant .qa-content {
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .qa-message-assistant .qa-content h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-primary);
+      margin: 20px 0 12px 0;
+    }
+
+    .qa-message-assistant .qa-content h3:first-child {
+      margin-top: 0;
+    }
+
+    .qa-message-assistant .qa-content p {
+      margin: 12px 0;
+    }
+
+    .qa-message-assistant .qa-content ul,
+    .qa-message-assistant .qa-content ol {
+      margin: 12px 0;
+      padding-left: 24px;
+    }
+
+    .qa-message-assistant .qa-content li {
+      margin: 6px 0;
+    }
+
+    .qa-message-assistant .qa-content strong {
+      color: var(--color-primary);
+    }
+
+    .qa-message-assistant .qa-content code {
+      background: var(--color-bg);
+      padding: 2px 6px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+
+    .qa-placeholder {
+      text-align: center;
+      padding: 80px 40px;
+      color: var(--color-text-muted);
+    }
+
+    .qa-placeholder.hidden {
+      display: none;
+    }
+
+    .qa-placeholder-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+
+    .qa-loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .qa-loading.active {
+      display: block;
+    }
+
+    .qa-loading.active + .qa-placeholder {
+      display: none;
+    }
+
+    .qa-meta {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      margin-top: 12px;
+      text-align: right;
+    }
+
+    .qa-error {
+      background: var(--color-danger-bg);
+      color: var(--color-danger);
+      padding: 16px;
+      margin-top: 16px;
+      display: none;
+      font-size: 14px;
+      font-weight: 500;
+      border-left: 4px solid var(--color-danger);
+    }
+
+    .qa-error.active {
+      display: block;
+    }
+
+    @media (max-width: 1000px) {
+      .tab-nav {
+        padding: 0 16px;
+      }
+      .tab-btn {
+        padding: 12px 16px;
+        font-size: 13px;
+      }
+    }
+
+    /* Event Type Badges */
+    .event-type-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-radius: 3px;
+      color: white;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    .event-type-badge.FILING { background: #4338ca; }
+    .event-type-badge.HEARING { background: #2563eb; }
+    .event-type-badge.ORDER { background: #dc2626; }
+    .event-type-badge.CORRESPONDENCE { background: #0891b2; }
+    .event-type-badge.DEADLINE { background: #ea580c; }
+    .event-type-badge.AGREEMENT { background: #16a34a; }
+    .event-type-badge.INCIDENT { background: #9333ea; }
+    .event-type-badge.ADMINISTRATIVE { background: #64748b; }
+    .event-type-badge.OTHER { background: #78716c; }
+
+    /* Key Date Chips */
+    .key-dates-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .key-date-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+
+    .key-date-chip.HIGH {
+      border-color: var(--color-danger);
+      background: var(--color-danger-bg);
+    }
+
+    .key-date-chip.MEDIUM {
+      border-color: var(--color-warning);
+      background: var(--color-warning-bg);
+    }
+
+    .key-date-chip .key-date-label {
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .key-date-chip .key-date-value {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+
+    .key-date-chip .key-date-status {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .key-date-chip .key-date-status.UPCOMING {
+      background: var(--color-warning);
+      color: white;
+    }
+
+    .key-date-chip .key-date-status.PAST {
+      background: var(--color-text-muted);
+      color: white;
+    }
+
+    /* Document Summary Cards */
+    .doc-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .doc-summary-card {
+      background: var(--color-bg);
+      border-left: 4px solid var(--color-primary);
+      border-radius: 0 6px 6px 0;
+      padding: 16px;
+    }
+
+    .doc-summary-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-primary);
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+
+    .doc-summary-card .doc-type-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-text-muted);
+      margin-bottom: 8px;
+    }
+
+    .doc-summary-card p {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+      margin: 4px 0;
+    }
+
+    /* Timeline Conflict Entries */
+    .conflict-entry {
+      background: var(--color-warning-bg);
+      border-left: 4px solid var(--color-warning);
+      border-radius: 0 6px 6px 0;
+      padding: 16px;
+      margin: 12px 0;
+    }
+
+    .conflict-entry .conflict-sources {
+      margin-top: 10px;
+      padding-left: 16px;
+    }
+
+    .conflict-entry .conflict-source-item {
+      font-size: 13px;
+      margin: 6px 0;
+      color: var(--color-text-secondary);
+    }
+
+    .conflict-entry .conflict-resolution {
+      margin-top: 10px;
+      font-size: 13px;
+      font-style: italic;
+      color: var(--color-text-muted);
+    }
+
+    /* Timeline Span Bar */
+    .timeline-span {
+      background: var(--color-bg);
+      padding: 16px 20px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .timeline-span .span-dates {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      color: var(--color-primary);
+    }
+
+    .timeline-span .span-duration {
+      color: var(--color-text-muted);
+      font-size: 13px;
+    }
+
+    /* Print Styles */
+    @media print {
+      body {
+        background: white;
+        font-size: 11pt;
+      }
+
+      .header {
+        background: white;
+        color: var(--color-primary);
+        padding: 20px 0;
+        border-bottom: 2px solid var(--color-primary);
+      }
+
+      .header h1 {
+        color: var(--color-primary);
+        font-size: 16pt;
+      }
+
+      .header-subtitle {
+        color: var(--color-text-secondary);
+      }
+
+      .container {
+        display: block;
+        padding: 0;
+      }
+
+      .panel:first-child,
+      .export-buttons,
+      #placeholder,
+      #loading,
+      .error {
+        display: none !important;
+      }
+
+      .panel.results-panel {
+        border: none;
+        padding: 0;
+        max-height: none;
+        overflow: visible;
+      }
+
+      .results {
+        display: block !important;
+      }
+
+      .section {
+        page-break-inside: avoid;
+      }
+
+      .violation {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <img src="odc-logo.png" alt="ODC Logo" class="header-logo" />
+      <div class="header-text">
+        <h1>Office of Disciplinary Counsel</h1>
+        <span class="header-subtitle">Document Analysis System</span>
+      </div>
+      <button id="darkModeToggle" onclick="toggleDarkMode()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px 12px;cursor:pointer;color:var(--color-text-on-primary);font-size:14px;font-family:var(--font-sans);transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Toggle dark mode">&#9789; Dark Mode</button>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('timeline')" data-tab="timeline">Document Timeline</button>
+    <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation</button>
+  </nav>
+
+  <!-- Tab 1: Complaint Analysis -->
+  <div class="tab-panel" id="tab-analyze">
+  <div class="container">
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Submit Complaint</h2>
+      </div>
+
+      <!-- File Upload -->
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+           ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <input type="file" id="fileInput" accept=".txt,.pdf" multiple onchange="handleFileSelect(event)" style="display: none;">
+        <div class="upload-zone-icon">&#128194;</div>
+        <div class="upload-zone-text">
+          <strong>Click to upload</strong> or drag files here<br>
+          <span style="font-size: 13px; color: var(--color-text-muted);">PDF and TXT files accepted</span>
+        </div>
+      </div>
+      <div class="file-list" id="fileList"></div>
+
+      <div class="divider">or enter text</div>
+
+      <textarea id="complaint" placeholder="Paste the complaint text here..."></textarea>
+
+      <div class="button-row">
+        <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeComplaint()">
+          Analyze Complaint
+        </button>
+        <button class="btn btn-secondary" onclick="clearForm()">Clear</button>
+      </div>
+      <div class="error" id="error"></div>
+    </div>
+
+    <div class="panel results-panel">
+      <div class="results-header">
+        <h2 class="panel-title">Analysis Report</h2>
+        <div class="export-buttons" id="exportButtons" style="display: none;">
+          <button class="btn btn-export" onclick="exportToTxt()">Export TXT</button>
+          <button class="btn btn-export" onclick="exportToPdf()">Print PDF</button>
+        </div>
+      </div>
+
+      <div class="loading" id="loading">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Analyzing complaint...</p>
+        <p class="loading-subtext">Reviewing against DC Rules of Professional Conduct</p>
+        <p class="loading-subtext" style="margin-top: 8px;">This may take 15-45 seconds</p>
+      </div>
+
+      <div class="results" id="results">
+        <!-- Results populated by JavaScript -->
+      </div>
+
+      <div class="placeholder" id="placeholder">
+        <div class="placeholder-icon">&#9878;</div>
+        <p class="placeholder-text">Submit a complaint to begin analysis</p>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- End Tab 1: Complaint Analysis -->
+
+  <!-- Tab 2: Rules Q&A -->
+  <div class="tab-panel" id="tab-qa">
+    <div class="qa-container">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Ask a Question</h2>
+        </div>
+        <textarea class="qa-textarea" id="qaQuestion" placeholder="Ask a question about the DC Rules of Professional Conduct or Rule XI disciplinary proceedings..."></textarea>
+        <div class="button-row">
+          <button class="btn btn-primary" id="qaSubmitBtn" onclick="askQuestion()">Ask Question</button>
+          <button class="btn btn-secondary" onclick="clearQAConversation()">Clear</button>
+        </div>
+        <div class="qa-error" id="qaError"></div>
+        <div class="suggested-questions">
+          <h4>Suggested Questions</h4>
+          <button class="suggested-btn" onclick="useSuggestedQuestion(this)">What are the duties regarding client funds under Rule 1.15?</button>
+          <button class="suggested-btn" onclick="useSuggestedQuestion(this)">What is the difference between suspension and disbarment?</button>
+          <button class="suggested-btn" onclick="useSuggestedQuestion(this)">When is diversion available as a disposition option?</button>
+          <button class="suggested-btn" onclick="useSuggestedQuestion(this)">What are the elements of Rule 8.4(c) dishonesty?</button>
+          <button class="suggested-btn" onclick="useSuggestedQuestion(this)">Explain the role of the Hearing Committee.</button>
+        </div>
+      </div>
+
+      <div class="panel qa-conversation">
+        <div class="panel-header">
+          <h2 class="panel-title">Conversation</h2>
+          <span id="qaTokenCount" style="font-size: 12px; color: var(--color-text-muted);"></span>
+        </div>
+        <div class="qa-messages" id="qaMessages">
+          <!-- Conversation messages inserted here -->
+        </div>
+        <div class="qa-placeholder" id="qaPlaceholder">
+          <div class="qa-placeholder-icon">&#128218;</div>
+          <p class="placeholder-text">Ask a question about the DC Rules of Professional Conduct</p>
+        </div>
+        <div class="qa-loading" id="qaLoading">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Researching your question...</p>
+        </div>
+      </div>
+    </div>
+  </div><!-- End Tab 2: Rules Q&A -->
+
+  <!-- Tab 3: Document Timeline -->
+  <div class="tab-panel active" id="tab-timeline">
+    <div class="container">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Upload Documents</h2>
+        </div>
+
+        <!-- Staff Selector -->
+        <div style="margin-bottom: 20px; padding: 16px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 8px;">
+          <label style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">&#128100; Staff Member</label>
+          <select id="staffSelector" onchange="onStaffChange()" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
+            <option value="">— Select your name —</option>
+            <option value="Caterina">Caterina</option>
+            <option value="Abesha">Abesha</option>
+            <option value="Robel">Robel</option>
+          </select>
+        </div>
+
+        <!-- File Upload -->
+        <div class="upload-zone" id="timelineUploadZone" onclick="document.getElementById('timelineFileInput').click()"
+             ondragover="handleTimelineDragOver(event)" ondragleave="handleTimelineDragLeave(event)" ondrop="handleTimelineDrop(event)">
+          <input type="file" id="timelineFileInput" accept=".txt,.pdf" multiple onchange="handleTimelineFileSelect(event)" style="display: none;">
+          <div class="upload-zone-icon">&#128197;</div>
+          <div class="upload-zone-text">
+            <strong>Click to upload</strong> or drag documents here<br>
+            <span style="font-size: 13px; color: var(--color-text-muted);">PDF and TXT files — upload multiple to merge into one timeline</span>
+          </div>
+        </div>
+        <div class="file-list" id="timelineFileList"></div>
+
+        <div style="margin-top: 16px;">
+          <label style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">Additional Context (optional)</label>
+          <textarea class="qa-textarea" id="timelineContext" placeholder="Provide any additional context about these documents (e.g., case name, relevant parties, date ranges of interest)..."></textarea>
+        </div>
+
+        <div class="button-row">
+          <button class="btn btn-primary" id="timelineBtn" onclick="extractTimeline()">
+            Extract Timeline
+          </button>
+          <button class="btn btn-secondary" onclick="clearTimeline()">Clear</button>
+        </div>
+        <div class="error" id="timelineError"></div>
+      </div>
+
+      <div class="panel results-panel">
+        <div class="results-header">
+          <h2 class="panel-title">Document Timeline</h2>
+          <div class="export-buttons" id="timelineExportButtons" style="display: none;">
+            <button class="btn btn-export" onclick="exportTimelineToTxt()">Export TXT</button>
+            <button class="btn btn-export" onclick="exportTimelineToDocx()">Export DOCX</button>
+            <button class="btn btn-export" id="toggleSourceBtn" onclick="toggleSourcePanel()" style="display:none;">&#128196; View Source Text</button>
+            <button class="btn btn-primary" id="saveRecordBtn" onclick="saveTimelineRecord()" style="font-size: 13px; padding: 6px 14px;">&#128190; Save to My Records</button>
+          </div>
+        </div>
+        <div id="saveRecordStatus" style="display:none; margin: 8px 0; padding: 10px 14px; border-radius: 6px; font-size: 14px;"></div>
+
+        <div class="loading" id="timelineLoading">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Extracting timeline...</p>
+          <p class="loading-subtext">Analyzing documents for dates, events, and chronological data</p>
+          <p class="loading-subtext" style="margin-top: 8px;">Large documents are split into chunks automatically — this may take 1–3 minutes</p>
+        </div>
+
+        <div class="results" id="timelineResults">
+          <!-- Results populated by JavaScript -->
+        </div>
+
+        <div id="sourceTextPanel" style="display:none; margin-top:16px; border:1px solid var(--color-border-light); border-radius:8px; max-height:500px; overflow-y:auto;">
+          <div style="padding:12px 16px; background:var(--color-bg); border-bottom:1px solid var(--color-border-light); font-weight:600; font-size:13px; color:var(--color-text-secondary); position:sticky; top:0; z-index:1;">
+            Original Source Text
+            <button onclick="toggleSourcePanel()" style="float:right; background:none; border:none; cursor:pointer; font-size:16px; color:var(--color-text-muted);">&times;</button>
+          </div>
+          <div id="sourceTextContent" style="padding:16px; font-family:var(--font-mono); font-size:12px; line-height:1.6; white-space:pre-wrap; color:var(--color-text-secondary);"></div>
+        </div>
+
+        <div class="placeholder" id="timelinePlaceholder">
+          <div class="placeholder-icon">&#128197;</div>
+          <p class="placeholder-text">Upload documents to extract a chronological timeline</p>
+        </div>
+      </div>
+    </div>
+      <!-- My Records Panel -->
+      <div class="panel" id="myRecordsPanel" style="display: none;">
+        <div class="panel-header" onclick="toggleCollapsible('myRecordsBody')" style="cursor:pointer;user-select:none;">
+          <h2 class="panel-title"><span class="collapse-arrow" id="myRecordsBodyArrow">&#9660;</span> &#128218; My Records</h2>
+          <button class="btn btn-secondary" onclick="event.stopPropagation(); loadMyRecords()" style="font-size: 13px; padding: 6px 14px;">&#8635; Refresh</button>
+        </div>
+        <div id="myRecordsBody">
+          <div id="myRecordsSearch" style="display:none; padding: 0 0 12px;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input type="text" id="recordSearchInput" oninput="renderMyRecords()" placeholder="Search by name or notes..." style="flex:1; min-width:200px; padding:8px 12px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface);" />
+              <input type="date" id="recordDateFrom" onchange="renderMyRecords()" title="From date" style="padding:7px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface);" />
+              <span style="font-size:12px;color:var(--color-text-muted);">to</span>
+              <input type="date" id="recordDateTo" onchange="renderMyRecords()" title="To date" style="padding:7px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface);" />
+              <button class="btn btn-secondary" onclick="document.getElementById('recordSearchInput').value='';document.getElementById('recordDateFrom').value='';document.getElementById('recordDateTo').value='';renderMyRecords();" style="font-size:12px;padding:7px 12px;">Clear</button>
+            </div>
+          </div>
+          <div id="myRecordsList">
+            <div class="placeholder" style="padding: 32px 0;">
+              <p class="placeholder-text">No saved timelines yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timeline Q&A Panel (shown after timeline is extracted) -->
+      <div class="panel qa-conversation" id="timelineQAPanel" style="display: none;">
+        <div class="panel-header" onclick="toggleCollapsible('timelineQABody')" style="cursor:pointer;user-select:none;">
+          <h2 class="panel-title"><span class="collapse-arrow" id="timelineQABodyArrow">&#9660;</span> Ask About This Timeline</h2>
+          <span id="timelineQATokenCount" style="font-size: 12px; color: var(--color-text-muted);"></span>
+        </div>
+        <div id="timelineQABody">
+          <div class="qa-messages" id="timelineQAMessages"></div>
+          <div class="qa-placeholder" id="timelineQAPlaceholder">
+            <div class="qa-placeholder-icon">&#128197;</div>
+            <p>Ask a question about the extracted timeline, events, dates, or parties.</p>
+          </div>
+          <div class="qa-loading" id="timelineQALoading">
+            <div class="loading-spinner" style="width:24px;height:24px;border-width:3px;"></div>
+            <span style="margin-left: 10px; font-size: 14px; color: var(--color-text-secondary);">Thinking...</span>
+          </div>
+          <div class="qa-error" id="timelineQAError"></div>
+          <div class="qa-chat-input">
+            <textarea class="qa-textarea" id="timelineQAQuestion" placeholder="Ask about the timeline..."></textarea>
+            <button class="btn-send" id="timelineQASubmitBtn" onclick="askTimelineQuestion()" title="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+          <div class="qa-chat-clear">
+            <button onclick="clearTimelineQA()">Clear conversation</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit Log Panel -->
+      <div class="panel" id="auditLogPanel" style="display: none;">
+        <div class="panel-header" onclick="toggleCollapsible('auditLogBody')" style="cursor:pointer;user-select:none;">
+          <h2 class="panel-title"><span class="collapse-arrow" id="auditLogBodyArrow">&#9654;</span> &#128203; Activity Log</h2>
+          <button class="btn btn-secondary" onclick="event.stopPropagation(); loadAuditLog()" style="font-size: 13px; padding: 6px 14px;">&#8635; Refresh</button>
+        </div>
+        <div id="auditLogBody" style="display:none;">
+        <div style="padding:0 0 10px;">
+          <input type="text" id="auditSearchInput" oninput="filterAuditLog()" placeholder="Search activity..." style="width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);box-sizing:border-box;" />
+        </div>
+        <div id="auditLogList" style="max-height:300px;overflow-y:auto;">
+          <div class="placeholder" style="padding: 16px 0;"><p class="placeholder-text">No activity yet.</p></div>
+        </div>
+      </div>
+      </div>
+    </div>
+  </div><!-- End Tab 3: Document Timeline -->
+
+  <!-- Tab 4: Translation -->
+  <div class="tab-panel" id="tab-translate">
+    <div class="container">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Translate Document</h2>
+        </div>
+
+        <!-- Staff Selector -->
+        <div style="margin-bottom: 20px; padding: 16px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 8px;">
+          <label style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">&#128100; Staff Member</label>
+          <select id="translateStaffSelector" onchange="onTranslateStaffChange()" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
+            <option value="">— Select your name —</option>
+            <option value="Caterina">Caterina</option>
+            <option value="Abesha">Abesha</option>
+            <option value="Robel">Robel</option>
+          </select>
+        </div>
+
+        <!-- Language Selector -->
+        <div style="margin-bottom: 20px;">
+          <label for="translateLangSelect" style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">Target Language</label>
+          <select id="translateLangSelect" name="translateLang" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
+            <option value="">— Select a language —</option>
+            <option value="en">🇺🇸 English</option>
+            <option value="es">🇪🇸 Spanish</option>
+            <option value="pt-BR">🇧🇷 Brazilian Portuguese</option>
+          </select>
+        </div>
+
+        <!-- File Upload -->
+        <div class="upload-zone" id="translateUploadZone" onclick="document.getElementById('translateFileInput').click()"
+             ondragover="handleTranslateDragOver(event)" ondragleave="handleTranslateDragLeave(event)" ondrop="handleTranslateDrop(event)">
+          <input type="file" id="translateFileInput" accept=".txt,.pdf" multiple onchange="handleTranslateFileSelect(event)" style="display: none;">
+          <div class="upload-zone-icon">&#127760;</div>
+          <div class="upload-zone-text">
+            <strong>Click to upload</strong> or drag documents here<br>
+            <span style="font-size: 13px; color: var(--color-text-muted);">PDF and TXT files supported</span>
+          </div>
+        </div>
+        <div class="file-list" id="translateFileList"></div>
+
+        <div class="button-row" style="margin-top: 16px;">
+          <button class="btn btn-primary" id="translateBtn" onclick="runTranslation()">Translate</button>
+          <button class="btn btn-secondary" onclick="clearTranslation()">Clear</button>
+        </div>
+        <div class="error" id="translateError"></div>
+      </div>
+
+      <div class="panel results-panel">
+        <div class="results-header">
+          <h2 class="panel-title" id="translateResultTitle">Translation</h2>
+          <div class="export-buttons" id="translateExportButtons" style="display: none;">
+            <button class="btn btn-export" onclick="exportTranslation()">Export TXT</button>
+            <button class="btn btn-primary" id="saveTranslationBtn" onclick="saveTranslationRecord()" style="font-size: 13px; padding: 6px 14px;">&#128190; Save to My Records</button>
+          </div>
+        </div>
+        <div id="saveTranslationStatus" style="display:none; margin: 8px 0; padding: 10px 14px; border-radius: 6px; font-size: 14px;"></div>
+
+        <div class="loading" id="translateLoading">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Translating...</p>
+          <p class="loading-subtext">Large documents are translated in chunks automatically</p>
+          <p class="loading-subtext" style="margin-top: 8px;">This may take 1–3 minutes for large documents</p>
+        </div>
+
+        <div class="results" id="translateResults" style="white-space: pre-wrap; font-family: var(--font-sans); font-size: 15px; line-height: 1.7;">
+          <!-- Results populated by JavaScript -->
+        </div>
+
+        <div class="placeholder" id="translatePlaceholder">
+          <div class="placeholder-icon">&#127760;</div>
+          <p class="placeholder-text">Select a language and upload documents to translate</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Translation Records Panel -->
+    <div class="panel" id="translateRecordsPanel" style="display: none;">
+      <div class="panel-header">
+        <h2 class="panel-title">&#128218; My Translation Records</h2>
+        <button class="btn btn-secondary" onclick="loadTranslateRecords()" style="font-size: 13px; padding: 6px 14px;">&#8635; Refresh</button>
+      </div>
+      <div id="translateRecordsList">
+        <div class="placeholder" style="padding: 32px 0;">
+          <p class="placeholder-text">No saved translations yet.</p>
+        </div>
+      </div>
+    </div>
+  </div><!-- End Tab 4: Translation -->
+
+  <!-- PIN Modal -->
+  <div id="pinModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:var(--color-surface); border-radius:12px; padding:32px; width:320px; box-shadow:var(--shadow-lg); text-align:center;">
+      <div style="font-size:2rem; margin-bottom:12px;">&#128274;</div>
+      <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:4px;" id="pinModalTitle">Enter PIN</h3>
+      <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:20px;" id="pinModalSubtitle">Enter your PIN to continue</p>
+      <input type="password" id="pinInput" maxlength="10" inputmode="numeric"
+        placeholder="••••"
+        style="width:100%; text-align:center; font-size:1.5rem; letter-spacing:0.3em; padding:12px; border:1.5px solid var(--color-border); border-radius:8px; font-family:var(--font-mono); margin-bottom:12px;"
+        onkeydown="if(event.key==='Enter') submitPin()"
+      />
+      <div id="pinError" style="display:none; color:var(--color-danger); font-size:13px; margin-bottom:12px;"></div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-secondary" style="flex:1;" onclick="cancelPin()">Cancel</button>
+        <button class="btn btn-primary" style="flex:1;" onclick="submitPin()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- File Preview Modal (shared across all tabs) -->
+  <div class="file-preview-modal" id="filePreviewModal" onclick="closeFilePreviewOnBackdrop(event)">
+    <div class="file-preview-container" onclick="event.stopPropagation()">
+      <div class="file-preview-header">
+        <h3>
+          <span id="previewFilename">filename.pdf</span>
+          <span class="page-indicator" id="previewPageIndicator"></span>
+        </h3>
+        <button type="button" class="file-preview-close" onclick="closeFilePreview()">&times;</button>
+      </div>
+      <div class="file-preview-body" id="filePreviewBody">
+        <!-- Content inserted dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========================================
+    // Dark Mode
+    // ========================================
+    function toggleDarkMode() {
+      const html = document.documentElement;
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      html.setAttribute('data-theme', isDark ? '' : 'dark');
+      localStorage.setItem('odc-dark-mode', isDark ? '' : 'dark');
+      const btn = document.getElementById('darkModeToggle');
+      btn.innerHTML = isDark ? '&#9789; Dark Mode' : '&#9788; Light Mode';
+    }
+
+    // Restore saved theme
+    (function() {
+      const saved = localStorage.getItem('odc-dark-mode');
+      if (saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        setTimeout(() => {
+          const btn = document.getElementById('darkModeToggle');
+          if (btn) btn.innerHTML = '&#9788; Light Mode';
+        }, 0);
+      }
+    })();
+
+    // ========================================
+    // Collapsible Panels
+    // ========================================
+    function toggleCollapsible(id) {
+      const body = document.getElementById(id);
+      const arrow = document.getElementById(id + 'Arrow');
+      if (body.style.display === 'none') {
+        body.style.display = 'block';
+        arrow.innerHTML = '&#9660;';
+      } else {
+        body.style.display = 'none';
+        arrow.innerHTML = '&#9654;';
+      }
+    }
+
+    // ========================================
+    // Tab Navigation
+    // ========================================
+    function switchTab(tabId) {
+      // Update tab buttons
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.tab === tabId) {
+          btn.classList.add('active');
+        }
+      });
+
+      // Update tab panels
+      document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.getElementById('tab-' + tabId).classList.add('active');
+    }
+
+    // ========================================
+    // Q&A Functionality
+    // ========================================
+    let qaConversationHistory = [];
+    let qaTotalTokens = { input: 0, output: 0 };
+
+    function useSuggestedQuestion(btn) {
+      document.getElementById('qaQuestion').value = btn.textContent;
+      document.getElementById('qaQuestion').focus();
+    }
+
+    async function askQuestion() {
+      const questionInput = document.getElementById('qaQuestion');
+      const question = questionInput.value.trim();
+      const submitBtn = document.getElementById('qaSubmitBtn');
+      const loading = document.getElementById('qaLoading');
+      const placeholder = document.getElementById('qaPlaceholder');
+      const error = document.getElementById('qaError');
+
+      error.classList.remove('active');
+
+      if (!question) {
+        showQAError('Please enter a question');
+        return;
+      }
+
+      if (question.length < 5) {
+        showQAError('Question is too short');
+        return;
+      }
+
+      // Hide placeholder, show loading
+      placeholder.classList.add('hidden');
+      loading.classList.add('active');
+      submitBtn.disabled = true;
+
+      // Scroll to show loading spinner
+      const conversationContainer = document.querySelector('.qa-conversation');
+      conversationContainer.scrollTop = conversationContainer.scrollHeight;
+
+      try {
+        const response = await fetch('/api/qa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            conversationHistory: qaConversationHistory
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Request failed');
+        }
+
+        // Add to conversation history
+        qaConversationHistory.push({ role: 'user', content: question });
+        qaConversationHistory.push({ role: 'assistant', content: data.answer });
+
+        // Update token counts
+        qaTotalTokens.input += data.usage.inputTokens;
+        qaTotalTokens.output += data.usage.outputTokens;
+        document.getElementById('qaTokenCount').textContent =
+          `Tokens: ${qaTotalTokens.input.toLocaleString()} in / ${qaTotalTokens.output.toLocaleString()} out`;
+
+        // Render the conversation
+        renderQAConversation();
+
+        // Clear input and focus for next question
+        questionInput.value = '';
+        questionInput.focus();
+
+      } catch (err) {
+        showQAError(err.message);
+        if (qaConversationHistory.length === 0) {
+          placeholder.classList.remove('hidden');
+        }
+      } finally {
+        loading.classList.remove('active');
+        submitBtn.disabled = false;
+      }
+    }
+
+    function renderQAConversation() {
+      const messagesContainer = document.getElementById('qaMessages');
+      const conversationContainer = document.querySelector('.qa-conversation');
+
+      // Build messages HTML
+      let html = '';
+      for (let i = 0; i < qaConversationHistory.length; i += 2) {
+        const userMsg = qaConversationHistory[i];
+        const assistantMsg = qaConversationHistory[i + 1];
+
+        html += `
+          <div class="qa-message">
+            <div class="qa-message-user">
+              <div class="qa-label">Your Question</div>
+              <div class="qa-content">${escapeHtml(userMsg.content)}</div>
+            </div>
+            <div class="qa-message-assistant">
+              <div class="qa-label">Answer</div>
+              <div class="qa-content">${formatQAResponse(assistantMsg.content)}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      messagesContainer.innerHTML = html;
+
+      // Scroll to bottom of conversation
+      conversationContainer.scrollTop = conversationContainer.scrollHeight;
+    }
+
+    function formatQAResponse(text) {
+      // Convert markdown-like formatting to HTML
+      let html = escapeHtml(text);
+
+      // Convert ### headers
+      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+
+      // Convert ** bold **
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+      // Convert bullet points
+      html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+      // Convert numbered lists
+      html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+      // Convert line breaks to paragraphs (simple approach)
+      html = html.replace(/\n\n/g, '</p><p>');
+      html = '<p>' + html + '</p>';
+
+      // Clean up empty paragraphs
+      html = html.replace(/<p>\s*<\/p>/g, '');
+      html = html.replace(/<p>\s*<(h3|ul|ol)/g, '<$1');
+      html = html.replace(/<\/(h3|ul|ol)>\s*<\/p>/g, '</$1>');
+
+      return html;
+    }
+
+    function showQAError(message) {
+      const error = document.getElementById('qaError');
+      error.textContent = message;
+      error.classList.add('active');
+    }
+
+    function clearQAConversation() {
+      qaConversationHistory = [];
+      qaTotalTokens = { input: 0, output: 0 };
+      document.getElementById('qaTokenCount').textContent = '';
+      document.getElementById('qaMessages').innerHTML = '';
+      document.getElementById('qaPlaceholder').classList.remove('hidden');
+      document.getElementById('qaQuestion').value = '';
+      document.getElementById('qaError').classList.remove('active');
+    }
+
+    // Allow Enter key to submit question (Shift+Enter for new line)
+    document.addEventListener('DOMContentLoaded', function() {
+      const qaTextarea = document.getElementById('qaQuestion');
+      if (qaTextarea) {
+        qaTextarea.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            askQuestion();
+          }
+        });
+      }
+
+      // Prevent browser from opening files when dropped outside the upload zone
+      document.body.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      document.body.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+
+    // ========================================
+    // Complaint Analysis Functionality
+    // ========================================
+    let uploadedFiles = [];
+    let lastAnalysis = null;
+
+    // Drag and Drop handlers
+    function handleDragOver(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'copy';
+      document.getElementById('uploadZone').classList.add('drag-over');
+    }
+
+    function handleDragLeave(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('uploadZone').classList.remove('drag-over');
+    }
+
+    async function handleDrop(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('uploadZone').classList.remove('drag-over');
+
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length > 0) {
+        await processFiles(files);
+      }
+    }
+
+    async function processFiles(files) {
+      for (const file of files) {
+        // Check file type
+        if (!file.name.endsWith('.pdf') && !file.name.endsWith('.txt')) {
+          console.log(`Skipping unsupported file type: ${file.name}`);
+          continue;
+        }
+
+        if (!uploadedFiles.some(f => f.name === file.name)) {
+          const fileEntry = {
+            file: file,
+            name: file.name,
+            content: null,
+            dataUrl: null
+          };
+
+          if (file.name.endsWith('.txt')) {
+            fileEntry.content = await file.text();
+          } else if (file.name.endsWith('.pdf')) {
+            const arrayBuffer = await file.arrayBuffer();
+            const base64 = btoa(
+              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+            );
+            fileEntry.dataUrl = `data:application/pdf;base64,${base64}`;
+          }
+
+          uploadedFiles.push(fileEntry);
+        }
+      }
+
+      updateFileList();
+      updateTextareaPlaceholder();
+    }
+
+    async function handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      if (!files.length) return;
+      await processFiles(files);
+    }
+
+    function removeFile(index) {
+      uploadedFiles.splice(index, 1);
+      updateFileList();
+      updateTextareaPlaceholder();
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function updateFileList() {
+      const fileList = document.getElementById('fileList');
+      if (uploadedFiles.length === 0) {
+        fileList.innerHTML = '';
+        return;
+      }
+
+      fileList.innerHTML = uploadedFiles.map((f, index) => `
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">${f.name.endsWith('.pdf') ? '&#128196;' : '&#128195;'}</span>
+            <span>${f.name}</span>
+            <span class="file-size">(${formatFileSize(f.file.size)})</span>
+          </div>
+          <button type="button" class="remove-file" onclick="removeFile(${index})" title="Remove file">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    function updateTextareaPlaceholder() {
+      const textarea = document.getElementById('complaint');
+      if (uploadedFiles.length > 0) {
+        const pdfCount = uploadedFiles.filter(f => f.name.endsWith('.pdf')).length;
+        const txtCount = uploadedFiles.filter(f => f.name.endsWith('.txt')).length;
+        let msg = `${uploadedFiles.length} file(s) loaded`;
+        if (pdfCount > 0) msg += ` (${pdfCount} PDF)`;
+        if (txtCount > 0) msg += ` (${txtCount} TXT)`;
+        textarea.placeholder = msg + '\n\nYou can also add text here, or click "Analyze Complaint" to process.';
+      } else {
+        textarea.placeholder = 'Paste the complaint text here...';
+      }
+    }
+
+    function getFileByName(filename) {
+      if (!filename) return null;
+      const allFiles = [...uploadedFiles, ...timelineUploadedFiles];
+      let match = allFiles.find(f => f.name === filename);
+      if (match) return match;
+
+      const searchBase = filename.replace(/\.(pdf|txt)$/i, '').toLowerCase();
+      match = allFiles.find(f => {
+        const uploadedBase = f.name.replace(/\.(pdf|txt)$/i, '').toLowerCase();
+        return uploadedBase.includes(searchBase) || searchBase.includes(uploadedBase);
+      });
+      if (match) return match;
+
+      const searchWords = searchBase.split(/[_\-\s]+/).filter(w => w.length > 2);
+      match = allFiles.find(f => {
+        const uploadedLower = f.name.toLowerCase();
+        return searchWords.some(word => uploadedLower.includes(word));
+      });
+
+      return match;
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderTimelineSource(source) {
+      let filename, page, quote;
+
+      if (typeof source === 'string') {
+        const parsed = parseSourceString(source);
+        filename = parsed.filename;
+        page = parsed.page;
+        quote = '';
+      } else {
+        filename = source.filename || 'Unknown';
+        page = source.page;
+        quote = source.quote || '';
+      }
+
+      const fileEntry = filename ? getFileByName(filename) : null;
+      const displayFilename = fileEntry ? fileEntry.name : filename;
+      const pageInfo = page ? ` (p. ${page})` : '';
+
+      if (filename && filename !== 'Unknown') {
+        return `<a href="#" class="source-link"
+                  data-filename="${escapeHtml(fileEntry ? fileEntry.name : filename)}"
+                  data-page="${page || ''}"
+                  data-quote="${escapeHtml(quote)}">${escapeHtml(displayFilename)}${pageInfo}</a>`;
+      } else {
+        return escapeHtml(typeof source === 'string' ? source : JSON.stringify(source));
+      }
+    }
+
+    function parseSourceString(sourceStr) {
+      let matchedFilename = null;
+      let page = null;
+
+      const allFiles = [...uploadedFiles, ...timelineUploadedFiles];
+      for (const f of allFiles) {
+        if (sourceStr.includes(f.name)) {
+          matchedFilename = f.name;
+          break;
+        }
+      }
+
+      const pageMatch = sourceStr.match(/(?:page|p\.?)\s*(\d+)/i);
+      if (pageMatch) {
+        page = parseInt(pageMatch[1]);
+      }
+
+      return { filename: matchedFilename, page };
+    }
+
+    function openFilePreview(filename, page, quote) {
+      const fileEntry = getFileByName(filename);
+
+      const modal = document.getElementById('filePreviewModal');
+      const filenameEl = document.getElementById('previewFilename');
+      const pageIndicatorEl = document.getElementById('previewPageIndicator');
+      const bodyEl = document.getElementById('filePreviewBody');
+
+      filenameEl.textContent = filename;
+
+      if (!fileEntry) {
+        const pageHtml = page ? '<div style="font-size: 14px; color: var(--color-text-secondary);">Page ' + page + '</div>' : '';
+        pageIndicatorEl.textContent = page ? 'Page ' + page : '';
+        bodyEl.innerHTML = '<div style="padding: 28px 24px;">'
+          + '<div style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">Source Reference</div>'
+          + '<div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">' + escapeHtml(filename) + '</div>'
+          + pageHtml
+          + '</div>';
+        modal.classList.add('active');
+        document.addEventListener('keydown', handleEscapeKey);
+        return;
+      }
+
+      if (fileEntry.dataUrl) {
+        pageIndicatorEl.textContent = page ? `Page ${page}` : '';
+        const pdfUrl = page ? `${fileEntry.dataUrl}#page=${page}` : fileEntry.dataUrl;
+        bodyEl.innerHTML = `<iframe src="${pdfUrl}"></iframe>`;
+      } else if (fileEntry.content) {
+        pageIndicatorEl.textContent = '';
+        let content = fileEntry.content;
+
+        if (quote && quote.length > 10) {
+          const escapedQuote = escapeHtml(quote);
+          const escapedContent = escapeHtml(content);
+          const quoteIndex = escapedContent.toLowerCase().indexOf(quote.toLowerCase().substring(0, 50));
+          if (quoteIndex !== -1) {
+            const before = escapedContent.substring(0, quoteIndex);
+            const match = escapedContent.substring(quoteIndex, quoteIndex + quote.length);
+            const after = escapedContent.substring(quoteIndex + quote.length);
+            bodyEl.innerHTML = `<pre>${before}<mark id="highlightedQuote">${match}</mark>${after}</pre>`;
+            setTimeout(() => {
+              const highlighted = document.getElementById('highlightedQuote');
+              if (highlighted) {
+                highlighted.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 100);
+          } else {
+            bodyEl.innerHTML = `<pre>${escapedContent}</pre>`;
+          }
+        } else {
+          bodyEl.innerHTML = `<pre>${escapeHtml(content)}</pre>`;
+        }
+      } else {
+        bodyEl.innerHTML = '<p style="padding: 20px; color: var(--color-text-muted);">No preview available for this file.</p>';
+      }
+
+      modal.classList.add('active');
+      document.addEventListener('keydown', handleEscapeKey);
+    }
+
+    function closeFilePreview() {
+      const modal = document.getElementById('filePreviewModal');
+      modal.classList.remove('active');
+      document.removeEventListener('keydown', handleEscapeKey);
+    }
+
+    function closeFilePreviewOnBackdrop(event) {
+      if (event.target.classList.contains('file-preview-modal')) {
+        closeFilePreview();
+      }
+    }
+
+    function handleEscapeKey(event) {
+      if (event.key === 'Escape') {
+        closeFilePreview();
+      }
+    }
+
+    document.addEventListener('click', function(event) {
+      if (event.target.classList.contains('source-link')) {
+        event.preventDefault();
+        const filename = event.target.dataset.filename;
+        const page = event.target.dataset.page ? parseInt(event.target.dataset.page) : null;
+        const quote = event.target.dataset.quote || '';
+
+        // If we have source texts, open the source panel and highlight
+        if (lastSourceTexts.length > 0) {
+          openSourceWithHighlight(filename, quote);
+        } else {
+          openFilePreview(filename, page, quote);
+        }
+      }
+    });
+
+    function openSourceWithHighlight(filename, quote) {
+      const panel = document.getElementById('sourceTextPanel');
+      const btn = document.getElementById('toggleSourceBtn');
+
+      // Build content with highlight
+      let html = '';
+      lastSourceTexts.forEach(s => {
+        const isTarget = s.filename === filename || s.filename.includes(filename) || filename.includes(s.filename);
+        const escapedText = escapeHtml(s.text);
+        let displayText = escapedText;
+
+        // Try to highlight the quote within the source text
+        if (isTarget && quote && quote.length > 10) {
+          const searchStr = quote.toLowerCase().substring(0, 60);
+          const idx = escapedText.toLowerCase().indexOf(searchStr);
+          if (idx !== -1) {
+            const before = escapedText.substring(0, idx);
+            const match = escapedText.substring(idx, idx + quote.length);
+            const after = escapedText.substring(idx + quote.length);
+            displayText = `${before}<mark id="sourceHighlight" style="background:var(--color-warning);color:#000;padding:2px 0;border-radius:2px;">${match}</mark>${after}`;
+          }
+        }
+
+        const border = isTarget ? 'border:2px solid var(--color-primary);border-radius:8px;padding:12px;' : '';
+        html += `<div id="source-${escapeHtml(s.filename)}" style="margin-bottom:20px;${border}">
+          <div style="font-weight:700;color:var(--color-text);margin-bottom:8px;font-family:var(--font-sans);font-size:14px;">
+            ${isTarget ? '&#9654; ' : ''}${escapeHtml(s.filename)}
+          </div>${displayText}</div>`;
+      });
+      document.getElementById('sourceTextContent').innerHTML = html;
+      panel.style.display = 'block';
+      if (btn) btn.innerHTML = '&#128196; Hide Source Text';
+
+      // Scroll to highlighted quote or target file
+      setTimeout(() => {
+        const highlight = document.getElementById('sourceHighlight');
+        if (highlight) {
+          highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          const targetEl = document.getElementById('source-' + filename);
+          if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    }
+
+    function clearForm() {
+      document.getElementById('complaint').value = '';
+      document.getElementById('complaint').placeholder = 'Paste the complaint text here...';
+      document.getElementById('fileInput').value = '';
+      document.getElementById('fileList').innerHTML = '';
+      document.getElementById('error').classList.remove('active');
+      document.getElementById('results').classList.remove('active');
+      document.getElementById('exportButtons').style.display = 'none';
+      document.getElementById('placeholder').style.display = 'block';
+      uploadedFiles = [];
+      lastAnalysis = null;
+    }
+
+    function exportToTxt() {
+      if (!lastAnalysis) return;
+      const a = lastAnalysis;
+
+      let text = `═══════════════════════════════════════════════════════════════
+ODC COMPLAINT ANALYSIS
+Generated: ${new Date().toLocaleString()}
+═══════════════════════════════════════════════════════════════
+
+PARTIES
+───────────────────────────────────────────────────────────────
+Complainant: ${a.parties?.complainant?.name || 'Unknown'}
+  Relationship: ${a.parties?.complainant?.relationship || 'Unknown'}
+
+Respondent: ${a.parties?.respondent?.name || 'Unknown'}
+  Bar Number: ${a.parties?.respondent?.barNumber || 'Unknown'}
+
+SUMMARY
+───────────────────────────────────────────────────────────────
+${a.summary || 'No summary available'}
+
+`;
+
+      if (a.urgentFlags && (a.urgentFlags.clientFundsAtRisk?.flag || a.urgentFlags.ongoingHarm?.flag || a.urgentFlags.temporarySuspensionConsideration?.flag)) {
+        text += `URGENT FLAGS
+───────────────────────────────────────────────────────────────
+`;
+        if (a.urgentFlags.clientFundsAtRisk?.flag) {
+          text += `! CLIENT FUNDS AT RISK: ${a.urgentFlags.clientFundsAtRisk.details}\n`;
+        }
+        if (a.urgentFlags.ongoingHarm?.flag) {
+          text += `! ONGOING HARM: ${a.urgentFlags.ongoingHarm.details}\n`;
+        }
+        if (a.urgentFlags.temporarySuspensionConsideration?.flag) {
+          text += `! TEMPORARY SUSPENSION CONSIDERATION: ${a.urgentFlags.temporarySuspensionConsideration.details}\n`;
+        }
+        text += '\n';
+      }
+
+      if (a.timeline && a.timeline.length > 0) {
+        text += `TIMELINE OF EVENTS
+───────────────────────────────────────────────────────────────
+`;
+        a.timeline.forEach(t => {
+          const sourceText = typeof t.source === 'string'
+            ? t.source
+            : `${t.source.filename}${t.source.page ? ' (p. ' + t.source.page + ')' : ''}`;
+          text += `${t.date}: ${t.event}\n  Source: ${sourceText}\n\n`;
+        });
+      }
+
+      text += `POTENTIAL RULE VIOLATIONS (${a.potentialViolations?.length || 0})
+───────────────────────────────────────────────────────────────
+`;
+      (a.potentialViolations || []).forEach((v, i) => {
+        text += `
+${i + 1}. ${v.rule} - ${v.ruleName} [${v.likelihood}]
+
+Analysis: ${v.analysis}
+
+Likelihood Rationale: ${v.likelihoodRationale}
+`;
+        if (v.elements && v.elements.length > 0) {
+          text += '\nElement Analysis:\n';
+          v.elements.forEach(e => {
+            text += `  ${e.supported ? '[Y]' : '[N]'} ${e.element}: ${e.supportingFacts}\n`;
+          });
+        }
+        text += '\n';
+      });
+
+      text += `AGGRAVATING & MITIGATING FACTORS
+───────────────────────────────────────────────────────────────
+Aggravating:
+`;
+      if (a.aggravatingFactors && a.aggravatingFactors.length > 0) {
+        a.aggravatingFactors.forEach(f => text += `  - ${f}\n`);
+      } else {
+        text += '  None identified\n';
+      }
+      text += '\nMitigating:\n';
+      if (a.mitigatingFactors && a.mitigatingFactors.length > 0) {
+        a.mitigatingFactors.forEach(f => text += `  - ${f}\n`);
+      } else {
+        text += '  None identified\n';
+      }
+
+      if (a.informationGaps && a.informationGaps.length > 0) {
+        text += `
+INFORMATION GAPS
+───────────────────────────────────────────────────────────────
+`;
+        a.informationGaps.forEach(g => {
+          text += `- ${g.gap}\n  Relevance: ${g.relevance}\n\n`;
+        });
+      }
+
+      text += `
+RECOMMENDED DISPOSITION
+───────────────────────────────────────────────────────────────
+Recommendation: ${formatDisposition(a.recommendedDisposition?.recommendation)}
+
+Rationale: ${a.recommendedDisposition?.rationale || 'N/A'}
+`;
+      if (a.recommendedDisposition?.sanctionRange) {
+        text += `Sanction Range: ${a.recommendedDisposition.sanctionRange}\n`;
+      }
+      if (a.recommendedDisposition?.chargesIfFormal && a.recommendedDisposition.chargesIfFormal.length > 0) {
+        text += `Charges if Formal: ${a.recommendedDisposition.chargesIfFormal.join(', ')}\n`;
+      }
+
+      if (a.nextSteps && a.nextSteps.length > 0) {
+        text += `
+RECOMMENDED NEXT STEPS
+───────────────────────────────────────────────────────────────
+`;
+        a.nextSteps.forEach((s, i) => text += `${i + 1}. ${s}\n`);
+      }
+
+      text += `
+───────────────────────────────────────────────────────────────
+Confidence Level: ${a.confidenceLevel || 'MEDIUM'}
+${a.confidenceRationale ? `Rationale: ${a.confidenceRationale}` : ''}
+
+═══════════════════════════════════════════════════════════════
+DISCLAIMER: This AI-assisted analysis is advisory only.
+All conclusions require human review and professional judgment.
+═══════════════════════════════════════════════════════════════
+`;
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `complaint-analysis-${new Date().toISOString().slice(0,10)}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportToPdf() {
+      window.print();
+    }
+
+    async function analyzeComplaint() {
+      const complaint = document.getElementById('complaint').value.trim();
+      const btn = document.getElementById('analyzeBtn');
+      const loading = document.getElementById('loading');
+      const results = document.getElementById('results');
+      const error = document.getElementById('error');
+      const placeholder = document.getElementById('placeholder');
+
+      error.classList.remove('active');
+      results.classList.remove('active');
+      placeholder.style.display = 'none';
+
+      if (!complaint && uploadedFiles.length === 0) {
+        showError('Please enter complaint text or upload file(s)');
+        return;
+      }
+
+      if (uploadedFiles.length === 0 && complaint.length < 50) {
+        showError('Complaint text is too short. Please provide more details.');
+        return;
+      }
+
+      btn.disabled = true;
+      loading.classList.add('active');
+
+      try {
+        let response;
+
+        if (uploadedFiles.length > 0) {
+          const formData = new FormData();
+          uploadedFiles.forEach((f) => {
+            formData.append('files', f.file);
+          });
+          if (complaint) {
+            formData.append('additionalText', complaint);
+          }
+          response = await fetch('/api/analyze', {
+            method: 'POST',
+            body: formData
+          });
+        } else {
+          response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ complaint })
+          });
+        }
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Analysis failed');
+        }
+
+        displayResults(data.analysis, data.usage);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        btn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function showError(message) {
+      const error = document.getElementById('error');
+      error.textContent = message;
+      error.classList.add('active');
+      document.getElementById('placeholder').style.display = 'block';
+    }
+
+    function displayResults(a, usage) {
+      const results = document.getElementById('results');
+      lastAnalysis = a;
+      document.getElementById('exportButtons').style.display = 'flex';
+
+      let html = `
+        <!-- PARTIES -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-icon">&#128100;</span>
+            <h3>Parties</h3>
+          </div>
+          <div class="parties-grid">
+            <div class="party-box">
+              <h4>Complainant</h4>
+              <p><strong>${a.parties?.complainant?.name || 'Unknown'}</strong></p>
+              <p style="color: var(--color-text-muted); font-size: 14px;">Relationship: ${a.parties?.complainant?.relationship || 'Unknown'}</p>
+            </div>
+            <div class="party-box">
+              <h4>Respondent</h4>
+              <p><strong>${a.parties?.respondent?.name || 'Unknown'}</strong></p>
+              ${a.parties?.respondent?.barNumber ? `<p style="color: var(--color-text-muted); font-size: 14px;">Bar #: ${a.parties.respondent.barNumber}</p>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <!-- SUMMARY -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-icon">&#128203;</span>
+            <h3>Summary</h3>
+          </div>
+          <div class="summary-box">${a.summary || 'No summary available'}</div>
+        </div>
+      `;
+
+      // URGENT FLAGS
+      if (a.urgentFlags && (a.urgentFlags.clientFundsAtRisk?.flag || a.urgentFlags.ongoingHarm?.flag || a.urgentFlags.temporarySuspensionConsideration?.flag)) {
+        html += `<div class="section">
+          <div class="section-header">
+            <span class="section-icon">&#9888;</span>
+            <h3>Urgent Flags</h3>
+          </div>`;
+        if (a.urgentFlags.clientFundsAtRisk?.flag) {
+          html += `<div class="urgent-box"><strong>Client Funds at Risk:</strong> ${a.urgentFlags.clientFundsAtRisk.details}</div>`;
+        }
+        if (a.urgentFlags.ongoingHarm?.flag) {
+          html += `<div class="urgent-box"><strong>Ongoing Harm:</strong> ${a.urgentFlags.ongoingHarm.details}</div>`;
+        }
+        if (a.urgentFlags.temporarySuspensionConsideration?.flag) {
+          html += `<div class="urgent-box"><strong>Temporary Suspension Consideration:</strong> ${a.urgentFlags.temporarySuspensionConsideration.details}</div>`;
+        }
+        html += `</div>`;
+      }
+
+      // TIMELINE
+      if (a.timeline && a.timeline.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#128197;</span>
+              <h3>Timeline of Events</h3>
+            </div>
+            <div class="timeline">
+              ${a.timeline.map(t => `
+                <div class="timeline-event">
+                  <div class="timeline-date">${t.date}</div>
+                  <div class="timeline-content">
+                    ${t.event}
+                    <div class="timeline-source">Source: ${renderTimelineSource(t.source)}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // POTENTIAL VIOLATIONS
+      html += `
+        <div class="section">
+          <div class="section-header">
+            <span class="section-icon">&#9888;</span>
+            <h3>Potential Rule Violations (${a.potentialViolations?.length || 0})</h3>
+          </div>
+          ${(a.potentialViolations || []).map(v => `
+            <div class="violation ${v.likelihood}">
+              <h4>
+                <span>${v.rule} - ${v.ruleName}</span>
+                <span class="likelihood ${v.likelihood}">${v.likelihood}</span>
+              </h4>
+              <p><strong>Analysis:</strong> ${v.analysis}</p>
+              <p><strong>Likelihood Rationale:</strong> ${v.likelihoodRationale}</p>
+              ${v.elements && v.elements.length > 0 ? `
+                <div class="elements-list">
+                  <div class="elements-list-title">Element Analysis</div>
+                  ${v.elements.map(e => `
+                    <div class="element-item">
+                      <span class="element-status ${e.supported ? 'supported' : 'unsupported'}">${e.supported ? '&#10003;' : '&#10007;'}</span>
+                      <span><strong>${e.element}:</strong> ${e.supportingFacts}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      // AGGRAVATING / MITIGATING FACTORS
+      if ((a.aggravatingFactors && a.aggravatingFactors.length > 0) || (a.mitigatingFactors && a.mitigatingFactors.length > 0)) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#9878;</span>
+              <h3>Aggravating & Mitigating Factors</h3>
+            </div>
+            <div class="factors-grid">
+              <div class="factors-box aggravating">
+                <h4>Aggravating</h4>
+                ${a.aggravatingFactors && a.aggravatingFactors.length > 0
+                  ? `<ul>${a.aggravatingFactors.map(f => `<li>${f}</li>`).join('')}</ul>`
+                  : '<p style="color: var(--color-text-muted); font-size: 14px;">None identified</p>'}
+              </div>
+              <div class="factors-box mitigating">
+                <h4>Mitigating</h4>
+                ${a.mitigatingFactors && a.mitigatingFactors.length > 0
+                  ? `<ul>${a.mitigatingFactors.map(f => `<li>${f}</li>`).join('')}</ul>`
+                  : '<p style="color: var(--color-text-muted); font-size: 14px;">None identified</p>'}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // INFORMATION GAPS
+      if (a.informationGaps && a.informationGaps.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#10067;</span>
+              <h3>Information Gaps</h3>
+            </div>
+            ${a.informationGaps.map(g => `
+              <div class="info-box">
+                <strong>${g.gap}</strong>
+                <p style="margin: 5px 0 0; font-size: 14px; color: var(--color-text-secondary);">${g.relevance}</p>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // CONFLICTS & INCONSISTENCIES
+      if (a.conflictsAndInconsistencies && a.conflictsAndInconsistencies.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#128270;</span>
+              <h3>Conflicts & Inconsistencies</h3>
+            </div>
+            ${a.conflictsAndInconsistencies.map(c => `
+              <div class="warning-box">
+                <strong>${c.issue}</strong> <span class="likelihood ${c.significance}">${c.significance}</span>
+                <p style="margin: 5px 0 0; font-size: 14px;">Resolution: ${c.resolution}</p>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // RECOMMENDED DISPOSITION
+      html += `
+        <div class="section">
+          <div class="section-header">
+            <span class="section-icon">&#9878;</span>
+            <h3>Recommended Disposition</h3>
+          </div>
+          <div class="recommendation">
+            <span class="disposition-badge ${a.recommendedDisposition?.recommendation || ''}">${formatDisposition(a.recommendedDisposition?.recommendation)}</span>
+            <p><strong>Rationale:</strong> ${a.recommendedDisposition?.rationale || 'N/A'}</p>
+            ${a.recommendedDisposition?.sanctionRange ? `<p><strong>Sanction Range:</strong> ${a.recommendedDisposition.sanctionRange}</p>` : ''}
+            ${a.recommendedDisposition?.chargesIfFormal && a.recommendedDisposition.chargesIfFormal.length > 0
+              ? `<p><strong>Charges if Formal:</strong> ${a.recommendedDisposition.chargesIfFormal.join(', ')}</p>`
+              : ''}
+          </div>
+        </div>
+      `;
+
+      // NEXT STEPS
+      if (a.nextSteps && a.nextSteps.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#10132;</span>
+              <h3>Recommended Next Steps</h3>
+            </div>
+            <div class="next-steps">
+              <ul>
+                ${a.nextSteps.map(s => `<li>${s}</li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+
+      // META & DISCLAIMER
+      html += `
+        <div class="meta">
+          <span>Tokens: ${usage.inputTokens} in / ${usage.outputTokens} out</span>
+          <span class="confidence">
+            Confidence: <span class="likelihood ${a.confidenceLevel || 'MEDIUM'}">${a.confidenceLevel || 'MEDIUM'}</span>
+          </span>
+        </div>
+        ${a.confidenceRationale ? `<p style="font-size: 13px; color: var(--color-text-muted); margin-top: 5px;"><em>${a.confidenceRationale}</em></p>` : ''}
+        <div class="disclaimer">
+          <strong>DISCLAIMER:</strong> This AI-assisted analysis is advisory only. All conclusions require human review and professional judgment.
+        </div>
+      `;
+
+      results.innerHTML = html;
+      results.classList.add('active');
+    }
+
+    function formatDisposition(d) {
+      const map = {
+        'DISMISS': 'Dismiss',
+        'DIVERSION': 'Diversion',
+        'INFORMAL_ADMONITION': 'Informal Admonition',
+        'FORMAL_CHARGES': 'Formal Charges'
+      };
+      return map[d] || d || 'Unknown';
+    }
+
+    // ========================================
+    // Document Timeline Functionality
+    // ========================================
+    let timelineUploadedFiles = [];
+    let lastTimeline = null;
+    let lastSourceTexts = [];
+
+    // Drag and Drop handlers for timeline
+    function handleTimelineDragOver(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'copy';
+      document.getElementById('timelineUploadZone').classList.add('drag-over');
+    }
+
+    function handleTimelineDragLeave(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('timelineUploadZone').classList.remove('drag-over');
+    }
+
+    async function handleTimelineDrop(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      document.getElementById('timelineUploadZone').classList.remove('drag-over');
+
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length > 0) {
+        await processTimelineFiles(files);
+      }
+    }
+
+    async function processTimelineFiles(files) {
+      for (const file of files) {
+        if (!file.name.endsWith('.pdf') && !file.name.endsWith('.txt')) {
+          continue;
+        }
+
+        if (!timelineUploadedFiles.some(f => f.name === file.name)) {
+          const fileEntry = {
+            file: file,
+            name: file.name,
+            content: null,
+            dataUrl: null
+          };
+
+          if (file.name.endsWith('.txt')) {
+            fileEntry.content = await file.text();
+          } else if (file.name.endsWith('.pdf')) {
+            const arrayBuffer = await file.arrayBuffer();
+            const base64 = btoa(
+              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+            );
+            fileEntry.dataUrl = `data:application/pdf;base64,${base64}`;
+          }
+
+          timelineUploadedFiles.push(fileEntry);
+        }
+      }
+
+      updateTimelineFileList();
+    }
+
+    async function handleTimelineFileSelect(event) {
+      const files = Array.from(event.target.files);
+      if (!files.length) return;
+      await processTimelineFiles(files);
+    }
+
+    function removeTimelineFile(index) {
+      timelineUploadedFiles.splice(index, 1);
+      updateTimelineFileList();
+    }
+
+    function updateTimelineFileList() {
+      const fileList = document.getElementById('timelineFileList');
+      if (timelineUploadedFiles.length === 0) {
+        fileList.innerHTML = '';
+        return;
+      }
+
+      fileList.innerHTML = timelineUploadedFiles.map((f, index) => `
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">${f.name.endsWith('.pdf') ? '&#128196;' : '&#128195;'}</span>
+            <span>${f.name}</span>
+            <span class="file-size">(${formatFileSize(f.file.size)})</span>
+          </div>
+          <button type="button" class="remove-file" onclick="removeTimelineFile(${index})" title="Remove file">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    async function extractTimeline() {
+      const btn = document.getElementById('timelineBtn');
+      const loading = document.getElementById('timelineLoading');
+      const results = document.getElementById('timelineResults');
+      const error = document.getElementById('timelineError');
+      const placeholder = document.getElementById('timelinePlaceholder');
+      const additionalContext = document.getElementById('timelineContext').value.trim();
+
+      if (!verifiedStaff) {
+        error.textContent = 'Please select your name and enter your PIN before extracting a timeline.';
+        error.classList.add('active');
+        return;
+      }
+
+      error.classList.remove('active');
+      results.classList.remove('active');
+      placeholder.style.display = 'none';
+
+      if (timelineUploadedFiles.length === 0) {
+        showTimelineError('Please upload at least one document');
+        return;
+      }
+
+      btn.disabled = true;
+      loading.classList.add('active');
+
+      try {
+        const formData = new FormData();
+        timelineUploadedFiles.forEach((f) => {
+          formData.append('files', f.file);
+        });
+        if (additionalContext) {
+          formData.append('additionalContext', additionalContext);
+        }
+
+        const response = await fetch('/api/timeline', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Timeline extraction failed');
+        }
+
+        lastSourceTexts = data.sourceTexts || [];
+        displayTimeline(data.timeline, data.usage, data.ocrResults);
+      } catch (err) {
+        showTimelineError(err.message);
+      } finally {
+        btn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function showTimelineError(message) {
+      const error = document.getElementById('timelineError');
+      error.textContent = message;
+      error.classList.add('active');
+      document.getElementById('timelinePlaceholder').style.display = 'block';
+    }
+
+    function displayTimeline(t, usage, ocrResults) {
+      const results = document.getElementById('timelineResults');
+      lastTimeline = t;
+      document.getElementById('timelineExportButtons').style.display = 'flex';
+      // Show the Q&A panel now that we have a timeline
+      document.getElementById('timelineQAPanel').style.display = 'block';
+      clearTimelineQA();
+
+      let html = '';
+
+      // OCR Quality warnings
+      if (ocrResults && ocrResults.length > 0) {
+        const warnings = ocrResults.filter(r => r.quality !== 'good');
+        if (warnings.length > 0) {
+          html += `<div class="section" style="margin-bottom:16px;">`;
+          warnings.forEach(r => {
+            const color = r.quality === 'poor' ? 'var(--color-danger)' : 'var(--color-warning)';
+            const bg = r.quality === 'poor' ? 'var(--color-danger-bg)' : 'var(--color-warning-bg)';
+            html += `
+              <div style="padding:10px 14px;margin-bottom:6px;background:${bg};border:1px solid ${color};border-radius:8px;font-size:13px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:18px;">${r.quality === 'poor' ? '&#9888;' : '&#9888;'}</span>
+                <div>
+                  <strong style="color:${color};">${r.quality === 'poor' ? 'Low' : 'Fair'} scan quality</strong> for <strong>${escapeHtml(r.filename)}</strong>
+                  <span style="color:var(--color-text-muted);"> (score: ${r.score}/100)</span>
+                  <div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">Dates and text may be inaccurate — verify against the original document.</div>
+                </div>
+              </div>`;
+          });
+          html += `</div>`;
+        }
+      }
+
+      // DOCUMENTS SUMMARY
+      if (t.documents && t.documents.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#128195;</span>
+              <h3>Documents Analyzed (${t.documents.length})</h3>
+            </div>
+            <div class="doc-summary-grid">
+              ${t.documents.map(d => `
+                <div class="doc-summary-card">
+                  <div class="doc-type-label">${escapeHtml(d.documentType || 'DOCUMENT')}</div>
+                  <h4>${escapeHtml(d.filename)}</h4>
+                  ${d.title ? `<p><strong>${escapeHtml(d.title)}</strong></p>` : ''}
+                  ${d.dateRange ? `<p style="font-family: var(--font-mono); font-size: 12px;">${escapeHtml(d.dateRange)}</p>` : ''}
+                  ${d.summary ? `<p>${escapeHtml(d.summary)}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // TIMELINE SPAN
+      if (t.timelineSpan) {
+        html += `
+          <div class="section">
+            <div class="timeline-span">
+              <span class="span-dates">${escapeHtml(t.timelineSpan.earliest || '?')} &rarr; ${escapeHtml(t.timelineSpan.latest || '?')}</span>
+              <span class="span-duration">${escapeHtml(t.timelineSpan.totalDuration || '')}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      // KEY DATES
+      if (t.keyDates && t.keyDates.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#128204;</span>
+              <h3>Key Dates</h3>
+            </div>
+            <div class="key-dates-container">
+              ${t.keyDates.map(kd => `
+                <div class="key-date-chip ${kd.significance || ''}">
+                  <span class="key-date-label">${escapeHtml(kd.label)}</span>
+                  <span class="key-date-value">${escapeHtml(kd.date)}</span>
+                  ${kd.status && kd.status !== 'UNKNOWN' ? `<span class="key-date-status ${kd.status}">${kd.status}</span>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // CHRONOLOGICAL TIMELINE
+      if (t.timeline && t.timeline.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#128197;</span>
+              <h3>Chronological Timeline (${t.timeline.length} events)</h3>
+            </div>
+            <div class="timeline" id="timelineEventsContainer">
+              ${t.timeline.map((e, idx) => `
+                <div class="timeline-event" id="event-${idx}" data-idx="${idx}" draggable="true" ondragstart="onEventDragStart(event, ${idx})" ondragover="onEventDragOver(event)" ondrop="onEventDrop(event, ${idx})" ondragend="onEventDragEnd(event)">
+                  <div class="timeline-date" ondblclick="editEventDate(${idx})" title="Double-click to edit date" style="cursor:text;">${escapeHtml(e.date)}</div>
+                  <div class="timeline-content">
+                    <span class="event-type-badge ${e.eventType || 'OTHER'}">${e.eventType || 'OTHER'}</span>
+                    ${e.significance === 'HIGH' ? '<span class="likelihood HIGH" style="margin-right: 8px;">HIGH</span>' : ''}
+                    ${escapeHtml(e.event)}
+                    <div class="timeline-source">Source: ${renderTimelineSource(e.source)}</div>
+                    ${e.annotation ? `<div class="event-annotation" id="annot-${idx}"><span class="annot-flag ${e.annotationFlag || ''}">${e.annotationFlag === 'verify' ? '&#9888; Verify' : e.annotationFlag === 'important' ? '&#11088; Important' : e.annotationFlag === 'conflict' ? '&#10060; Conflict' : '&#128221;'}</span> ${escapeHtml(e.annotation)}</div>` : ''}
+                    <div class="event-actions">
+                      <button class="event-action-btn" onclick="annotateEvent(${idx})" title="Add note">&#128221;</button>
+                      ${e.annotation ? `<button class="event-action-btn" onclick="removeAnnotation(${idx})" title="Remove note" style="color:var(--color-danger);">&#10005;</button>` : ''}
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // CONFLICTS
+      if (t.conflicts && t.conflicts.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#9888;</span>
+              <h3>Conflicts Between Documents (${t.conflicts.length})</h3>
+            </div>
+            ${t.conflicts.map(c => `
+              <div class="conflict-entry">
+                <strong>${escapeHtml(c.description)}</strong>
+                <span class="likelihood ${c.significance || 'MEDIUM'}">${c.significance || 'MEDIUM'}</span>
+                <div class="conflict-sources">
+                  ${(c.sources || []).map(s => `
+                    <div class="conflict-source-item">
+                      &bull; <strong>${escapeHtml(s.filename)}</strong>${s.page ? ' (p. ' + s.page + ')' : ''}: ${escapeHtml(s.claim)}
+                    </div>
+                  `).join('')}
+                </div>
+                ${c.resolution ? `<div class="conflict-resolution">Resolution: ${escapeHtml(c.resolution)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // NOTES
+      if (t.notes && t.notes.length > 0) {
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <span class="section-icon">&#128221;</span>
+              <h3>Notes</h3>
+            </div>
+            ${t.notes.map(n => `
+              <div class="info-box">
+                ${escapeHtml(n)}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // GAP & CONFLICT ANALYSIS
+      if (t.timeline && t.timeline.length > 1) {
+        const gaps = [];
+        for (let i = 1; i < t.timeline.length; i++) {
+          const d1 = new Date(t.timeline[i-1].date);
+          const d2 = new Date(t.timeline[i].date);
+          if (!isNaN(d1) && !isNaN(d2)) {
+            const diffDays = (d2 - d1) / (1000 * 60 * 60 * 24);
+            if (diffDays > 180) {
+              gaps.push({ from: t.timeline[i-1].date, to: t.timeline[i].date, days: Math.round(diffDays) });
+            }
+          }
+        }
+        if (gaps.length > 0) {
+          html += `
+            <div class="section">
+              <div class="section-header">
+                <span class="section-icon">&#9888;</span>
+                <h3>Timeline Gaps Detected (${gaps.length})</h3>
+              </div>
+              <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">Periods longer than 6 months with no events. These may indicate missing documents.</div>
+              ${gaps.map(g => `
+                <div style="padding:8px 14px;margin-bottom:6px;background:var(--color-warning-bg);border-left:3px solid var(--color-warning);border-radius:0 6px 6px 0;font-size:13px;">
+                  <strong>${g.from}</strong> &rarr; <strong>${g.to}</strong> &mdash; <span style="color:var(--color-warning);font-weight:600;">${g.days} days gap</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        }
+      }
+
+      // META & DISCLAIMER
+      html += `
+        <div class="meta">
+          ${usage ? `<span>Tokens: ${usage.inputTokens} in / ${usage.outputTokens} out</span>` : ''}
+          <span>${t.timeline ? t.timeline.length : 0} events extracted</span>
+        </div>
+        <div class="disclaimer">
+          <strong>DISCLAIMER:</strong> This AI-assisted timeline extraction is advisory only. All dates and events should be verified against original documents.
+        </div>
+      `;
+
+      results.innerHTML = html;
+      results.classList.add('active');
+
+      // Show/hide source text button
+      const srcBtn = document.getElementById('toggleSourceBtn');
+      if (srcBtn) srcBtn.style.display = lastSourceTexts.length > 0 ? 'inline-block' : 'none';
+      document.getElementById('sourceTextPanel').style.display = 'none';
+    }
+
+    function toggleSourcePanel() {
+      const panel = document.getElementById('sourceTextPanel');
+      const btn = document.getElementById('toggleSourceBtn');
+      if (panel.style.display === 'none') {
+        // Populate content
+        let html = '';
+        lastSourceTexts.forEach(s => {
+          html += `<div style="margin-bottom:20px;"><div style="font-weight:700;color:var(--color-text);margin-bottom:8px;font-family:var(--font-sans);font-size:14px;">${escapeHtml(s.filename)}</div>${escapeHtml(s.text)}</div>`;
+        });
+        document.getElementById('sourceTextContent').innerHTML = html;
+        panel.style.display = 'block';
+        btn.innerHTML = '&#128196; Hide Source Text';
+      } else {
+        panel.style.display = 'none';
+        btn.innerHTML = '&#128196; View Source Text';
+      }
+    }
+
+    function annotateEvent(idx) {
+      if (!lastTimeline || !lastTimeline.timeline || !lastTimeline.timeline[idx]) return;
+      const evt = lastTimeline.timeline[idx];
+      const existing = document.getElementById('annotModal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'annotModal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = `
+        <div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+          <h3 style="margin:0 0 4px;font-size:16px;color:var(--color-text);">Annotate Event</h3>
+          <p style="margin:0 0 14px;font-size:13px;color:var(--color-text-muted);">${escapeHtml(evt.date)} — ${escapeHtml(evt.event).slice(0,80)}...</p>
+          <label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Flag</label>
+          <select id="annotFlag" style="width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);margin-bottom:12px;background:var(--color-surface);color:var(--color-text);">
+            <option value="">None</option>
+            <option value="verify" ${evt.annotationFlag === 'verify' ? 'selected' : ''}>&#9888; Verify this date</option>
+            <option value="important" ${evt.annotationFlag === 'important' ? 'selected' : ''}>&#11088; Important</option>
+            <option value="conflict" ${evt.annotationFlag === 'conflict' ? 'selected' : ''}>&#10060; Conflict</option>
+          </select>
+          <label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Note</label>
+          <textarea id="annotNote" style="width:100%;height:80px;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);resize:vertical;background:var(--color-surface);color:var(--color-text);box-sizing:border-box;">${escapeHtml(evt.annotation || '')}</textarea>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+            <button class="btn btn-secondary" onclick="document.getElementById('annotModal').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>
+            <button class="btn btn-primary" onclick="saveAnnotation(${idx})" style="font-size:13px;padding:8px 18px;">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      document.getElementById('annotNote').focus();
+    }
+
+    function saveAnnotation(idx) {
+      const note = document.getElementById('annotNote').value.trim();
+      const flag = document.getElementById('annotFlag').value;
+      lastTimeline.timeline[idx].annotation = note || null;
+      lastTimeline.timeline[idx].annotationFlag = flag || null;
+      document.getElementById('annotModal').remove();
+      displayTimeline(lastTimeline, null);
+    }
+
+    let dragSrcIdx = null;
+
+    function onEventDragStart(e, idx) {
+      dragSrcIdx = idx;
+      e.target.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function onEventDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const el = e.target.closest('.timeline-event');
+      document.querySelectorAll('.timeline-event.drag-over').forEach(x => x.classList.remove('drag-over'));
+      if (el) el.classList.add('drag-over');
+    }
+
+    function onEventDrop(e, targetIdx) {
+      e.preventDefault();
+      document.querySelectorAll('.timeline-event.drag-over').forEach(x => x.classList.remove('drag-over'));
+      if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
+
+      const events = lastTimeline.timeline;
+      const [moved] = events.splice(dragSrcIdx, 1);
+      events.splice(targetIdx, 0, moved);
+      dragSrcIdx = null;
+      displayTimeline(lastTimeline, null);
+    }
+
+    function onEventDragEnd(e) {
+      e.target.classList.remove('dragging');
+      document.querySelectorAll('.timeline-event.drag-over').forEach(x => x.classList.remove('drag-over'));
+      dragSrcIdx = null;
+    }
+
+    function editEventDate(idx) {
+      const evt = lastTimeline.timeline[idx];
+      const el = document.querySelector(`#event-${idx} .timeline-date`);
+      const current = evt.date;
+      el.innerHTML = `<input type="text" value="${escapeHtml(current)}" style="width:120px;padding:2px 6px;border:1px solid var(--color-primary);border-radius:4px;font-size:inherit;font-family:var(--font-mono);color:var(--color-text);"
+        onblur="commitDateEdit(${idx}, this.value)"
+        onkeydown="if(event.key==='Enter'){this.blur();}if(event.key==='Escape'){this.value='${escapeHtml(current)}';this.blur();}"
+      />`;
+      el.querySelector('input').focus();
+      el.querySelector('input').select();
+    }
+
+    function commitDateEdit(idx, newDate) {
+      newDate = newDate.trim();
+      if (newDate && newDate !== lastTimeline.timeline[idx].date) {
+        lastTimeline.timeline[idx].date = newDate;
+        // Re-sort by date after edit
+        lastTimeline.timeline.sort((a, b) => a.date.localeCompare(b.date));
+      }
+      displayTimeline(lastTimeline, null);
+    }
+
+    function removeAnnotation(idx) {
+      lastTimeline.timeline[idx].annotation = null;
+      lastTimeline.timeline[idx].annotationFlag = null;
+      displayTimeline(lastTimeline, null);
+    }
+
+    function exportTimelineToTxt() {
+      if (!lastTimeline) return;
+      const t = lastTimeline;
+
+      let text = `\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+DOCUMENT TIMELINE
+Generated: ${new Date().toLocaleString()}
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+
+`;
+
+      // Documents
+      if (t.documents && t.documents.length > 0) {
+        text += `DOCUMENTS ANALYZED (${t.documents.length})
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        t.documents.forEach(d => {
+          text += `- ${d.filename} [${d.documentType}]\n`;
+          if (d.title) text += `  Title: ${d.title}\n`;
+          if (d.dateRange) text += `  Date Range: ${d.dateRange}\n`;
+          if (d.summary) text += `  Summary: ${d.summary}\n`;
+          text += '\n';
+        });
+      }
+
+      // Timeline span
+      if (t.timelineSpan) {
+        text += `TIMELINE SPAN
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+${t.timelineSpan.earliest || '?'} -> ${t.timelineSpan.latest || '?'}
+Duration: ${t.timelineSpan.totalDuration || 'Unknown'}
+
+`;
+      }
+
+      // Key dates
+      if (t.keyDates && t.keyDates.length > 0) {
+        text += `KEY DATES
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        t.keyDates.forEach(kd => {
+          text += `- ${kd.date}: ${kd.label} [${kd.significance}]${kd.status !== 'UNKNOWN' ? ' (' + kd.status + ')' : ''}\n`;
+        });
+        text += '\n';
+      }
+
+      // Timeline events
+      if (t.timeline && t.timeline.length > 0) {
+        text += `CHRONOLOGICAL TIMELINE (${t.timeline.length} events)
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        t.timeline.forEach(e => {
+          const sourceText = e.source
+            ? `${e.source.filename}${e.source.page ? ' (p. ' + e.source.page + ')' : ''}`
+            : 'Unknown';
+          text += `${e.date} [${e.eventType}] ${e.significance === 'HIGH' ? '***' : ''}${e.event}${e.significance === 'HIGH' ? '***' : ''}\n`;
+          text += `  Source: ${sourceText}\n\n`;
+        });
+      }
+
+      // Conflicts
+      if (t.conflicts && t.conflicts.length > 0) {
+        text += `CONFLICTS (${t.conflicts.length})
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        t.conflicts.forEach(c => {
+          text += `- ${c.description} [${c.significance}]\n`;
+          (c.sources || []).forEach(s => {
+            text += `  * ${s.filename}${s.page ? ' (p. ' + s.page + ')' : ''}: ${s.claim}\n`;
+          });
+          if (c.resolution) text += `  Resolution: ${c.resolution}\n`;
+          text += '\n';
+        });
+      }
+
+      // Notes
+      if (t.notes && t.notes.length > 0) {
+        text += `NOTES
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        t.notes.forEach(n => text += `- ${n}\n`);
+        text += '\n';
+      }
+
+      text += `\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+DISCLAIMER: This AI-assisted timeline extraction is advisory only.
+All dates and events should be verified against original documents.
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+`;
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `document-timeline-${new Date().toISOString().slice(0,10)}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportTimelineToDocx() {
+      if (!lastTimeline) return;
+      const t = lastTimeline;
+
+      let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>Document Timeline</title>
+<style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#333;}
+h1{font-size:18pt;color:#1e368e;border-bottom:2px solid #1e368e;padding-bottom:6px;}
+h2{font-size:14pt;color:#1e368e;margin-top:18pt;}
+table{border-collapse:collapse;width:100%;margin:8pt 0;}
+th,td{border:1px solid #ccc;padding:6pt 8pt;text-align:left;font-size:10pt;}
+th{background:#f0f2f8;font-weight:bold;}
+.high{background:#fff3cd;font-weight:bold;}
+.annotation{background:#fff8e1;border-left:3px solid #e67e22;padding:4pt 8pt;margin:4pt 0;font-size:9pt;font-style:italic;}
+.disclaimer{margin-top:20pt;padding:10pt;background:#f8f8f8;border:1px solid #ddd;font-size:9pt;color:#666;}
+</style></head><body>`;
+
+      html += `<h1>Document Timeline</h1><p style="color:#666;font-size:9pt;">Generated: ${new Date().toLocaleString()}</p>`;
+
+      if (t.documents && t.documents.length > 0) {
+        html += `<h2>Documents Analyzed (${t.documents.length})</h2><table><tr><th>File</th><th>Type</th><th>Date Range</th><th>Summary</th></tr>`;
+        t.documents.forEach(d => {
+          html += `<tr><td>${d.filename}</td><td>${d.documentType || ''}</td><td>${d.dateRange || ''}</td><td>${d.summary || ''}</td></tr>`;
+        });
+        html += '</table>';
+      }
+
+      if (t.timelineSpan) {
+        html += `<h2>Timeline Span</h2><p><strong>${t.timelineSpan.earliest || '?'}</strong> to <strong>${t.timelineSpan.latest || '?'}</strong> (${t.timelineSpan.totalDuration || ''})</p>`;
+      }
+
+      if (t.keyDates && t.keyDates.length > 0) {
+        html += `<h2>Key Dates</h2><table><tr><th>Date</th><th>Event</th><th>Significance</th><th>Status</th></tr>`;
+        t.keyDates.forEach(kd => {
+          html += `<tr><td>${kd.date}</td><td>${kd.label}</td><td>${kd.significance || ''}</td><td>${kd.status || ''}</td></tr>`;
+        });
+        html += '</table>';
+      }
+
+      if (t.timeline && t.timeline.length > 0) {
+        html += `<h2>Chronological Timeline (${t.timeline.length} events)</h2><table><tr><th>Date</th><th>Type</th><th>Event</th><th>Source</th></tr>`;
+        t.timeline.forEach(e => {
+          const src = e.source ? `${e.source.filename}${e.source.page ? ' (p.' + e.source.page + ')' : ''}` : '';
+          const cls = e.significance === 'HIGH' ? ' class="high"' : '';
+          html += `<tr${cls}><td>${e.date}</td><td>${e.eventType || ''}</td><td>${e.event}`;
+          if (e.annotation) html += `<div class="annotation">${e.annotationFlag ? e.annotationFlag.toUpperCase() + ': ' : ''}${e.annotation}</div>`;
+          html += `</td><td>${src}</td></tr>`;
+        });
+        html += '</table>';
+      }
+
+      if (t.conflicts && t.conflicts.length > 0) {
+        html += `<h2>Conflicts (${t.conflicts.length})</h2>`;
+        t.conflicts.forEach(c => {
+          html += `<p><strong>${c.description}</strong> [${c.significance}]</p><ul>`;
+          (c.sources || []).forEach(s => { html += `<li>${s.filename}${s.page ? ' (p.' + s.page + ')' : ''}: ${s.claim}</li>`; });
+          html += '</ul>';
+          if (c.resolution) html += `<p><em>Resolution: ${c.resolution}</em></p>`;
+        });
+      }
+
+      html += `<div class="disclaimer"><strong>DISCLAIMER:</strong> This AI-assisted timeline extraction is advisory only. All dates and events should be verified against original documents.</div>`;
+      html += '</body></html>';
+
+      const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `document-timeline-${new Date().toISOString().slice(0,10)}.doc`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearTimeline() {
+      document.getElementById('timelineContext').value = '';
+      document.getElementById('timelineFileInput').value = '';
+      document.getElementById('timelineFileList').innerHTML = '';
+      document.getElementById('timelineError').classList.remove('active');
+      document.getElementById('timelineResults').classList.remove('active');
+      document.getElementById('timelineExportButtons').style.display = 'none';
+      document.getElementById('timelinePlaceholder').style.display = 'block';
+      timelineUploadedFiles = [];
+      lastTimeline = null;
+      document.getElementById('timelineQAPanel').style.display = 'none';
+      clearTimelineQA();
+    }
+
+    // ── PIN Modal (shared) ────────────────────────────────────────────────────
+    let _pinCallback = null;
+    let _pinCancelSelector = null;
+
+    function openPinModal(staffId, onSuccess, cancelSelectorId) {
+      _pinCallback = onSuccess;
+      _pinCancelSelector = cancelSelectorId;
+      document.getElementById('pinModalTitle').textContent = `Welcome, ${staffId}`;
+      document.getElementById('pinModalSubtitle').textContent = 'Enter your PIN to access your records';
+      document.getElementById('pinInput').value = '';
+      document.getElementById('pinError').style.display = 'none';
+      document.getElementById('pinModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('pinInput').focus(), 50);
+    }
+
+    async function submitPin() {
+      // Determine which selector is active
+      const staffId = document.getElementById('staffSelector').value ||
+                      document.getElementById('translateStaffSelector').value;
+      const pin = document.getElementById('pinInput').value.trim();
+      const errorEl = document.getElementById('pinError');
+
+      if (!pin) { errorEl.textContent = 'Please enter your PIN.'; errorEl.style.display = 'block'; return; }
+
+      try {
+        const response = await fetch('/api/records/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: staffId, pin })
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          errorEl.textContent = 'Incorrect PIN. Please try again.';
+          errorEl.style.display = 'block';
+          document.getElementById('pinInput').value = '';
+          document.getElementById('pinInput').focus();
+          return;
+        }
+
+        document.getElementById('pinModal').style.display = 'none';
+        if (_pinCallback) _pinCallback(staffId);
+      } catch (err) {
+        errorEl.textContent = 'Verification failed. Please try again.';
+        errorEl.style.display = 'block';
+      }
+    }
+
+    function cancelPin() {
+      document.getElementById('pinModal').style.display = 'none';
+      if (_pinCancelSelector) document.getElementById(_pinCancelSelector).value = '';
+      _pinCallback = null;
+      _pinCancelSelector = null;
+    }
+
+    // ── Timeline Staff / Records ───────────────────────────────────────────
+    let verifiedStaff = null;
+
+    function onStaffChange() {
+      const staffId = document.getElementById('staffSelector').value;
+      verifiedStaff = null;
+      document.getElementById('myRecordsPanel').style.display = 'none';
+      document.getElementById('auditLogPanel').style.display = 'none';
+      if (staffId) {
+        openPinModal(staffId, (id) => {
+          verifiedStaff = id;
+          document.getElementById('myRecordsPanel').style.display = 'block';
+          document.getElementById('auditLogPanel').style.display = 'block';
+          loadMyRecords();
+          loadAuditLog();
+        }, 'staffSelector');
+      }
+    }
+
+    function saveTimelineRecord() {
+      const staffId = document.getElementById('staffSelector').value;
+      if (!staffId || !verifiedStaff) {
+        showSaveStatus('Please select your name and enter your PIN before saving.', false);
+        return;
+      }
+      if (!lastTimeline) return;
+
+      // Show naming popup
+      const defaultName = timelineUploadedFiles.map(f => f.name).join(', ');
+      showSaveModal(defaultName, async (recordName, caseNumber) => {
+        const btn = document.getElementById('saveRecordBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        try {
+          const fileNames = timelineUploadedFiles.map(f => f.name);
+          const notes = document.getElementById('timelineContext').value.trim() || null;
+
+          const response = await fetch('/api/records', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, timeline: lastTimeline })
+          });
+
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Save failed');
+
+          showSaveStatus('&#10003; Saved successfully to your records.', true);
+          loadMyRecords();
+        } catch (err) {
+          showSaveStatus('&#10007; ' + err.message, false);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = '&#128190; Save to My Records';
+        }
+      });
+    }
+
+    function showSaveModal(defaultName, onSave) {
+      // Remove any existing modal
+      const existing = document.getElementById('saveModal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'saveModal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = `
+        <div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+          <h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Save Record</h3>
+          <p style="margin:0 0 16px;font-size:13px;color:var(--color-text-muted);">Give this record a name so you can find it later.</p>
+          <label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record Name</label>
+          <input id="saveModalInput" type="text" value="${escapeHtml(defaultName)}" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />
+          <label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Case / Matter Number <span style="font-weight:400;color:var(--color-text-muted);">(optional)</span></label>
+          <input id="saveModalCase" type="text" placeholder="e.g. 2024-DC-0123" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;" />
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
+            <button id="saveModalCancel" class="btn btn-secondary" style="font-size:13px;padding:8px 18px;">Cancel</button>
+            <button id="saveModalConfirm" class="btn btn-primary" style="font-size:13px;padding:8px 18px;">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      const input = document.getElementById('saveModalInput');
+      input.select();
+      input.focus();
+
+      const close = () => modal.remove();
+
+      document.getElementById('saveModalCancel').onclick = close;
+      modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+      document.getElementById('saveModalConfirm').onclick = () => {
+        const name = input.value.trim() || defaultName;
+        const caseNum = document.getElementById('saveModalCase').value.trim();
+        close();
+        onSave(name, caseNum);
+      };
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { document.getElementById('saveModalConfirm').click(); }
+        if (e.key === 'Escape') { close(); }
+      });
+    }
+
+    function showSaveStatus(message, success) {
+      const el = document.getElementById('saveRecordStatus');
+      el.innerHTML = message;
+      el.style.display = 'block';
+      el.style.background = success ? 'var(--color-success-bg)' : 'var(--color-danger-bg)';
+      el.style.color = success ? 'var(--color-success)' : 'var(--color-danger)';
+      el.style.border = `1px solid ${success ? 'var(--color-success)' : 'var(--color-danger)'}`;
+      setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    let myRecordsData = [];
+    let myRecordsSortKey = 'created_at';
+    let myRecordsSortAsc = false;
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function sortMyRecords(key) {
+      if (myRecordsSortKey === key) {
+        myRecordsSortAsc = !myRecordsSortAsc;
+      } else {
+        myRecordsSortKey = key;
+        myRecordsSortAsc = key === 'record_name'; // name ascending by default, others descending
+      }
+      renderMyRecords();
+    }
+
+    function renderMyRecords() {
+      const container = document.getElementById('myRecordsList');
+      const searchBar = document.getElementById('myRecordsSearch');
+      if (!myRecordsData.length) {
+        searchBar.style.display = 'none';
+        container.innerHTML = '<div class="placeholder" style="padding:32px 0;"><p class="placeholder-text">No saved timelines yet.</p></div>';
+        return;
+      }
+      searchBar.style.display = 'block';
+
+      // Filter
+      const query = (document.getElementById('recordSearchInput').value || '').toLowerCase();
+      const dateFrom = document.getElementById('recordDateFrom').value;
+      const dateTo = document.getElementById('recordDateTo').value;
+
+      let filtered = myRecordsData;
+      if (query) {
+        filtered = filtered.filter(r => {
+          const searchable = [
+            r.record_name || '',
+            Array.isArray(r.file_names) ? r.file_names.join(' ') : '',
+            r.notes || '',
+            r.case_number || ''
+          ].join(' ').toLowerCase();
+          return searchable.includes(query);
+        });
+      }
+      if (dateFrom) {
+        filtered = filtered.filter(r => r.created_at.slice(0, 10) >= dateFrom);
+      }
+      if (dateTo) {
+        filtered = filtered.filter(r => r.created_at.slice(0, 10) <= dateTo);
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="placeholder" style="padding:24px 0;"><p class="placeholder-text">No records match your search.</p></div>';
+        return;
+      }
+
+      const sorted = [...filtered].sort((a, b) => {
+        let va, vb;
+        if (myRecordsSortKey === 'record_name') {
+          va = (a.record_name || '').toLowerCase();
+          vb = (b.record_name || '').toLowerCase();
+        } else if (myRecordsSortKey === 'created_at') {
+          va = a.created_at;
+          vb = b.created_at;
+        } else if (myRecordsSortKey === 'timeline_size') {
+          va = a.timeline_size || 0;
+          vb = b.timeline_size || 0;
+        }
+        if (va < vb) return myRecordsSortAsc ? -1 : 1;
+        if (va > vb) return myRecordsSortAsc ? 1 : -1;
+        return 0;
+      });
+
+      const arrow = (key) => myRecordsSortKey === key ? (myRecordsSortAsc ? ' &#9650;' : ' &#9660;') : '';
+      const checkedIds = new Set(document.querySelectorAll('.merge-cb:checked') ? Array.from(document.querySelectorAll('.merge-cb:checked')).map(cb => Number(cb.value)) : []);
+
+      container.innerHTML = `
+        <div id="mergeBar" style="display:none; margin-bottom:10px; padding:10px 14px; background:var(--color-warning-bg); border:1px solid var(--color-warning); border-radius:8px; font-size:13px; display:flex; align-items:center; gap:10px; justify-content:space-between;">
+          <span id="mergeBarText">Select 2+ records to merge</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" id="mergeBtn" onclick="mergeSelectedRecords()" style="font-size:12px;padding:5px 14px;" disabled>Merge Selected</button>
+            <button class="btn btn-secondary" onclick="cancelMerge()" style="font-size:12px;padding:5px 10px;">Cancel</button>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--color-border);text-align:left;">
+              <th style="padding:10px 6px;width:32px;"><input type="checkbox" id="mergeSelectAll" onchange="toggleAllMergeCb(this.checked)" title="Select all" style="cursor:pointer;" /></th>
+              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('record_name')">Name${arrow('record_name')}</th>
+              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('created_at')">Saved${arrow('created_at')}</th>
+              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('timeline_size')">Size${arrow('timeline_size')}</th>
+              <th style="padding:10px 12px;width:1%;white-space:nowrap;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map(r => `
+              <tr style="border-bottom:1px solid var(--color-border-light);" onmouseover="this.style.background='var(--color-bg)'" onmouseout="this.style.background='transparent'">
+                <td style="padding:10px 6px;"><input type="checkbox" class="merge-cb" value="${r.id}" onchange="updateMergeBar()" ${checkedIds.has(r.id) ? 'checked' : ''} style="cursor:pointer;" /></td>
+                <td style="padding:10px 12px;">
+                  <a href="#" onclick="event.preventDefault(); loadRecord(${r.id})" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+                    ${escapeHtml(r.record_name || (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names))}
+                  </a>
+                  ${r.case_number ? `<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px;">${escapeHtml(r.case_number)}</span>` : ''}
+                  ${r.notes ? `<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.notes)}</div>` : ''}
+                </td>
+                <td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">${new Date(r.created_at).toLocaleString()}</td>
+                <td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">${formatFileSize(r.timeline_size || 0)}</td>
+                <td style="padding:10px 12px;white-space:nowrap;">
+                  <button class="btn btn-secondary" onclick="loadRecord(${r.id})" style="font-size:12px;padding:4px 10px;margin-right:4px;">Load</button>
+                  <button class="btn btn-secondary" onclick="shareRecord(${r.id})" style="font-size:12px;padding:4px 10px;margin-right:4px;" title="Share">&#128101;</button>
+                  <button class="btn" onclick="deleteRecord(${r.id})" style="font-size:12px;padding:4px 10px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+      updateMergeBar();
+    }
+
+    function toggleAllMergeCb(checked) {
+      document.querySelectorAll('.merge-cb').forEach(cb => { cb.checked = checked; });
+      updateMergeBar();
+    }
+
+    function updateMergeBar() {
+      const checked = document.querySelectorAll('.merge-cb:checked');
+      const bar = document.getElementById('mergeBar');
+      const btn = document.getElementById('mergeBtn');
+      if (!bar) return;
+      if (checked.length > 0) {
+        bar.style.display = 'flex';
+        document.getElementById('mergeBarText').textContent = `${checked.length} record(s) selected`;
+        btn.disabled = checked.length < 2;
+      } else {
+        bar.style.display = 'none';
+      }
+    }
+
+    function cancelMerge() {
+      document.querySelectorAll('.merge-cb').forEach(cb => { cb.checked = false; });
+      document.getElementById('mergeSelectAll').checked = false;
+      updateMergeBar();
+    }
+
+    async function mergeSelectedRecords() {
+      const ids = Array.from(document.querySelectorAll('.merge-cb:checked')).map(cb => Number(cb.value));
+      if (ids.length < 2) return;
+
+      const defaultName = 'Merged Timeline ' + new Date().toLocaleDateString();
+      showSaveModal(defaultName, async (recordName) => {
+        try {
+          const staffId = document.getElementById('staffSelector').value;
+          const response = await fetch('/api/records/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: staffId, record_ids: ids, record_name: recordName })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error);
+
+          displayTimeline(data.timeline, null);
+          showSaveStatus('&#10003; Merged and saved successfully!', true);
+          loadMyRecords();
+        } catch (err) {
+          alert('Merge failed: ' + err.message);
+        }
+      });
+    }
+
+    async function loadMyRecords() {
+      const staffId = document.getElementById('staffSelector').value;
+      if (!staffId) return;
+
+      const container = document.getElementById('myRecordsList');
+      container.innerHTML = '<p style="padding: 16px; color: var(--color-text-muted); font-size: 14px;">Loading...</p>';
+
+      try {
+        const response = await fetch(`/api/records/${staffId}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        myRecordsData = data.records;
+        renderMyRecords();
+      } catch (err) {
+        container.innerHTML = `<p style="padding: 16px; color: var(--color-danger); font-size: 14px;">Error loading records: ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    function shareRecord(id) {
+      const record = myRecordsData.find(r => r.id === id);
+      if (!record) return;
+      const staffId = document.getElementById('staffSelector').value;
+      const others = ['Caterina', 'Abesha', 'Robel'].filter(s => s !== staffId);
+      const currentShares = record.shared_with || [];
+
+      const existing = document.getElementById('shareModal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'shareModal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = `
+        <div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+          <h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Share Record</h3>
+          <p style="margin:0 0 16px;font-size:13px;color:var(--color-text-muted);">Select staff members to share "${escapeHtml(record.record_name || 'this record')}" with:</p>
+          ${others.map(s => `
+            <label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px;cursor:pointer;">
+              <input type="checkbox" class="share-cb" value="${s}" ${currentShares.includes(s) ? 'checked' : ''} />
+              ${escapeHtml(s)}
+            </label>
+          `).join('')}
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
+            <button class="btn btn-secondary" onclick="document.getElementById('shareModal').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>
+            <button class="btn btn-primary" onclick="submitShare(${id})" style="font-size:13px;padding:8px 18px;">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+    }
+
+    async function submitShare(id) {
+      const staffId = document.getElementById('staffSelector').value;
+      const shareWith = Array.from(document.querySelectorAll('.share-cb:checked')).map(cb => cb.value);
+      document.getElementById('shareModal').remove();
+      try {
+        const response = await fetch('/api/records/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: staffId, record_id: id, share_with: shareWith })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        loadMyRecords();
+      } catch (err) { alert('Share failed: ' + err.message); }
+    }
+
+    async function loadRecord(id) {
+      const staffId = document.getElementById('staffSelector').value;
+      try {
+        const response = await fetch(`/api/records/${staffId}/${id}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        displayTimeline(data.record.timeline, null);
+        window.scrollTo({ top: document.getElementById('timelineResults').offsetTop - 80, behavior: 'smooth' });
+      } catch (err) {
+        alert('Failed to load record: ' + err.message);
+      }
+    }
+
+    async function deleteRecord(id) {
+      const staffId = document.getElementById('staffSelector').value;
+      if (!confirm('Delete this saved timeline?')) return;
+
+      try {
+        const response = await fetch(`/api/records/${staffId}/${id}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        loadMyRecords();
+      } catch (err) {
+        alert('Failed to delete record: ' + err.message);
+      }
+    }
+
+    let auditLogData = [];
+
+    function filterAuditLog() {
+      const query = (document.getElementById('auditSearchInput').value || '').toLowerCase();
+      const container = document.getElementById('auditLogList');
+      if (!auditLogData.length) return;
+      const filtered = query ? auditLogData.filter(l =>
+        (l.action || '').toLowerCase().includes(query) ||
+        (l.details || '').toLowerCase().includes(query)
+      ) : auditLogData;
+      if (!filtered.length) {
+        container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No matching activity.</p></div>';
+        return;
+      }
+      renderAuditRows(filtered, container);
+    }
+
+    function renderAuditRows(logs, container) {
+      const icons = { save_timeline: '&#128190;', delete_record: '&#128465;', share_record: '&#128101;', merge_records: '&#128279;', extract_timeline: '&#128197;' };
+      container.innerHTML = logs.map(l => `<div style="padding:8px 14px;border-bottom:1px solid var(--color-border-light);font-size:13px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:16px;">${icons[l.action] || '&#128196;'}</span>
+        <div style="flex:1;">
+          <span style="font-weight:600;">${escapeHtml(l.action.replace(/_/g, ' '))}</span>
+          ${l.details ? `<span style="color:var(--color-text-muted);"> — ${escapeHtml(l.details)}</span>` : ''}
+        </div>
+        <span style="font-size:11px;color:var(--color-text-muted);white-space:nowrap;">${new Date(l.created_at).toLocaleString()}</span>
+      </div>`).join('');
+    }
+
+    async function loadAuditLog() {
+      const staffId = document.getElementById('staffSelector').value;
+      if (!staffId) return;
+      const container = document.getElementById('auditLogList');
+      try {
+        const response = await fetch(`/api/records/audit/${staffId}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        auditLogData = data.logs || [];
+        if (!auditLogData.length) {
+          container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No activity yet.</p></div>';
+          return;
+        }
+        document.getElementById('auditSearchInput').value = '';
+        renderAuditRows(auditLogData, container);
+      } catch (err) {
+        container.innerHTML = `<p style="padding:16px;color:var(--color-danger);font-size:13px;">Error: ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    // Timeline Q&A
+    let timelineQAHistory = [];
+    let timelineQATotalTokens = { input: 0, output: 0 };
+
+    async function askTimelineQuestion() {
+      if (!lastTimeline) return;
+
+      const questionInput = document.getElementById('timelineQAQuestion');
+      const submitBtn = document.getElementById('timelineQASubmitBtn');
+      const loading = document.getElementById('timelineQALoading');
+      const error = document.getElementById('timelineQAError');
+      const question = questionInput.value.trim();
+
+      if (!question) { showTimelineQAError('Please enter a question'); return; }
+      if (question.length < 5) { showTimelineQAError('Question is too short'); return; }
+
+      error.classList.remove('active');
+      submitBtn.disabled = true;
+      loading.classList.add('active');
+      document.getElementById('timelineQAPlaceholder').classList.add('hidden');
+
+      try {
+        const response = await fetch('/api/timeline-qa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            timeline: lastTimeline,
+            conversationHistory: timelineQAHistory
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Request failed');
+
+        timelineQAHistory.push({ role: 'user', content: question });
+        timelineQAHistory.push({ role: 'assistant', content: data.answer });
+        timelineQATotalTokens.input += data.usage.inputTokens;
+        timelineQATotalTokens.output += data.usage.outputTokens;
+        document.getElementById('timelineQATokenCount').textContent =
+          `Tokens: ${timelineQATotalTokens.input.toLocaleString()} in / ${timelineQATotalTokens.output.toLocaleString()} out`;
+
+        questionInput.value = '';
+        renderTimelineQAConversation();
+      } catch (err) {
+        showTimelineQAError(err.message);
+      } finally {
+        submitBtn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function renderTimelineQAConversation() {
+      const container = document.getElementById('timelineQAMessages');
+      let html = '';
+      for (let i = 0; i < timelineQAHistory.length; i += 2) {
+        const userMsg = timelineQAHistory[i];
+        const assistantMsg = timelineQAHistory[i + 1];
+        html += `
+          <div class="qa-message">
+            <div class="qa-message-user">
+              <div class="qa-label">Your Question</div>
+              <div class="qa-content">${escapeHtml(userMsg.content)}</div>
+            </div>
+            <div class="qa-message-assistant">
+              <div class="qa-label">Answer</div>
+              <div class="qa-content">${formatQAResponse(assistantMsg.content)}</div>
+            </div>
+          </div>`;
+      }
+      container.innerHTML = html;
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function showTimelineQAError(message) {
+      const error = document.getElementById('timelineQAError');
+      error.textContent = message;
+      error.classList.add('active');
+    }
+
+    function clearTimelineQA() {
+      timelineQAHistory = [];
+      timelineQATotalTokens = { input: 0, output: 0 };
+      document.getElementById('timelineQATokenCount').textContent = '';
+      document.getElementById('timelineQAMessages').innerHTML = '';
+      document.getElementById('timelineQAPlaceholder').classList.remove('hidden');
+      const qEl = document.getElementById('timelineQAQuestion');
+      if (qEl) qEl.value = '';
+      const errEl = document.getElementById('timelineQAError');
+      if (errEl) errEl.classList.remove('active');
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('DOMContentLoaded', function() {
+      // Enter to submit timeline Q&A (Shift+Enter for newline)
+      const tqTextarea = document.getElementById('timelineQAQuestion');
+      if (tqTextarea) {
+        tqTextarea.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            askTimelineQuestion();
+          }
+        });
+      }
+
+      // Ctrl+Enter to submit Q&A question
+      const qaTextarea = document.getElementById('qaQuestion');
+      if (qaTextarea) {
+        qaTextarea.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            askQuestion();
+          }
+        });
+      }
+
+      // Global Ctrl+S to save record (when timeline is available)
+      document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          if (lastTimeline && document.getElementById('timelineExportButtons').style.display !== 'none') {
+            saveTimelineRecord();
+          }
+        }
+      });
+    });
+
+    // ── Translation Staff / Records ───────────────────────────────────────────
+    let verifiedTranslateStaff = null;
+
+    function onTranslateStaffChange() {
+      const staffId = document.getElementById('translateStaffSelector').value;
+      verifiedTranslateStaff = null;
+      document.getElementById('translateRecordsPanel').style.display = 'none';
+      if (staffId) {
+        openPinModal(staffId, (id) => {
+          verifiedTranslateStaff = id;
+          document.getElementById('translateRecordsPanel').style.display = 'block';
+          loadTranslateRecords();
+        }, 'translateStaffSelector');
+      }
+    }
+
+    async function saveTranslationRecord() {
+      if (!verifiedTranslateStaff) {
+        showTranslateSaveStatus('Please select your name and enter your PIN before saving.', false);
+        return;
+      }
+      if (!lastTranslation) return;
+
+      const btn = document.getElementById('saveTranslationBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const fileNames = lastTranslation.results.map(r => r.filename);
+        const response = await fetch('/api/records/translations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            staff_id: verifiedTranslateStaff,
+            file_names: fileNames,
+            language: lastTranslation.language,
+            language_name: lastTranslation.languageName,
+            translation: lastTranslation.results
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Save failed');
+        showTranslateSaveStatus('&#10003; Saved successfully to your records.', true);
+        loadTranslateRecords();
+      } catch (err) {
+        showTranslateSaveStatus('&#10007; ' + err.message, false);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '&#128190; Save to My Records';
+      }
+    }
+
+    function showTranslateSaveStatus(message, success) {
+      const el = document.getElementById('saveTranslationStatus');
+      el.innerHTML = message;
+      el.style.display = 'block';
+      el.style.background = success ? 'var(--color-success-bg)' : 'var(--color-danger-bg)';
+      el.style.color = success ? 'var(--color-success)' : 'var(--color-danger)';
+      el.style.border = `1px solid ${success ? 'var(--color-success)' : 'var(--color-danger)'}`;
+      setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    async function loadTranslateRecords() {
+      const staffId = verifiedTranslateStaff;
+      if (!staffId) return;
+      const container = document.getElementById('translateRecordsList');
+      container.innerHTML = '<p style="padding:16px;color:var(--color-text-muted);font-size:14px;">Loading...</p>';
+
+      try {
+        const response = await fetch(`/api/records/translations/${staffId}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        if (!data.records.length) {
+          container.innerHTML = '<div class="placeholder" style="padding:32px 0;"><p class="placeholder-text">No saved translations yet.</p></div>';
+          return;
+        }
+
+        container.innerHTML = data.records.map(r => `
+          <div style="border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;margin-bottom:4px;">
+                <a href="#" onclick="event.preventDefault(); loadTranslateRecord(${r.id})" style="color:var(--color-primary);text-decoration:underline;cursor:pointer;" onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
+                  ${escapeHtml(Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names)}
+                </a>
+              </div>
+              <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:4px;">${escapeHtml(r.language_name)}</div>
+              <div style="font-size:12px;color:var(--color-text-muted);">Saved: ${new Date(r.created_at).toLocaleString()}</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-shrink:0;">
+              <button class="btn btn-secondary" onclick="loadTranslateRecord(${r.id})" style="font-size:12px;padding:5px 12px;">Load</button>
+              <button class="btn" onclick="deleteTranslateRecord(${r.id})" style="font-size:12px;padding:5px 12px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>
+            </div>
+          </div>`).join('');
+      } catch (err) {
+        container.innerHTML = `<p style="padding:16px;color:var(--color-danger);font-size:14px;">Error: ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    async function loadTranslateRecord(id) {
+      const staffId = verifiedTranslateStaff;
+      try {
+        const response = await fetch(`/api/records/translations/${staffId}/${id}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        const r = data.record;
+        lastTranslation = { language: r.language, languageName: r.language_name, results: r.translation };
+        displayTranslation(lastTranslation);
+      } catch (err) { alert('Failed to load: ' + err.message); }
+    }
+
+    async function deleteTranslateRecord(id) {
+      if (!confirm('Delete this saved translation?')) return;
+      try {
+        const response = await fetch(`/api/records/translations/${verifiedTranslateStaff}/${id}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        loadTranslateRecords();
+      } catch (err) { alert('Failed to delete: ' + err.message); }
+    }
+
+    // ── Translation ──────────────────────────────────────────────────────────
+
+    let translateUploadedFiles = [];
+    let lastTranslation = null;
+
+    function onLangChange() {
+      // no-op — kept for compatibility
+    }
+
+    function handleTranslateDragOver(event) {
+      event.preventDefault();
+      document.getElementById('translateUploadZone').classList.add('drag-over');
+    }
+
+    function handleTranslateDragLeave(event) {
+      document.getElementById('translateUploadZone').classList.remove('drag-over');
+    }
+
+    async function handleTranslateDrop(event) {
+      event.preventDefault();
+      document.getElementById('translateUploadZone').classList.remove('drag-over');
+      const files = Array.from(event.dataTransfer.files);
+      processTranslateFiles(files);
+    }
+
+    function handleTranslateFileSelect(event) {
+      processTranslateFiles(Array.from(event.target.files));
+    }
+
+    function processTranslateFiles(files) {
+      for (const file of files) {
+        if ((file.name.endsWith('.pdf') || file.name.endsWith('.txt')) &&
+            !translateUploadedFiles.some(f => f.name === file.name)) {
+          translateUploadedFiles.push(file);
+        }
+      }
+      updateTranslateFileList();
+    }
+
+    function removeTranslateFile(index) {
+      translateUploadedFiles.splice(index, 1);
+      updateTranslateFileList();
+    }
+
+    function updateTranslateFileList() {
+      const fileList = document.getElementById('translateFileList');
+      if (translateUploadedFiles.length === 0) { fileList.innerHTML = ''; return; }
+      fileList.innerHTML = translateUploadedFiles.map((f, i) => `
+        <div class="file-item">
+          <span class="file-name">${escapeHtml(f.name)}</span>
+          <span class="file-size">${(f.size / 1024).toFixed(1)} KB</span>
+          <button type="button" class="remove-file" onclick="removeTranslateFile(${i})" title="Remove">&times;</button>
+        </div>`).join('');
+    }
+
+    async function runTranslation() {
+      const language = document.getElementById('translateLangSelect').value;
+      const btn = document.getElementById('translateBtn');
+      const loading = document.getElementById('translateLoading');
+      const results = document.getElementById('translateResults');
+      const error = document.getElementById('translateError');
+      const placeholder = document.getElementById('translatePlaceholder');
+
+      if (!verifiedTranslateStaff) { showTranslateError('Please select your name and enter your PIN first.'); return; }
+      if (!language) { showTranslateError('Please select a target language.'); return; }
+      if (translateUploadedFiles.length === 0) { showTranslateError('Please upload at least one document.'); return; }
+
+      error.classList.remove('active');
+      btn.disabled = true;
+      loading.classList.add('active');
+      results.classList.remove('active');
+      placeholder.style.display = 'none';
+
+      try {
+        const formData = new FormData();
+        formData.append('language', language);
+        translateUploadedFiles.forEach(f => formData.append('files', f));
+
+        const response = await fetch('/api/translate', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Translation failed');
+
+        lastTranslation = data;
+        displayTranslation(data);
+      } catch (err) {
+        showTranslateError(err.message);
+        placeholder.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function displayTranslation(data) {
+      const results = document.getElementById('translateResults');
+      document.getElementById('translateResultTitle').textContent =
+        `Translation — ${data.languageName}`;
+      document.getElementById('translateExportButtons').style.display = 'flex';
+
+      let html = '';
+      for (const r of data.results) {
+        if (data.results.length > 1) {
+          html += `<div style="font-weight:700; font-size:14px; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--color-border-light);">
+            ${escapeHtml(r.filename)}${r.pages ? ` &mdash; ${r.pages} pages` : ''}
+          </div>`;
+        }
+        html += `<div style="margin-bottom:32px;">${escapeHtml(r.translation)}</div>`;
+      }
+
+      results.innerHTML = html;
+      results.classList.add('active');
+    }
+
+    function showTranslateError(message) {
+      const error = document.getElementById('translateError');
+      error.textContent = message;
+      error.classList.add('active');
+    }
+
+    function exportTranslation() {
+      if (!lastTranslation) return;
+      const langName = lastTranslation.languageName;
+      let text = `TRANSLATION — ${langName.toUpperCase()}\nGenerated: ${new Date().toLocaleString()}\n${'='.repeat(60)}\n\n`;
+      for (const r of lastTranslation.results) {
+        if (lastTranslation.results.length > 1) {
+          text += `FILE: ${r.filename}${r.pages ? ` (${r.pages} pages)` : ''}\n${'─'.repeat(40)}\n\n`;
+        }
+        text += r.translation + '\n\n';
+      }
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `translation-${lastTranslation.language}-${new Date().toISOString().slice(0,10)}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearTranslation() {
+      translateUploadedFiles = [];
+      lastTranslation = null;
+      document.getElementById('translateFileInput').value = '';
+      document.getElementById('translateFileList').innerHTML = '';
+      document.getElementById('translateError').classList.remove('active');
+      document.getElementById('translateResults').classList.remove('active');
+      document.getElementById('translateExportButtons').style.display = 'none';
+      document.getElementById('translatePlaceholder').style.display = 'block';
+      document.getElementById('translateResultTitle').textContent = 'Translation';
+      document.getElementById('translateLangSelect').value = '';
+    }
+  </script>
+</body>
+</html>
