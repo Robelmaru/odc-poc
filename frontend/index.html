@@ -1580,8 +1580,37 @@
       }
     }
   </style>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 </head>
 <body>
+
+  <!-- Login Page -->
+  <div id="loginPage" style="display:flex; min-height:100vh; align-items:center; justify-content:center; background: var(--color-bg);">
+    <div style="background:var(--color-surface); border-radius:16px; padding:48px 40px; width:380px; box-shadow:var(--shadow-lg); text-align:center;">
+      <img src="odc-logo.png" alt="ODC Logo" style="width:80px; height:80px; object-fit:contain; margin-bottom:16px;" />
+      <h1 style="font-size:1.3rem; font-weight:700; color:var(--color-text); margin-bottom:4px;">Office of Disciplinary Counsel</h1>
+      <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:28px;">Document Analysis System</p>
+      <div style="text-align:left; margin-bottom:16px;">
+        <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Username</label>
+        <input type="text" id="loginUsername" placeholder="Enter your name"
+          style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter') document.getElementById('loginPassword').focus()" />
+      </div>
+      <div style="text-align:left; margin-bottom:20px;">
+        <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Password</label>
+        <input type="password" id="loginPassword" placeholder="Enter your PIN"
+          style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter') doLogin()" />
+      </div>
+      <div id="loginError" style="display:none; color:var(--color-danger); font-size:13px; margin-bottom:14px; padding:10px; background:var(--color-danger-bg); border-radius:6px;"></div>
+      <button class="btn btn-primary" onclick="doLogin()" style="width:100%; padding:12px; font-size:15px;">Sign In</button>
+      <p style="margin-top:16px; font-size:13px;"><a href="#" onclick="event.preventDefault(); alert('Please contact your administrator to reset your credentials.');" style="color:var(--color-primary); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot username or password?</a></p>
+    </div>
+  </div>
+
+  <!-- Main App (hidden until login) -->
+  <div id="mainApp" style="display:none;">
+
   <header class="header">
     <div class="header-content">
       <img src="odc-logo.png" alt="ODC Logo" class="header-logo" />
@@ -1589,14 +1618,80 @@
         <h1>Office of Disciplinary Counsel</h1>
         <span class="header-subtitle">Document Analysis System</span>
       </div>
-      <button id="darkModeToggle" onclick="toggleDarkMode()" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px 12px;cursor:pointer;color:var(--color-text-on-primary);font-size:14px;font-family:var(--font-sans);transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Toggle dark mode">&#9789; Dark Mode</button>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+        <button onclick="toggleHelpPanel()" style="background:none;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px 12px;cursor:pointer;color:var(--color-text-on-primary);font-size:13px;font-family:var(--font-sans);transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Help">Help ?</button>
+        <button id="darkModeToggle" onclick="toggleDarkMode()" style="background:none;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:6px 12px;cursor:pointer;color:var(--color-text-on-primary);font-size:14px;font-family:var(--font-sans);transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Toggle dark mode">&#9789;</button>
+        <!-- User avatar dropdown -->
+        <div style="position:relative;" id="userMenuWrapper">
+          <button onclick="toggleUserMenu()" style="background:rgba(255,255,255,0.15);border:none;border-radius:50%;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'" title="Account">&#128100;</button>
+          <div id="userMenuDropdown" style="display:none;position:absolute;right:0;top:44px;background:var(--color-surface);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.18);min-width:200px;z-index:100;overflow:hidden;">
+            <div style="padding:14px 16px;border-bottom:1px solid var(--color-border-light);">
+              <div style="font-size:14px;font-weight:700;color:var(--color-text);" id="loggedInUserLabel"></div>
+              <div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">Staff Member</div>
+            </div>
+            <button onclick="doLogout();toggleUserMenu();" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-family:var(--font-sans);color:var(--color-danger);transition:background 0.15s;" onmouseover="this.style.background='var(--color-bg)'" onmouseout="this.style.background='none'">&#128682; Sign Out</button>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
   <nav class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('timeline')" data-tab="timeline">Document Timeline</button>
+    <button class="tab-btn active" onclick="switchTab('dashboard')" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" onclick="switchTab('timeline')" data-tab="timeline">Document Timeline</button>
     <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation</button>
+    <button class="tab-btn" onclick="switchTab('admin')" data-tab="admin" id="adminTabBtn" style="display:none;">Admin</button>
+    <div style="margin-left:auto;position:relative;" id="notifWrapper">
+      <button onclick="toggleNotifPanel()" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;position:relative;" title="Notifications">&#128276;
+        <span id="notifBadge" style="display:none;position:absolute;top:-2px;right:0;background:var(--color-danger);color:#fff;font-size:10px;font-weight:700;border-radius:50%;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 3px;">0</span>
+      </button>
+      <div id="notifDropdown" style="display:none;position:absolute;right:0;top:36px;width:340px;max-height:400px;overflow-y:auto;background:var(--color-surface);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:200;">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--color-border-light);display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:700;font-size:14px;color:var(--color-text);">Notifications</span>
+          <button onclick="markAllNotifRead()" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--color-primary);">Mark all read</button>
+        </div>
+        <div id="notifList"><div style="padding:24px;text-align:center;color:var(--color-text-muted);font-size:13px;">No notifications</div></div>
+      </div>
+    </div>
   </nav>
+
+  <!-- Tab: Dashboard -->
+  <div class="tab-panel active" id="tab-dashboard">
+    <div style="max-width:1000px;margin:0 auto;padding:20px;">
+      <h2 style="font-size:20px;font-weight:700;margin:0 0 20px;color:var(--color-text);" id="dashGreeting">Welcome back</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;">
+        <div class="panel" style="padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--color-primary);" id="dashTimelineCount">-</div>
+          <div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">Timeline Records</div>
+        </div>
+        <div class="panel" style="padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--color-primary);" id="dashTranslationCount">-</div>
+          <div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">Translations</div>
+        </div>
+        <div class="panel" style="padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--color-primary);" id="dashSharedCount">-</div>
+          <div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">Shared With Me</div>
+        </div>
+        <div class="panel" style="padding:20px;text-align:center;">
+          <div style="font-size:32px;font-weight:700;color:var(--color-primary);" id="dashNotifCount">-</div>
+          <div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">Unread Notifications</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="panel" style="padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Recent Activity</h3>
+          <div id="dashRecentActivity" style="font-size:13px;color:var(--color-text-secondary);">Loading...</div>
+        </div>
+        <div class="panel" style="padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Quick Actions</h3>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-primary" onclick="switchTab('timeline')" style="text-align:left;padding:10px 16px;font-size:13px;">&#128197; Extract a Document Timeline</button>
+            <button class="btn btn-primary" onclick="switchTab('translate')" style="text-align:left;padding:10px 16px;font-size:13px;">&#127760; Translate a Document</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Tab 1: Complaint Analysis -->
   <div class="tab-panel" id="tab-analyze">
@@ -1711,17 +1806,6 @@
           <h2 class="panel-title">Upload Documents</h2>
         </div>
 
-        <!-- Staff Selector -->
-        <div style="margin-bottom: 20px; padding: 16px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 8px;">
-          <label style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">&#128100; Staff Member</label>
-          <select id="staffSelector" onchange="onStaffChange()" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
-            <option value="">— Select your name —</option>
-            <option value="Caterina">Caterina</option>
-            <option value="Abesha">Abesha</option>
-            <option value="Robel">Robel</option>
-          </select>
-        </div>
-
         <!-- File Upload -->
         <div class="upload-zone" id="timelineUploadZone" onclick="document.getElementById('timelineFileInput').click()"
              ondragover="handleTimelineDragOver(event)" ondragleave="handleTimelineDragLeave(event)" ondrop="handleTimelineDrop(event)">
@@ -1762,9 +1846,14 @@
 
         <div class="loading" id="timelineLoading">
           <div class="loading-spinner"></div>
-          <p class="loading-text">Extracting timeline...</p>
-          <p class="loading-subtext">Analyzing documents for dates, events, and chronological data</p>
-          <p class="loading-subtext" style="margin-top: 8px;">Large documents are split into chunks automatically — this may take 1–3 minutes</p>
+          <p class="loading-text" id="timelineProgressText">Extracting timeline...</p>
+          <p class="loading-subtext" id="timelineProgressDetail">Analyzing documents for dates, events, and chronological data</p>
+          <div id="timelineProgressBar" style="display:none; margin-top: 12px; width: 100%; max-width: 320px;">
+            <div style="background: var(--color-border-light); border-radius: 4px; height: 8px; overflow: hidden;">
+              <div id="timelineProgressFill" style="background: var(--color-primary); height: 100%; width: 0%; transition: width 0.3s ease; border-radius: 4px;"></div>
+            </div>
+            <p id="timelineProgressCount" style="font-size: 12px; color: var(--color-text-muted); margin-top: 4px; text-align: center;"></p>
+          </div>
         </div>
 
         <div class="results" id="timelineResults">
@@ -1789,7 +1878,7 @@
       <div class="panel" id="myRecordsPanel" style="display: none;">
         <div class="panel-header" onclick="toggleCollapsible('myRecordsBody')" style="cursor:pointer;user-select:none;">
           <h2 class="panel-title"><span class="collapse-arrow" id="myRecordsBodyArrow">&#9660;</span> &#128218; My Records</h2>
-          <button class="btn btn-secondary" onclick="event.stopPropagation(); loadMyRecords()" style="font-size: 13px; padding: 6px 14px;">&#8635; Refresh</button>
+          <button class="btn btn-secondary" onclick="event.stopPropagation(); loadMyRecords()" style="font-size:11px; padding:3px 8px;">&#8635;</button>
         </div>
         <div id="myRecordsBody">
           <div id="myRecordsSearch" style="display:none; padding: 0 0 12px;">
@@ -1816,16 +1905,6 @@
           <span id="timelineQATokenCount" style="font-size: 12px; color: var(--color-text-muted);"></span>
         </div>
         <div id="timelineQABody">
-          <div class="qa-messages" id="timelineQAMessages"></div>
-          <div class="qa-placeholder" id="timelineQAPlaceholder">
-            <div class="qa-placeholder-icon">&#128197;</div>
-            <p>Ask a question about the extracted timeline, events, dates, or parties.</p>
-          </div>
-          <div class="qa-loading" id="timelineQALoading">
-            <div class="loading-spinner" style="width:24px;height:24px;border-width:3px;"></div>
-            <span style="margin-left: 10px; font-size: 14px; color: var(--color-text-secondary);">Thinking...</span>
-          </div>
-          <div class="qa-error" id="timelineQAError"></div>
           <div class="qa-chat-input">
             <textarea class="qa-textarea" id="timelineQAQuestion" placeholder="Ask about the timeline..."></textarea>
             <button class="btn-send" id="timelineQASubmitBtn" onclick="askTimelineQuestion()" title="Send">
@@ -1835,6 +1914,16 @@
           <div class="qa-chat-clear">
             <button onclick="clearTimelineQA()">Clear conversation</button>
           </div>
+          <div class="qa-loading" id="timelineQALoading">
+            <div class="loading-spinner" style="width:24px;height:24px;border-width:3px;"></div>
+            <span style="margin-left: 10px; font-size: 14px; color: var(--color-text-secondary);">Thinking...</span>
+          </div>
+          <div class="qa-error" id="timelineQAError"></div>
+          <div class="qa-messages" id="timelineQAMessages"></div>
+          <div class="qa-placeholder" id="timelineQAPlaceholder">
+            <div class="qa-placeholder-icon">&#128197;</div>
+            <p>Ask a question about the extracted timeline, events, dates, or parties.</p>
+          </div>
         </div>
       </div>
 
@@ -1842,7 +1931,7 @@
       <div class="panel" id="auditLogPanel" style="display: none;">
         <div class="panel-header" onclick="toggleCollapsible('auditLogBody')" style="cursor:pointer;user-select:none;">
           <h2 class="panel-title"><span class="collapse-arrow" id="auditLogBodyArrow">&#9654;</span> &#128203; Activity Log</h2>
-          <button class="btn btn-secondary" onclick="event.stopPropagation(); loadAuditLog()" style="font-size: 13px; padding: 6px 14px;">&#8635; Refresh</button>
+          <button class="btn btn-secondary" onclick="event.stopPropagation(); loadAuditLog()" style="font-size:11px; padding:3px 8px;">&#8635;</button>
         </div>
         <div id="auditLogBody" style="display:none;">
         <div style="padding:0 0 10px;">
@@ -1862,17 +1951,6 @@
       <div class="panel">
         <div class="panel-header">
           <h2 class="panel-title">Translate Document</h2>
-        </div>
-
-        <!-- Staff Selector -->
-        <div style="margin-bottom: 20px; padding: 16px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 8px;">
-          <label style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">&#128100; Staff Member</label>
-          <select id="translateStaffSelector" onchange="onTranslateStaffChange()" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
-            <option value="">— Select your name —</option>
-            <option value="Caterina">Caterina</option>
-            <option value="Abesha">Abesha</option>
-            <option value="Robel">Robel</option>
-          </select>
         </div>
 
         <!-- Language Selector -->
@@ -1910,6 +1988,7 @@
           <h2 class="panel-title" id="translateResultTitle">Translation</h2>
           <div class="export-buttons" id="translateExportButtons" style="display: none;">
             <button class="btn btn-export" onclick="exportTranslation()">Export TXT</button>
+            <button class="btn btn-export" onclick="exportTranslationDocx()">Export DOCX</button>
             <button class="btn btn-primary" id="saveTranslationBtn" onclick="saveTranslationRecord()" style="font-size: 13px; padding: 6px 14px;">&#128190; Save to My Records</button>
           </div>
         </div>
@@ -1935,36 +2014,104 @@
 
     <!-- Translation Records Panel -->
     <div class="panel" id="translateRecordsPanel" style="display: none;">
-      <div class="panel-header">
-        <h2 class="panel-title">&#128218; My Translation Records</h2>
-        <button class="btn btn-secondary" onclick="loadTranslateRecords()" style="font-size: 13px; padding: 6px 14px;">&#8635; Refresh</button>
+      <div class="panel-header" onclick="toggleCollapsible('translateRecordsBody')" style="cursor:pointer;user-select:none;">
+        <h2 class="panel-title"><span class="collapse-arrow" id="translateRecordsBodyArrow">&#9660;</span> &#128218; My Translation Records</h2>
+        <button class="btn btn-secondary" onclick="event.stopPropagation(); loadTranslateRecords()" style="font-size:11px; padding:3px 8px;">&#8635;</button>
       </div>
-      <div id="translateRecordsList">
-        <div class="placeholder" style="padding: 32px 0;">
-          <p class="placeholder-text">No saved translations yet.</p>
+      <div id="translateRecordsBody">
+        <div id="translateRecordsSearch" style="display:none; padding: 0 0 12px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="transRecordSearchInput" oninput="renderTranslateRecords()" placeholder="Search by file name or language..." style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);box-sizing:border-box;" />
+            <input type="date" id="transRecordDateFrom" onchange="renderTranslateRecords()" style="padding:8px 10px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);" />
+            <span style="font-size:12px;color:var(--color-text-muted);">to</span>
+            <input type="date" id="transRecordDateTo" onchange="renderTranslateRecords()" style="padding:8px 10px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);" />
+            <button class="btn btn-secondary" onclick="document.getElementById('transRecordSearchInput').value='';document.getElementById('transRecordDateFrom').value='';document.getElementById('transRecordDateTo').value='';renderTranslateRecords();" style="font-size:12px;padding:6px 10px;">Clear</button>
+          </div>
+        </div>
+        <div id="translateRecordsList">
+          <div class="placeholder" style="padding: 32px 0;">
+            <p class="placeholder-text">No saved translations yet.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ask About This Translation Q&A Panel -->
+    <div class="panel qa-conversation" id="translationQAPanel" style="display: none;">
+      <div class="panel-header" onclick="toggleCollapsible('translationQABody')" style="cursor:pointer;user-select:none;">
+        <h2 class="panel-title"><span class="collapse-arrow" id="translationQABodyArrow">&#9660;</span> Ask About This Translation</h2>
+        <span id="translationQATokenCount" style="font-size: 12px; color: var(--color-text-muted);"></span>
+      </div>
+      <div id="translationQABody">
+        <div class="qa-chat-input">
+          <textarea class="qa-textarea" id="translationQAQuestion" placeholder="Ask about the translation..."></textarea>
+          <button class="btn-send" id="translationQASubmitBtn" onclick="askTranslationQuestion()" title="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="qa-chat-clear">
+          <button onclick="clearTranslationQA()">Clear conversation</button>
+        </div>
+        <div class="qa-loading" id="translationQALoading">
+          <div class="loading-spinner" style="width:24px;height:24px;border-width:3px;"></div>
+          <span style="margin-left: 10px; font-size: 14px; color: var(--color-text-secondary);">Thinking...</span>
+        </div>
+        <div class="qa-error" id="translationQAError"></div>
+        <div class="qa-messages" id="translationQAMessages"></div>
+        <div class="qa-placeholder" id="translationQAPlaceholder">
+          <div class="qa-placeholder-icon">&#127760;</div>
+          <p>Ask a question about the translated document, terminology, or content.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Translation Activity Log Panel -->
+    <div class="panel" id="translateAuditLogPanel" style="display: none;">
+      <div class="panel-header" onclick="toggleCollapsible('translateAuditLogBody')" style="cursor:pointer;user-select:none;">
+        <h2 class="panel-title"><span class="collapse-arrow" id="translateAuditLogBodyArrow">&#9654;</span> &#128203; Activity Log</h2>
+        <button class="btn btn-secondary" onclick="event.stopPropagation(); loadTranslateAuditLog()" style="font-size:11px; padding:3px 8px;">&#8635;</button>
+      </div>
+      <div id="translateAuditLogBody" style="display:none;">
+        <div style="padding:0 0 10px;">
+          <input type="text" id="translateAuditSearchInput" oninput="filterTranslateAuditLog()" placeholder="Search activity..." style="width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);box-sizing:border-box;" />
+        </div>
+        <div id="translateAuditLogList" style="max-height:300px;overflow-y:auto;">
+          <div class="placeholder" style="padding: 16px 0;"><p class="placeholder-text">No activity yet.</p></div>
         </div>
       </div>
     </div>
   </div><!-- End Tab 4: Translation -->
 
-  <!-- PIN Modal -->
-  <div id="pinModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
-    <div style="background:var(--color-surface); border-radius:12px; padding:32px; width:320px; box-shadow:var(--shadow-lg); text-align:center;">
-      <div style="font-size:2rem; margin-bottom:12px;">&#128274;</div>
-      <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:4px;" id="pinModalTitle">Enter PIN</h3>
-      <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:20px;" id="pinModalSubtitle">Enter your PIN to continue</p>
-      <input type="password" id="pinInput" maxlength="10" inputmode="numeric"
-        placeholder="••••"
-        style="width:100%; text-align:center; font-size:1.5rem; letter-spacing:0.3em; padding:12px; border:1.5px solid var(--color-border); border-radius:8px; font-family:var(--font-mono); margin-bottom:12px;"
-        onkeydown="if(event.key==='Enter') submitPin()"
-      />
-      <div id="pinError" style="display:none; color:var(--color-danger); font-size:13px; margin-bottom:12px;"></div>
-      <div style="display:flex; gap:10px;">
-        <button class="btn btn-secondary" style="flex:1;" onclick="cancelPin()">Cancel</button>
-        <button class="btn btn-primary" style="flex:1;" onclick="submitPin()">Confirm</button>
+  <!-- Tab: Admin -->
+  <div class="tab-panel" id="tab-admin">
+    <div style="max-width:1000px;margin:0 auto;padding:20px;">
+      <h2 style="font-size:20px;font-weight:700;margin:0 0 20px;color:var(--color-text);">Admin Overview</h2>
+      <div class="panel" style="padding:20px;margin-bottom:16px;">
+        <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Records by Staff</h3>
+        <div id="adminStaffStats">Loading...</div>
+      </div>
+      <div class="panel" style="padding:20px;">
+        <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">All Activity (Last 200)</h3>
+        <input type="text" id="adminActivitySearch" oninput="filterAdminActivity()" placeholder="Search activity..." style="width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);box-sizing:border-box;margin-bottom:10px;" />
+        <div id="adminActivityList" style="max-height:500px;overflow-y:auto;">Loading...</div>
       </div>
     </div>
   </div>
+
+  <!-- Help Panel (slide-out drawer) -->
+  <div id="helpOverlay" onclick="toggleHelpPanel()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;"></div>
+  <div id="helpPanel" style="display:none;position:fixed;top:0;right:-480px;width:460px;max-width:90vw;height:100vh;background:var(--color-surface);box-shadow:-4px 0 24px rgba(0,0,0,0.2);z-index:2001;overflow-y:auto;transition:right 0.3s ease;padding:0;">
+    <div style="position:sticky;top:0;background:var(--color-surface);z-index:1;padding:20px 24px 0;border-bottom:1px solid var(--color-border-light);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--color-text);">Help Center</h2>
+        <button onclick="toggleHelpPanel()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--color-text-muted);padding:4px 8px;" title="Close">&times;</button>
+      </div>
+      <input type="text" id="helpSearchInput" oninput="filterHelp()" onkeydown="if(event.key==='Enter')askHelpAI()" placeholder="Search or ask a question..." style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:14px;" />
+    </div>
+    <div id="helpContent" style="padding:16px 24px 32px;"></div>
+  </div>
+
+  </div><!-- End mainApp -->
 
   <!-- File Preview Modal (shared across all tabs) -->
   <div class="file-preview-modal" id="filePreviewModal" onclick="closeFilePreviewOnBackdrop(event)">
@@ -1986,26 +2133,534 @@
     // ========================================
     // Dark Mode
     // ========================================
+    // ── Dashboard ──────────────────────────────────────────────────────────
+    async function loadDashboard() {
+      if (!loggedInStaff) return;
+      try {
+        const response = await fetch('/api/records/dashboard/' + loggedInStaff);
+        const data = await response.json();
+        if (!data.success) return;
+        document.getElementById('dashGreeting').textContent = 'Welcome back, ' + loggedInStaff;
+        document.getElementById('dashTimelineCount').textContent = data.timelineRecords;
+        document.getElementById('dashTranslationCount').textContent = data.translationRecords;
+        document.getElementById('dashSharedCount').textContent = data.sharedWithMe;
+        document.getElementById('dashNotifCount').textContent = data.unreadNotifications;
+        const actEl = document.getElementById('dashRecentActivity');
+        if (!data.recentActivity || !data.recentActivity.length) {
+          actEl.innerHTML = '<p style="color:var(--color-text-muted);">No recent activity.</p>';
+        } else {
+          const icons = { save_timeline: '&#128190;', delete_record: '&#128465;', share_record: '&#128101;', save_translation: '&#127760;', delete_translation: '&#128465;', merge_records: '&#128279;' };
+          actEl.innerHTML = data.recentActivity.map(function(l) {
+            return '<div style="padding:6px 0;border-bottom:1px solid var(--color-border-light);display:flex;align-items:center;gap:8px;">'
+              + '<span style="font-size:14px;">' + (icons[l.action] || '&#128196;') + '</span>'
+              + '<span>' + escapeHtml(l.action.replace(/_/g, ' ')) + (l.details ? ' — ' + escapeHtml(l.details).slice(0, 60) : '') + '</span>'
+              + '<span style="margin-left:auto;font-size:11px;color:var(--color-text-muted);white-space:nowrap;">' + new Date(l.created_at).toLocaleString() + '</span></div>';
+          }).join('');
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────
+    let notifData = [];
+
+    function toggleNotifPanel() {
+      const dd = document.getElementById('notifDropdown');
+      dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+      if (dd.style.display === 'block') loadNotifications();
+    }
+    document.addEventListener('click', function(e) {
+      const w = document.getElementById('notifWrapper');
+      const dd = document.getElementById('notifDropdown');
+      if (w && dd && !w.contains(e.target)) dd.style.display = 'none';
+    });
+
+    async function loadNotifications() {
+      if (!loggedInStaff) return;
+      try {
+        const r = await fetch('/api/records/notifications/' + loggedInStaff);
+        const data = await r.json();
+        if (!data.success) return;
+        notifData = data.notifications || [];
+        const badge = document.getElementById('notifBadge');
+        if (data.unread > 0) { badge.textContent = data.unread; badge.style.display = 'block'; }
+        else { badge.style.display = 'none'; }
+        const list = document.getElementById('notifList');
+        if (!notifData.length) { list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-text-muted);font-size:13px;">No notifications</div>'; return; }
+        list.innerHTML = notifData.map(function(n) {
+          return '<div style="padding:10px 16px;border-bottom:1px solid var(--color-border-light);font-size:13px;' + (n.read ? 'opacity:0.6;' : 'background:var(--color-bg);') + 'cursor:pointer;" onclick="handleNotifClick(' + n.id + ')">'
+            + '<div style="color:var(--color-text);">' + escapeHtml(n.message) + '</div>'
+            + '<div style="font-size:11px;color:var(--color-text-muted);margin-top:2px;">' + new Date(n.created_at).toLocaleString() + '</div></div>';
+        }).join('');
+      } catch (e) { /* ignore */ }
+    }
+
+    async function handleNotifClick(id) {
+      await fetch('/api/records/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_id: loggedInStaff, notification_id: id }) });
+      loadNotifications();
+    }
+
+    async function markAllNotifRead() {
+      await fetch('/api/records/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_id: loggedInStaff, notification_id: 'all' }) });
+      loadNotifications();
+    }
+
+    // ── Status & Tags ─────────────────────────────────────────────────────
+    const STATUS_OPTIONS = [
+      { value: 'draft', label: 'Draft', color: '#6b7280' },
+      { value: 'in_review', label: 'In Review', color: '#f59e0b' },
+      { value: 'complete', label: 'Complete', color: '#10b981' },
+      { value: 'flagged', label: 'Flagged', color: '#ef4444' },
+    ];
+
+    function renderStatusBadge(status) {
+      const opt = STATUS_OPTIONS.find(function(s) { return s.value === status; }) || STATUS_OPTIONS[0];
+      return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:' + opt.color + ';font-weight:600;text-transform:uppercase;letter-spacing:0.03em;">' + opt.label + '</span>';
+    }
+
+    function renderTagBadges(tagsStr) {
+      var tags = [];
+      try { tags = JSON.parse(tagsStr || '[]'); } catch(e) {}
+      if (!tags.length) return '';
+      return tags.map(function(t) {
+        return '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--color-primary);color:#fff;margin-right:3px;">' + escapeHtml(t) + '</span>';
+      }).join('');
+    }
+
+    function changeRecordStatus(id, recordType) {
+      const current = recordType === 'translation'
+        ? (transRecordsData.find(function(r) { return r.id === id; }) || {}).status
+        : (myRecordsData.find(function(r) { return r.id === id; }) || {}).status;
+
+      const existing = document.getElementById('statusModal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'statusModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      var opts = STATUS_OPTIONS.map(function(s) {
+        return '<option value="' + s.value + '" ' + (s.value === (current || 'draft') ? 'selected' : '') + '>' + s.label + '</option>';
+      }).join('');
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:24px 28px;width:300px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 14px;font-size:16px;color:var(--color-text);">Set Status</h3>'
+        + '<select id="statusSelect" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;">' + opts + '</select>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">'
+        + '<button id="statusCancelBtn" class="btn btn-secondary" style="font-size:13px;padding:8px 16px;">Cancel</button>'
+        + '<button id="statusSaveBtn" class="btn btn-primary" style="font-size:13px;padding:8px 16px;">Save</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+
+      var close = function() { modal.remove(); };
+      document.getElementById('statusCancelBtn').onclick = close;
+      modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+
+      document.getElementById('statusSaveBtn').onclick = async function() {
+        var newStatus = document.getElementById('statusSelect').value;
+        close();
+        await fetch('/api/records/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_type: recordType, status: newStatus }) });
+        if (recordType === 'translation') loadTranslateRecords(); else loadMyRecords();
+      };
+    }
+
+    async function editRecordTags(id, recordType) {
+      const record = recordType === 'translation'
+        ? transRecordsData.find(function(r) { return r.id === id; })
+        : myRecordsData.find(function(r) { return r.id === id; });
+      var tags = [];
+      try { tags = JSON.parse((record && record.tags) || '[]'); } catch(e) {}
+      const input = prompt('Tags (comma-separated):', tags.join(', '));
+      if (input === null) return;
+      const newTags = input.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      await fetch('/api/records/tags', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_type: recordType, tags: newTags }) });
+      if (recordType === 'translation') loadTranslateRecords(); else loadMyRecords();
+    }
+
+    // ── Print View ────────────────────────────────────────────────────────
+    function printTimeline() {
+      if (!lastTimeline) { alert('Please extract or load a timeline first, then click Print.'); return; }
+      const win = window.open('', '_blank');
+      let html = '<html><head><title>Timeline Print</title><style>body{font-family:Arial,sans-serif;padding:40px;color:#333;font-size:13px;}h1{font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top;}th{background:#f5f5f5;font-size:11px;text-transform:uppercase;}@media print{body{padding:20px;}}</style></head><body>';
+      html += '<h1>Document Timeline</h1>';
+      if (lastTimeline.documents) {
+        html += '<p><strong>Documents:</strong> ' + lastTimeline.documents.map(function(d) { return d.filename || d.title; }).join(', ') + '</p>';
+      }
+      if (lastTimeline.timelineSpan) {
+        html += '<p><strong>Period:</strong> ' + (lastTimeline.timelineSpan.earliest || '') + ' to ' + (lastTimeline.timelineSpan.latest || '') + '</p>';
+      }
+      html += '<table><thead><tr><th>Date</th><th>Event</th><th>Type</th><th>Significance</th><th>Source</th></tr></thead><tbody>';
+      (lastTimeline.timeline || []).forEach(function(e) {
+        var src = e.source ? (typeof e.source === 'string' ? e.source : (e.source.filename || '') + (e.source.page ? ' p.' + e.source.page : '')) : '';
+        html += '<tr><td style="white-space:nowrap;">' + (e.date || '') + '</td><td>' + (e.event || '') + (e.annotation ? '<br><em style="color:#666;">' + e.annotation + '</em>' : '') + '</td><td>' + (e.eventType || '') + '</td><td>' + (e.significance || '') + '</td><td>' + src + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      if (lastTimeline.keyDates && lastTimeline.keyDates.length) {
+        html += '<h2 style="margin-top:24px;font-size:15px;">Key Dates</h2><ul>';
+        lastTimeline.keyDates.forEach(function(k) { html += '<li><strong>' + k.date + '</strong>: ' + k.label + '</li>'; });
+        html += '</ul>';
+      }
+      html += '<p style="margin-top:24px;font-size:11px;color:#999;">Printed: ' + new Date().toLocaleString() + '</p>';
+      html += '</body></html>';
+      win.document.write(html);
+      win.document.close();
+      win.print();
+    }
+
+    // ── Side-by-Side Comparison ───────────────────────────────────────────
+    let compareRecordA = null;
+    let compareRecordB = null;
+
+    async function openCompareModal() {
+      if (!myRecordsData || myRecordsData.length < 2) { alert('You need at least 2 saved records to compare.'); return; }
+      const existing = document.getElementById('compareModal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'compareModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      var opts = myRecordsData.map(function(r) {
+        var name = r.record_name || (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names);
+        return '<option value="' + r.id + '">' + escapeHtml(name) + '</option>';
+      }).join('');
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 16px;font-size:17px;color:var(--color-text);">Compare Timelines</h3>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record A</label>'
+        + '<select id="compareA" style="width:100%;padding:10px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;margin-bottom:12px;background:var(--color-surface);color:var(--color-text);font-family:var(--font-sans);">' + opts + '</select>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record B</label>'
+        + '<select id="compareB" style="width:100%;padding:10px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;margin-bottom:16px;background:var(--color-surface);color:var(--color-text);font-family:var(--font-sans);">' + opts + '</select>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button class="btn btn-secondary" onclick="document.getElementById(\'compareModal\').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button class="btn btn-primary" onclick="runComparison()" style="font-size:13px;padding:8px 18px;">Compare</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+      // Default B to second option
+      if (myRecordsData.length > 1) document.getElementById('compareB').selectedIndex = 1;
+    }
+
+    async function runComparison() {
+      const idA = Number(document.getElementById('compareA').value);
+      const idB = Number(document.getElementById('compareB').value);
+      if (idA === idB) { alert('Please select two different records.'); return; }
+      document.getElementById('compareModal').remove();
+      try {
+        const [rA, rB] = await Promise.all([
+          fetch('/api/records/' + loggedInStaff + '/' + idA).then(function(r) { return r.json(); }),
+          fetch('/api/records/' + loggedInStaff + '/' + idB).then(function(r) { return r.json(); })
+        ]);
+        if (!rA.success || !rB.success) { alert('Failed to load records.'); return; }
+        showComparisonView(rA.record, rB.record);
+      } catch (e) { alert('Comparison failed: ' + e.message); }
+    }
+
+    function showComparisonView(a, b) {
+      const win = window.open('', '_blank');
+      var nameA = a.record_name || (Array.isArray(a.file_names) ? a.file_names.join(', ') : a.file_names);
+      var nameB = b.record_name || (Array.isArray(b.file_names) ? b.file_names.join(', ') : b.file_names);
+      var tlA = a.timeline || {};
+      var tlB = b.timeline || {};
+      var html = '<html><head><title>Compare Timelines</title><style>body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#333;font-size:13px;}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}.col{border:1px solid #ddd;border-radius:8px;padding:16px;}.col h2{font-size:15px;margin:0 0 12px;border-bottom:1px solid #ddd;padding-bottom:8px;}.event{padding:6px 0;border-bottom:1px solid #eee;}.date{font-weight:700;color:#1e368e;}</style></head><body>';
+      html += '<h1 style="font-size:18px;margin-bottom:16px;">Timeline Comparison</h1>';
+      html += '<div class="grid"><div class="col"><h2>' + nameA + '</h2>';
+      html += '<p>' + (tlA.timeline ? tlA.timeline.length : 0) + ' events</p>';
+      (tlA.timeline || []).forEach(function(e) { html += '<div class="event"><span class="date">' + (e.date || '') + '</span> ' + (e.event || '') + '</div>'; });
+      html += '</div><div class="col"><h2>' + nameB + '</h2>';
+      html += '<p>' + (tlB.timeline ? tlB.timeline.length : 0) + ' events</p>';
+      (tlB.timeline || []).forEach(function(e) { html += '<div class="event"><span class="date">' + (e.date || '') + '</span> ' + (e.event || '') + '</div>'; });
+      html += '</div></div></body></html>';
+      win.document.write(html);
+      win.document.close();
+    }
+
+    // ── Bulk Export ────────────────────────────────────────────────────────
+    async function bulkExportSelected() {
+      const checked = Array.from(document.querySelectorAll('.merge-cb:checked')).map(function(cb) { return Number(cb.value); });
+      if (!checked.length) { alert('Select records to export.'); return; }
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel } = window.docx;
+      const sections = [];
+      for (const id of checked) {
+        try {
+          const r = await fetch('/api/records/' + loggedInStaff + '/' + id);
+          const data = await r.json();
+          if (!data.success) continue;
+          const rec = data.record;
+          const name = rec.record_name || (Array.isArray(rec.file_names) ? rec.file_names.join(', ') : rec.file_names);
+          const children = [];
+          children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: name, bold: true, size: 28 })] }));
+          if (rec.summary) children.push(new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: rec.summary, size: 22 })] }));
+          children.push(new Paragraph({ text: '' }));
+          var tl = rec.timeline || {};
+          (tl.timeline || []).forEach(function(e) {
+            children.push(new Paragraph({ spacing: { after: 100 }, children: [
+              new TextRun({ text: (e.date || '') + ' ', bold: true, size: 22 }),
+              new TextRun({ text: (e.event || ''), size: 22 })
+            ] }));
+          });
+          sections.push({ children: children });
+        } catch (e) { /* skip */ }
+      }
+      if (!sections.length) { alert('No records could be loaded.'); return; }
+      var doc = new Document({ sections: sections });
+      Packer.toBlob(doc).then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'records-export-' + new Date().toISOString().slice(0, 10) + '.docx';
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    // ── Admin Panel ───────────────────────────────────────────────────────
+    let adminActivityData = [];
+
+    async function loadAdminPanel() {
+      try {
+        const r = await fetch('/api/records/admin/overview');
+        const data = await r.json();
+        if (!data.success) return;
+        var statsHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:2px solid var(--color-border);">'
+          + '<th style="padding:8px 12px;text-align:left;">Staff</th><th style="padding:8px 12px;">Timelines</th><th style="padding:8px 12px;">Translations</th></tr></thead><tbody>';
+        var staffSet = new Set((data.activeStaff || []).concat(data.timelines.map(function(r) { return r.staff_id; })).concat(data.translations.map(function(r) { return r.staff_id; })));
+        staffSet.forEach(function(staff) {
+          var tc = (data.timelines.find(function(t) { return t.staff_id === staff; }) || {}).count || 0;
+          var trc = (data.translations.find(function(t) { return t.staff_id === staff; }) || {}).count || 0;
+          statsHtml += '<tr style="border-bottom:1px solid var(--color-border-light);"><td style="padding:8px 12px;font-weight:600;">' + escapeHtml(staff) + '</td><td style="padding:8px 12px;text-align:center;">' + tc + '</td><td style="padding:8px 12px;text-align:center;">' + trc + '</td></tr>';
+        });
+        statsHtml += '</tbody></table>';
+        document.getElementById('adminStaffStats').innerHTML = statsHtml;
+
+        adminActivityData = data.recentActivity || [];
+        renderAdminActivity(adminActivityData);
+      } catch (e) { document.getElementById('adminStaffStats').innerHTML = 'Failed to load.'; }
+    }
+
+    function renderAdminActivity(logs) {
+      var container = document.getElementById('adminActivityList');
+      if (!logs.length) { container.innerHTML = '<p style="color:var(--color-text-muted);">No activity.</p>'; return; }
+      var icons = { save_timeline: '&#128190;', delete_record: '&#128465;', share_record: '&#128101;', save_translation: '&#127760;', delete_translation: '&#128465;', merge_records: '&#128279;' };
+      container.innerHTML = logs.map(function(l) {
+        return '<div style="padding:6px 14px;border-bottom:1px solid var(--color-border-light);font-size:13px;display:flex;align-items:center;gap:8px;">'
+          + '<span style="font-size:14px;">' + (icons[l.action] || '&#128196;') + '</span>'
+          + '<span style="font-weight:600;min-width:70px;">' + escapeHtml(l.staff_id) + '</span>'
+          + '<span>' + escapeHtml(l.action.replace(/_/g, ' ')) + (l.details ? ' — ' + escapeHtml(l.details).slice(0, 80) : '') + '</span>'
+          + '<span style="margin-left:auto;font-size:11px;color:var(--color-text-muted);white-space:nowrap;">' + new Date(l.created_at).toLocaleString() + '</span></div>';
+      }).join('');
+    }
+
+    function filterAdminActivity() {
+      var q = (document.getElementById('adminActivitySearch').value || '').toLowerCase();
+      var filtered = q ? adminActivityData.filter(function(l) { return (l.staff_id + ' ' + l.action + ' ' + (l.details || '')).toLowerCase().includes(q); }) : adminActivityData;
+      renderAdminActivity(filtered);
+    }
+
+    // ── Session Timeout ───────────────────────────────────────────────────
+    var SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    var sessionTimer = null;
+    var heartbeatTimer = null;
+
+    function resetSessionTimer() {
+      if (sessionTimer) clearTimeout(sessionTimer);
+      if (!loggedInStaff) return;
+      sessionTimer = setTimeout(function() {
+        alert('Your session has expired due to inactivity. Please sign in again.');
+        doLogout();
+      }, SESSION_TIMEOUT_MS);
+    }
+
+    function startSessionHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(function() {
+        if (loggedInStaff) {
+          fetch('/api/records/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_id: loggedInStaff }) }).catch(function() {});
+        }
+      }, 5 * 60 * 1000); // every 5 min
+    }
+
+    // Reset timer on user activity
+    ['mousemove', 'keydown', 'click', 'scroll'].forEach(function(evt) {
+      document.addEventListener(evt, function() { if (loggedInStaff) resetSessionTimer(); }, { passive: true });
+    });
+
+    // ── User Menu ──────────────────────────────────────────────────────────
+    function toggleUserMenu() {
+      const dd = document.getElementById('userMenuDropdown');
+      dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    }
+    document.addEventListener('click', function(e) {
+      const wrapper = document.getElementById('userMenuWrapper');
+      const dd = document.getElementById('userMenuDropdown');
+      if (wrapper && dd && !wrapper.contains(e.target)) {
+        dd.style.display = 'none';
+      }
+    });
+
+    // ── Help Panel ─────────────────────────────────────────────────────────
+    const helpTopics = [
+      { section: 'Getting Started', title: 'Dark Mode', text: 'Toggle dark mode using the moon icon button in the top-right header. Your preference is saved across sessions.' },
+
+      { section: 'Document Timeline', title: 'Upload Documents', text: 'Drag and drop PDF or TXT files into the upload area, or click to browse. Multiple files can be uploaded at once. The system extracts text and analyzes all documents together.' },
+      { section: 'Document Timeline', title: 'Extract Timeline', text: 'Click "Extract Timeline" to analyze your uploaded documents. The system extracts dates, events, and people into a chronological timeline. Large documents (500+ pages) are automatically split into chunks and processed in parallel.' },
+      { section: 'Document Timeline', title: 'Handwritten / Scanned Pages', text: 'Pages with little or no selectable text are automatically detected and processed using AI Vision OCR. This works for handwritten notes, scanned documents, and image-based PDFs.' },
+      { section: 'Document Timeline', title: 'Save to My Records', text: 'After extracting a timeline, click the save button to store it. You can name the record, add a case/matter number, and review an auto-generated document summary before saving.' },
+      { section: 'Document Timeline', title: 'My Records', text: 'View all your saved timelines. Features include:\n\u2022 Search by name, notes, or case number\n\u2022 Filter by date range\n\u2022 Sort by clicking column headers\n\u2022 Expand the arrow next to a name to view the document summary\n\u2022 Click the document name to load the full timeline' },
+      { section: 'Document Timeline', title: 'Annotate Events (Add Notes)', text: 'After extracting a timeline, each event has a note icon. Click it to open the "Annotate Event" modal where you can:\n\u2022 Set a flag: Verify this date, Important, or Conflict\n\u2022 Add a free-text note to the event\n\u2022 Remove annotations with the X button\nAnnotations appear inline under the event and are saved when you save the record.' },
+      { section: 'Document Timeline', title: 'Record Actions (Icons)', text: '\u270E Pencil \u2014 Edit the record name and case/matter number\n\ud83d\udc65 People \u2014 Share the record with other staff members\n\ud83d\uddd1 Trash \u2014 Delete the record permanently' },
+      { section: 'Document Timeline', title: 'Export DOCX Formatting', text: 'When exporting a timeline to Word (DOCX):\n\u2022 HIGH significance events are highlighted in yellow with bold text\n\u2022 Annotations appear with an orange left border in italic\n\u2022 Regular events have a plain white background\nThis makes it easy to spot the most important events when reviewing the document.' },
+      { section: 'Document Timeline', title: 'Export Summary (DOCX)', text: 'When viewing a record summary (expanded arrow), click "Export DOCX" to download the summary as a Word document.' },
+      { section: 'Document Timeline', title: 'Merge Records', text: 'Use the checkboxes to select 2 or more records, then click "Merge Selected" to combine their timelines into a single deduplicated record.' },
+      { section: 'Document Timeline', title: 'Ask About This Timeline', text: 'After extracting or loading a timeline, use the Q&A panel to ask questions about the events, dates, parties, and patterns. Supports multi-turn conversation with full context.' },
+      { section: 'Document Timeline', title: 'Activity Log', text: 'View a history of your actions \u2014 saves, deletes, shares, and merges. Searchable by keyword.' },
+
+      { section: 'Translation', title: 'Translate a Document', text: 'Select a target language (English, Spanish, or Brazilian Portuguese), upload one or more PDF/TXT files, and click "Translate". Large documents are chunked and translated automatically.' },
+      { section: 'Translation', title: 'Source Language Detection', text: 'The system automatically detects the source language. For example, uploading a Spanish document and selecting English will translate it to English.' },
+      { section: 'Translation', title: 'Export Translation', text: 'After translating, use "Export TXT" to download as plain text, or "Export DOCX" to download as a formatted Word document.' },
+      { section: 'Translation', title: 'Save Translation', text: 'Click "Save to My Records" to store the translation. You\'ll be prompted to name it before saving.' },
+      { section: 'Translation', title: 'My Translation Records', text: 'View saved translations with search, date filters, and sortable columns. Click a record name to load it. Use the pencil icon to rename or the trash icon to delete.' },
+      { section: 'Translation', title: 'Ask About This Translation', text: 'After translating or loading a translation, ask questions about terminology, content, or translation choices in the Q&A panel.' },
+      { section: 'Translation', title: 'Translation Activity Log', text: 'View a history of your translation saves and deletes. Searchable by keyword.' },
+
+      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Timeline or Translation' },
+
+      { section: 'Records Management', title: 'Status Tracking', text: 'Each record has a status badge: Draft, In Review, Complete, or Flagged.\n\u2022 Click the gear icon (\u2699) next to a record to change its status\n\u2022 Color-coded: gray=Draft, yellow=In Review, green=Complete, red=Flagged' },
+      { section: 'Records Management', title: 'Tags / Labels', text: 'Click the tag icon (\ud83c\udff7) next to any record to add custom labels.\n\u2022 Enter tags as comma-separated values (e.g. "Urgent, Smith Case, 2024")\n\u2022 Tags appear as blue badges on the record\n\u2022 Useful for organizing by topic, case type, or urgency' },
+      { section: 'Records Management', title: 'Print Timeline', text: 'Click "Print Timeline" in My Records to open a clean, formatted print page in a new window. Includes all events in a table with key dates.' },
+      { section: 'Records Management', title: 'Compare Timelines', text: 'Click "Compare" in My Records to select two records and view them side-by-side in a new window.' },
+      { section: 'Records Management', title: 'Bulk Export', text: 'Select multiple records using checkboxes, then click "Bulk Export DOCX" to download them all as a single Word document with separate sections.' },
+      { section: 'Records Management', title: 'Notifications', text: 'The bell icon in the tab bar shows your unread notification count.\n\u2022 You get notified when someone shares a record with you\n\u2022 Click the bell to view all notifications\n\u2022 "Mark all read" clears the unread badge' },
+
+      { section: 'Admin', title: 'Admin Panel', text: 'The Admin tab shows:\n\u2022 Records count per staff member (timelines + translations)\n\u2022 Full activity log across all staff (last 200 entries)\n\u2022 Searchable by keyword' },
+
+      { section: 'Tips', title: 'Session Timeout', text: 'For security, you are automatically logged out after 30 minutes of inactivity. Any mouse, keyboard, click, or scroll activity resets the timer.' },
+      { section: 'Tips', title: 'Large Documents (500+ pages)', text: 'Documents over 500 pages are split into larger chunks (~100 pages each) to optimize processing. You\'ll see a progress bar showing chunk-by-chunk extraction.' },
+      { section: 'Tips', title: 'Keyboard Shortcuts', text: 'Enter \u2014 Submit a question in Q&A panels\nShift+Enter \u2014 New line in Q&A text areas\nCtrl+S \u2014 Save the current timeline record' },
+      { section: 'Tips', title: 'Source Links in Timelines', text: 'Clickable source links in timeline events open a preview of the original document at the referenced page. If loaded from saved records (file not in session), you\'ll see the source reference info instead.' },
+    ];
+
+    function toggleHelpPanel() {
+      const panel = document.getElementById('helpPanel');
+      const overlay = document.getElementById('helpOverlay');
+      const isOpen = panel.style.right === '0px';
+      if (isOpen) {
+        panel.style.right = '-480px';
+        overlay.style.display = 'none';
+        setTimeout(() => { panel.style.display = 'none'; }, 300);
+      } else {
+        panel.style.display = 'block';
+        overlay.style.display = 'block';
+        setTimeout(() => { panel.style.right = '0px'; }, 10);
+        document.getElementById('helpSearchInput').value = '';
+        renderHelp(helpTopics);
+        setTimeout(() => document.getElementById('helpSearchInput').focus(), 350);
+      }
+    }
+
+    function filterHelp() {
+      const query = (document.getElementById('helpSearchInput').value || '').toLowerCase().trim();
+      if (!query) { renderHelp(helpTopics); return; }
+      const filtered = helpTopics.filter(t =>
+        t.title.toLowerCase().includes(query) ||
+        t.text.toLowerCase().includes(query) ||
+        t.section.toLowerCase().includes(query)
+      );
+      renderHelp(filtered, query);
+    }
+
+    let helpAILoading = false;
+
+    async function askHelpAI() {
+      const query = (document.getElementById('helpSearchInput').value || '').trim();
+      if (!query || query.length < 3 || helpAILoading) return;
+
+      helpAILoading = true;
+      const container = document.getElementById('helpContent');
+      container.innerHTML = '<div style="text-align:center;padding:40px 0;">'
+        + '<div class="loading-spinner" style="width:28px;height:28px;border-width:3px;margin:0 auto 12px;"></div>'
+        + '<p style="font-size:14px;color:var(--color-text-muted);">Thinking...</p></div>';
+
+      try {
+        const response = await fetch('/api/help-qa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: query })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Failed');
+
+        container.innerHTML = '<div style="margin-bottom:24px;">'
+          + '<div style="font-size:12px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">AI Answer</div>'
+          + '<div style="padding:16px;background:var(--color-bg);border-radius:8px;font-size:14px;color:var(--color-text);line-height:1.7;white-space:pre-wrap;">' + escapeHtml(data.answer) + '</div>'
+          + '<button onclick="document.getElementById(\'helpSearchInput\').value=\'\';renderHelp(helpTopics);" class="btn btn-secondary" style="margin-top:12px;font-size:12px;padding:6px 14px;">Back to all topics</button>'
+          + '</div>';
+      } catch (err) {
+        container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--color-danger);">'
+          + '<p style="font-size:14px;">Could not get an answer. Please try again.</p></div>';
+      } finally {
+        helpAILoading = false;
+      }
+    }
+
+    function renderHelp(topics, query) {
+      const container = document.getElementById('helpContent');
+      const askAIBtn = query ? '<div style="text-align:center;padding:16px 0;border-top:1px solid var(--color-border-light);margin-top:16px;">'
+        + '<p style="font-size:13px;color:var(--color-text-muted);margin-bottom:8px;">Can\'t find what you need?</p>'
+        + '<button onclick="askHelpAI()" class="btn btn-primary" style="font-size:13px;padding:8px 20px;">Ask AI: "' + escapeHtml(query.length > 40 ? query.slice(0, 40) + '...' : query) + '"</button></div>' : '';
+
+      if (!topics.length) {
+        container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--color-text-muted);">'
+          + '<p style="font-size:15px;">No matching topics found.</p>'
+          + '<p style="font-size:13px;margin-bottom:16px;">Press Enter or click below to ask AI.</p>'
+          + '<button onclick="askHelpAI()" class="btn btn-primary" style="font-size:13px;padding:8px 20px;">Ask AI</button></div>';
+        return;
+      }
+
+      const sections = {};
+      for (const t of topics) {
+        if (!sections[t.section]) sections[t.section] = [];
+        sections[t.section].push(t);
+      }
+
+      const sectionIcons = { 'Getting Started': '\ud83d\ude80', 'Dashboard': '\ud83d\udcca', 'Document Timeline': '\ud83d\udcc5', 'Translation': '\ud83c\udf10', 'Records Management': '\ud83d\udcc1', 'Admin': '\ud83d\udd12', 'Tips': '\ud83d\udca1' };
+
+      let html = '';
+      for (const [section, items] of Object.entries(sections)) {
+        const icon = sectionIcons[section] || '\ud83d\udccc';
+        html += '<div style="margin-bottom:24px;">'
+          + '<h3 style="font-size:13px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin:0 0 12px;padding-bottom:6px;border-bottom:1px solid var(--color-border-light);">' + icon + ' ' + escapeHtml(section) + '</h3>';
+        for (const item of items) {
+          html += '<details style="margin-bottom:8px;">'
+            + '<summary style="cursor:pointer;font-size:14px;font-weight:600;color:var(--color-text);padding:8px 0;user-select:none;">' + escapeHtml(item.title) + '</summary>'
+            + '<div style="padding:4px 0 12px 16px;font-size:13px;color:var(--color-text-secondary);line-height:1.7;white-space:pre-wrap;">' + escapeHtml(item.text) + '</div>'
+            + '</details>';
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html + askAIBtn;
+    }
+
+    function getDarkModeKey() {
+      return 'odc-dark-mode-' + (loggedInStaff || 'default');
+    }
+
     function toggleDarkMode() {
       const html = document.documentElement;
       const isDark = html.getAttribute('data-theme') === 'dark';
       html.setAttribute('data-theme', isDark ? '' : 'dark');
-      localStorage.setItem('odc-dark-mode', isDark ? '' : 'dark');
+      localStorage.setItem(getDarkModeKey(), isDark ? '' : 'dark');
       const btn = document.getElementById('darkModeToggle');
-      btn.innerHTML = isDark ? '&#9789; Dark Mode' : '&#9788; Light Mode';
+      if (btn) btn.innerHTML = isDark ? '&#9789;' : '&#9788;';
     }
 
-    // Restore saved theme
-    (function() {
-      const saved = localStorage.getItem('odc-dark-mode');
-      if (saved === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-        setTimeout(() => {
-          const btn = document.getElementById('darkModeToggle');
-          if (btn) btn.innerHTML = '&#9788; Light Mode';
-        }, 0);
-      }
-    })();
+    function applyUserTheme() {
+      const saved = localStorage.getItem(getDarkModeKey());
+      const isDark = saved === 'dark';
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : '');
+      const btn = document.getElementById('darkModeToggle');
+      if (btn) btn.innerHTML = isDark ? '&#9788;' : '&#9789;';
+    }
+
+    function resetToLightMode() {
+      document.documentElement.setAttribute('data-theme', '');
+      const btn = document.getElementById('darkModeToggle');
+      if (btn) btn.innerHTML = '&#9789;';
+    }
 
     // ========================================
     // Collapsible Panels
@@ -2026,19 +2681,16 @@
     // Tab Navigation
     // ========================================
     function switchTab(tabId) {
-      // Update tab buttons
       document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
-        if (btn.dataset.tab === tabId) {
-          btn.classList.add('active');
-        }
+        if (btn.dataset.tab === tabId) btn.classList.add('active');
       });
-
-      // Update tab panels
       document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.remove('active');
       });
       document.getElementById('tab-' + tabId).classList.add('active');
+      if (tabId === 'admin') loadAdminPanel();
+      if (tabId === 'dashboard') loadDashboard();
     }
 
     // ========================================
@@ -2273,11 +2925,7 @@
           if (file.name.endsWith('.txt')) {
             fileEntry.content = await file.text();
           } else if (file.name.endsWith('.pdf')) {
-            const arrayBuffer = await file.arrayBuffer();
-            const base64 = btoa(
-              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
-            fileEntry.dataUrl = `data:application/pdf;base64,${base64}`;
+            fileEntry.dataUrl = URL.createObjectURL(file);
           }
 
           uploadedFiles.push(fileEntry);
@@ -2427,12 +3075,16 @@
       filenameEl.textContent = filename;
 
       if (!fileEntry) {
-        const pageHtml = page ? '<div style="font-size: 14px; color: var(--color-text-secondary);">Page ' + page + '</div>' : '';
+        const pageHtml = page ? '<div style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 12px;">Page ' + page + '</div>' : '';
+        const quoteHtml = quote ? '<div style="margin-top: 12px; padding: 14px 18px; background: var(--color-bg); border-left: 3px solid var(--color-primary); border-radius: 4px; font-size: 14px; color: var(--color-text); line-height: 1.6; font-style: italic;">' + escapeHtml(quote) + '</div>' : '';
+        const reuploadHtml = '<div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-light); font-size: 12px; color: var(--color-text-muted);">To view the full document, re-upload it in the Document Timeline tab.</div>';
         pageIndicatorEl.textContent = page ? 'Page ' + page : '';
         bodyEl.innerHTML = '<div style="padding: 28px 24px;">'
           + '<div style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">Source Reference</div>'
           + '<div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">' + escapeHtml(filename) + '</div>'
           + pageHtml
+          + quoteHtml
+          + reuploadHtml
           + '</div>';
         modal.classList.add('active');
         document.addEventListener('keydown', handleEscapeKey);
@@ -3064,11 +3716,8 @@ All conclusions require human review and professional judgment.
           if (file.name.endsWith('.txt')) {
             fileEntry.content = await file.text();
           } else if (file.name.endsWith('.pdf')) {
-            const arrayBuffer = await file.arrayBuffer();
-            const base64 = btoa(
-              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
-            fileEntry.dataUrl = `data:application/pdf;base64,${base64}`;
+            // Use object URL instead of base64 — instant, no memory bloat for large PDFs
+            fileEntry.dataUrl = URL.createObjectURL(file);
           }
 
           timelineUploadedFiles.push(fileEntry);
@@ -3116,8 +3765,8 @@ All conclusions require human review and professional judgment.
       const placeholder = document.getElementById('timelinePlaceholder');
       const additionalContext = document.getElementById('timelineContext').value.trim();
 
-      if (!verifiedStaff) {
-        error.textContent = 'Please select your name and enter your PIN before extracting a timeline.';
+      if (!loggedInStaff) {
+        error.textContent = 'Please sign in to extract a timeline.';
         error.classList.add('active');
         return;
       }
@@ -3134,6 +3783,18 @@ All conclusions require human review and professional judgment.
       btn.disabled = true;
       loading.classList.add('active');
 
+      const progressText = document.getElementById('timelineProgressText');
+      const progressDetail = document.getElementById('timelineProgressDetail');
+      const progressBar = document.getElementById('timelineProgressBar');
+      const progressFill = document.getElementById('timelineProgressFill');
+      const progressCount = document.getElementById('timelineProgressCount');
+
+      // Reset progress UI
+      progressText.textContent = 'Extracting timeline...';
+      progressDetail.textContent = 'Preparing documents...';
+      progressBar.style.display = 'none';
+      progressFill.style.width = '0%';
+
       try {
         const formData = new FormData();
         timelineUploadedFiles.forEach((f) => {
@@ -3148,14 +3809,69 @@ All conclusions require human review and professional judgment.
           body: formData
         });
 
-        const data = await response.json();
+        // Parse SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let totalChunks = 0;
+        let resultData = null;
 
-        if (!response.ok) {
-          throw new Error(data.error || 'Timeline extraction failed');
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              var currentEvent = line.slice(7).trim();
+            }
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+
+              if (currentEvent === 'progress') {
+                progressDetail.textContent = data.message;
+
+                if (data.step === 'extract_text') {
+                  progressText.textContent = 'Extracting text...';
+                } else if (data.step === 'text_extracted') {
+                  progressText.textContent = 'Text extracted';
+                } else if (data.step === 'chunked') {
+                  totalChunks = data.totalChunks || 0;
+                  progressText.textContent = 'Processing ' + totalChunks + ' chunks...';
+                  if (totalChunks > 1) {
+                    progressBar.style.display = 'block';
+                    progressFill.style.width = '0%';
+                    progressCount.textContent = '0 / ' + totalChunks + ' chunks';
+                  }
+                } else if (data.step === 'chunk_done') {
+                  const completed = data.completedChunks;
+                  const total = data.totalChunks || totalChunks;
+                  const pct = Math.round((completed / total) * 100);
+                  progressFill.style.width = pct + '%';
+                  progressCount.textContent = completed + ' / ' + total + ' chunks extracted';
+                  progressText.textContent = 'Extracting chunks (' + pct + '%)...';
+                } else if (data.step === 'merging' || data.step === 'final_merge') {
+                  progressText.textContent = 'Merging timelines...';
+                  progressBar.style.display = 'none';
+                } else if (data.step === 'cleanup') {
+                  progressText.textContent = 'Final cleanup...';
+                }
+              } else if (currentEvent === 'complete') {
+                resultData = data;
+              } else if (currentEvent === 'error') {
+                throw new Error(data.message);
+              }
+            }
+          }
         }
 
-        lastSourceTexts = data.sourceTexts || [];
-        displayTimeline(data.timeline, data.usage, data.ocrResults);
+        if (!resultData) throw new Error('No result received from server');
+
+        lastSourceTexts = resultData.sourceTexts || [];
+        displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults);
       } catch (err) {
         showTimelineError(err.message);
       } finally {
@@ -3689,91 +4405,131 @@ th{background:#f0f2f8;font-weight:bold;}
       clearTimelineQA();
     }
 
-    // ── PIN Modal (shared) ────────────────────────────────────────────────────
-    let _pinCallback = null;
-    let _pinCancelSelector = null;
+    // ── Authentication ──────────────────────────────────────────────────────
+    let loggedInStaff = null;
 
-    function openPinModal(staffId, onSuccess, cancelSelectorId) {
-      _pinCallback = onSuccess;
-      _pinCancelSelector = cancelSelectorId;
-      document.getElementById('pinModalTitle').textContent = `Welcome, ${staffId}`;
-      document.getElementById('pinModalSubtitle').textContent = 'Enter your PIN to access your records';
-      document.getElementById('pinInput').value = '';
-      document.getElementById('pinError').style.display = 'none';
-      document.getElementById('pinModal').style.display = 'flex';
-      setTimeout(() => document.getElementById('pinInput').focus(), 50);
-    }
+    async function doLogin() {
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+      const errorEl = document.getElementById('loginError');
 
-    async function submitPin() {
-      // Determine which selector is active
-      const staffId = document.getElementById('staffSelector').value ||
-                      document.getElementById('translateStaffSelector').value;
-      const pin = document.getElementById('pinInput').value.trim();
-      const errorEl = document.getElementById('pinError');
-
-      if (!pin) { errorEl.textContent = 'Please enter your PIN.'; errorEl.style.display = 'block'; return; }
+      if (!username || !password) {
+        errorEl.textContent = 'Please enter both username and password.';
+        errorEl.style.display = 'block';
+        return;
+      }
 
       try {
         const response = await fetch('/api/records/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ staff_id: staffId, pin })
+          body: JSON.stringify({ staff_id: username, pin: password })
         });
         const data = await response.json();
 
         if (!response.ok || !data.success) {
-          errorEl.textContent = 'Incorrect PIN. Please try again.';
+          errorEl.textContent = data.error || 'Invalid username or password.';
           errorEl.style.display = 'block';
-          document.getElementById('pinInput').value = '';
-          document.getElementById('pinInput').focus();
+          document.getElementById('loginPassword').value = '';
+          document.getElementById('loginPassword').focus();
           return;
         }
 
-        document.getElementById('pinModal').style.display = 'none';
-        if (_pinCallback) _pinCallback(staffId);
+        loggedInStaff = username;
+        sessionStorage.setItem('loggedInStaff', username);
+        showMainApp();
       } catch (err) {
-        errorEl.textContent = 'Verification failed. Please try again.';
+        errorEl.textContent = 'Login failed. Please try again.';
         errorEl.style.display = 'block';
       }
     }
 
-    function cancelPin() {
-      document.getElementById('pinModal').style.display = 'none';
-      if (_pinCancelSelector) document.getElementById(_pinCancelSelector).value = '';
-      _pinCallback = null;
-      _pinCancelSelector = null;
+    function doLogout() {
+      loggedInStaff = null;
+      sessionStorage.removeItem('loggedInStaff');
+      if (sessionTimer) clearTimeout(sessionTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      resetToLightMode();
+      document.getElementById('mainApp').style.display = 'none';
+      document.getElementById('loginPage').style.display = 'flex';
+      document.getElementById('loginUsername').value = '';
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('loginError').style.display = 'none';
     }
+
+    function showMainApp() {
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('mainApp').style.display = 'block';
+      document.getElementById('loggedInUserLabel').textContent = loggedInStaff;
+      applyUserTheme();
+      // Show records/audit panels and load data
+      document.getElementById('myRecordsPanel').style.display = 'block';
+      document.getElementById('auditLogPanel').style.display = 'block';
+      document.getElementById('translateRecordsPanel').style.display = 'block';
+      document.getElementById('translateAuditLogPanel').style.display = 'block';
+      // Show admin tab (all staff can see it for now; could restrict later)
+      document.getElementById('adminTabBtn').style.display = 'inline-block';
+      loadMyRecords();
+      loadAuditLog();
+      loadTranslateRecords();
+      loadTranslateAuditLog();
+      loadDashboard();
+      loadNotifications();
+      resetSessionTimer();
+      startSessionHeartbeat();
+      // Default to dashboard tab
+      switchTab('dashboard');
+    }
+
+    // Auto-login from session
+    (function() {
+      const saved = sessionStorage.getItem('loggedInStaff');
+      if (saved) {
+        loggedInStaff = saved;
+        showMainApp();
+      }
+    })();
 
     // ── Timeline Staff / Records ───────────────────────────────────────────
-    let verifiedStaff = null;
-
-    function onStaffChange() {
-      const staffId = document.getElementById('staffSelector').value;
-      verifiedStaff = null;
-      document.getElementById('myRecordsPanel').style.display = 'none';
-      document.getElementById('auditLogPanel').style.display = 'none';
-      if (staffId) {
-        openPinModal(staffId, (id) => {
-          verifiedStaff = id;
-          document.getElementById('myRecordsPanel').style.display = 'block';
-          document.getElementById('auditLogPanel').style.display = 'block';
-          loadMyRecords();
-          loadAuditLog();
-        }, 'staffSelector');
-      }
-    }
 
     function saveTimelineRecord() {
-      const staffId = document.getElementById('staffSelector').value;
-      if (!staffId || !verifiedStaff) {
-        showSaveStatus('Please select your name and enter your PIN before saving.', false);
+      const staffId = loggedInStaff;
+      if (!staffId) {
+        showSaveStatus('Please sign in before saving.', false);
         return;
       }
       if (!lastTimeline) return;
 
-      // Show naming popup
+      // Build auto-summary from timeline data
+      let autoSummary = '';
+      if (lastTimeline) {
+        const parts = [];
+        if (lastTimeline.documents && lastTimeline.documents.length) {
+          for (const doc of lastTimeline.documents) {
+            let line = doc.title || doc.filename || '';
+            if (doc.documentType) line += ' (' + doc.documentType + ')';
+            if (doc.dateRange) line += ' — ' + doc.dateRange;
+            if (doc.summary) line += '\n' + doc.summary;
+            if (line) parts.push(line);
+          }
+        }
+        if (lastTimeline.timelineSpan) {
+          const span = lastTimeline.timelineSpan;
+          if (span.earliest || span.latest) {
+            parts.push('Timeline: ' + (span.earliest || '?') + ' to ' + (span.latest || '?') + (span.totalDuration ? ' (' + span.totalDuration + ')' : ''));
+          }
+        }
+        if (lastTimeline.timeline) {
+          parts.push(lastTimeline.timeline.length + ' events extracted');
+        }
+        if (lastTimeline.notes && lastTimeline.notes.length) {
+          parts.push('Notes: ' + lastTimeline.notes.join('; '));
+        }
+        autoSummary = parts.join('\n\n');
+      }
+
       const defaultName = timelineUploadedFiles.map(f => f.name).join(', ');
-      showSaveModal(defaultName, async (recordName, caseNumber) => {
+      showSaveModal(defaultName, async (recordName, caseNumber, summary) => {
         const btn = document.getElementById('saveRecordBtn');
         btn.disabled = true;
         btn.textContent = 'Saving...';
@@ -3785,7 +4541,7 @@ th{background:#f0f2f8;font-weight:bold;}
           const response = await fetch('/api/records', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, timeline: lastTimeline })
+            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, summary: summary || null, timeline: lastTimeline })
           });
 
           const data = await response.json();
@@ -3799,31 +4555,37 @@ th{background:#f0f2f8;font-weight:bold;}
           btn.disabled = false;
           btn.innerHTML = '&#128190; Save to My Records';
         }
-      });
+      }, autoSummary);
     }
 
-    function showSaveModal(defaultName, onSave) {
-      // Remove any existing modal
+    function showSaveModal(defaultName, onSave, defaultSummary) {
       const existing = document.getElementById('saveModal');
       if (existing) existing.remove();
 
       const modal = document.createElement('div');
       modal.id = 'saveModal';
       modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
-      modal.innerHTML = `
-        <div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
-          <h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Save Record</h3>
-          <p style="margin:0 0 16px;font-size:13px;color:var(--color-text-muted);">Give this record a name so you can find it later.</p>
-          <label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record Name</label>
-          <input id="saveModalInput" type="text" value="${escapeHtml(defaultName)}" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />
-          <label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Case / Matter Number <span style="font-weight:400;color:var(--color-text-muted);">(optional)</span></label>
-          <input id="saveModalCase" type="text" placeholder="e.g. 2024-DC-0123" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;" />
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
-            <button id="saveModalCancel" class="btn btn-secondary" style="font-size:13px;padding:8px 18px;">Cancel</button>
-            <button id="saveModalConfirm" class="btn btn-primary" style="font-size:13px;padding:8px 18px;">Save</button>
-          </div>
-        </div>
-      `;
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:520px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto;">'
+        + '<h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Save Record</h3>'
+        + '<p style="margin:0 0 16px;font-size:13px;color:var(--color-text-muted);">Give this record a name so you can find it later.</p>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record Name</label>'
+        + '<input id="saveModalInput" type="text" value="' + escapeHtml(defaultName) + '" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Case / Matter Number <span style="font-weight:400;color:var(--color-text-muted);">(optional)</span></label>'
+        + '<input id="saveModalCase" type="text" placeholder="e.g. 2024-DC-0123" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + (defaultSummary ? (
+          '<div style="margin-bottom:12px;">'
+          + '<div id="saveModalSummaryToggle" onclick="var b=document.getElementById(\'saveModalSummaryBody\');var a=document.getElementById(\'saveModalSummaryArrow\');if(b.style.display===\'none\'){b.style.display=\'block\';a.textContent=\'\\u25BC\';}else{b.style.display=\'none\';a.textContent=\'\\u25B6\';}" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;">'
+          + '<span id="saveModalSummaryArrow" style="font-size:10px;color:var(--color-text-muted);">&#9660;</span>'
+          + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);cursor:pointer;">Document Summary</label>'
+          + '</div>'
+          + '<div id="saveModalSummaryBody" style="margin-top:6px;">'
+          + '<textarea id="saveModalSummary" style="width:100%;min-height:100px;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;resize:vertical;line-height:1.5;">' + escapeHtml(defaultSummary) + '</textarea>'
+          + '</div></div>'
+        ) : '')
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">'
+        + '<button id="saveModalCancel" class="btn btn-secondary" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button id="saveModalConfirm" class="btn btn-primary" style="font-size:13px;padding:8px 18px;">Save</button>'
+        + '</div></div>';
       document.body.appendChild(modal);
 
       const input = document.getElementById('saveModalInput');
@@ -3838,12 +4600,13 @@ th{background:#f0f2f8;font-weight:bold;}
       document.getElementById('saveModalConfirm').onclick = () => {
         const name = input.value.trim() || defaultName;
         const caseNum = document.getElementById('saveModalCase').value.trim();
+        const summaryEl = document.getElementById('saveModalSummary');
+        const summary = summaryEl ? summaryEl.value.trim() : '';
         close();
-        onSave(name, caseNum);
+        onSave(name, caseNum, summary);
       };
 
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { document.getElementById('saveModalConfirm').click(); }
         if (e.key === 'Escape') { close(); }
       });
     }
@@ -3938,6 +4701,11 @@ th{background:#f0f2f8;font-weight:bold;}
       const checkedIds = new Set(document.querySelectorAll('.merge-cb:checked') ? Array.from(document.querySelectorAll('.merge-cb:checked')).map(cb => Number(cb.value)) : []);
 
       container.innerHTML = `
+        <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-secondary" onclick="printTimeline()" style="font-size:12px;padding:5px 12px;">&#128424; Print Timeline</button>
+          <button class="btn btn-secondary" onclick="openCompareModal()" style="font-size:12px;padding:5px 12px;">&#8596; Compare</button>
+          <button class="btn btn-secondary" onclick="bulkExportSelected()" style="font-size:12px;padding:5px 12px;">&#128230; Bulk Export DOCX</button>
+        </div>
         <div id="mergeBar" style="display:none; margin-bottom:10px; padding:10px 14px; background:var(--color-warning-bg); border:1px solid var(--color-warning); border-radius:8px; font-size:13px; display:flex; align-items:center; gap:10px; justify-content:space-between;">
           <span id="mergeBarText">Select 2+ records to merge</span>
           <div style="display:flex;gap:8px;">
@@ -3956,29 +4724,96 @@ th{background:#f0f2f8;font-weight:bold;}
             </tr>
           </thead>
           <tbody>
-            ${sorted.map(r => `
-              <tr style="border-bottom:1px solid var(--color-border-light);" onmouseover="this.style.background='var(--color-bg)'" onmouseout="this.style.background='transparent'">
-                <td style="padding:10px 6px;"><input type="checkbox" class="merge-cb" value="${r.id}" onchange="updateMergeBar()" ${checkedIds.has(r.id) ? 'checked' : ''} style="cursor:pointer;" /></td>
-                <td style="padding:10px 12px;">
-                  <a href="#" onclick="event.preventDefault(); loadRecord(${r.id})" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
-                    ${escapeHtml(r.record_name || (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names))}
-                  </a>
-                  ${r.case_number ? `<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px;">${escapeHtml(r.case_number)}</span>` : ''}
-                  ${r.notes ? `<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">${escapeHtml(r.notes)}</div>` : ''}
-                </td>
-                <td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">${new Date(r.created_at).toLocaleString()}</td>
-                <td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">${formatFileSize(r.timeline_size || 0)}</td>
-                <td style="padding:10px 12px;white-space:nowrap;">
-                  <button class="btn btn-secondary" onclick="loadRecord(${r.id})" style="font-size:12px;padding:4px 10px;margin-right:4px;">Load</button>
-                  <button class="btn btn-secondary" onclick="shareRecord(${r.id})" style="font-size:12px;padding:4px 10px;margin-right:4px;" title="Share">&#128101;</button>
-                  <button class="btn" onclick="deleteRecord(${r.id})" style="font-size:12px;padding:4px 10px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>
-                </td>
-              </tr>
-            `).join('')}
+            ${sorted.map(r => {
+              const hasSummary = r.summary && r.summary.trim();
+              return '<tr style="border-bottom:' + (hasSummary ? 'none' : '1px solid var(--color-border-light)') + ';" onmouseover="this.style.background=\'var(--color-bg)\'" onmouseout="this.style.background=\'transparent\'">'
+                + '<td style="padding:10px 6px;"><input type="checkbox" class="merge-cb" value="' + r.id + '" onchange="updateMergeBar()" ' + (checkedIds.has(r.id) ? 'checked' : '') + ' style="cursor:pointer;" /></td>'
+                + '<td style="padding:10px 12px;">'
+                + (hasSummary ? '<span onclick="toggleRecordSummary(' + r.id + ')" style="cursor:pointer;font-size:10px;color:var(--color-text-muted);margin-right:4px;" id="summaryArrow' + r.id + '">&#9654;</span>' : '')
+                + '<a href="#" onclick="event.preventDefault(); loadRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">'
+                + escapeHtml(r.record_name || (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names))
+                + '</a>'
+                + ' ' + renderStatusBadge(r.status || 'draft')
+                + '<button onclick="changeRecordStatus(' + r.id + ',\'timeline\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Change status">&#9881;</button>'
+                + (r.case_number ? '<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px;">' + escapeHtml(r.case_number) + '</span>' : '')
+                + '<div style="margin-top:3px;">' + renderTagBadges(r.tags)
+                + '<button onclick="editRecordTags(' + r.id + ',\'timeline\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Edit tags">&#127991; Tags</button>'
+                + '</div>'
+                + (r.notes ? '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">' + escapeHtml(r.notes) + '</div>' : '')
+                + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + new Date(r.created_at).toLocaleString() + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + formatFileSize(r.timeline_size || 0) + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;">'
+                + '<span onclick="renameRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Rename">&#9998;</span>'
+                + '<span onclick="shareRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Share">&#128101;</span>'
+                + '<span onclick="deleteRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;color:var(--color-danger);" title="Delete">&#128465;</span>'
+                + '</td></tr>'
+                + (hasSummary ? '<tr id="summaryRow' + r.id + '" style="display:none;border-bottom:1px solid var(--color-border-light);"><td></td><td colspan="4" style="padding:0 12px 12px;"><div style="background:var(--color-bg);border-radius:6px;padding:12px 16px;font-size:13px;color:var(--color-text-secondary);line-height:1.6;white-space:pre-wrap;">' + escapeHtml(r.summary) + '</div><div style="margin-top:8px;text-align:right;"><button class="btn btn-primary" onclick="exportSummaryDocx(' + r.id + ')" style="font-size:11px;padding:5px 14px;">Export DOCX</button></div></td></tr>' : '');
+            }).join('')}
           </tbody>
         </table>
       `;
       updateMergeBar();
+    }
+
+    function exportSummaryDocx(id) {
+      const record = myRecordsData.find(r => r.id === id);
+      if (!record || !record.summary) { alert('No summary available for this record.'); return; }
+      if (!window.docx) { alert('DOCX library not loaded. Please refresh the page.'); return; }
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel } = window.docx;
+
+      const name = record.record_name || (Array.isArray(record.file_names) ? record.file_names.join(', ') : record.file_names);
+      const children = [];
+
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun({ text: 'Document Summary', bold: true, size: 32 })]
+      }));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: name, bold: true, size: 24, color: '333333' })]
+      }));
+      if (record.case_number) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: 'Case: ' + record.case_number, size: 20, color: '666666' })]
+        }));
+      }
+      children.push(new Paragraph({
+        children: [new TextRun({ text: 'Saved: ' + new Date(record.created_at).toLocaleString(), size: 18, color: '888888' })]
+      }));
+      children.push(new Paragraph({ text: '' }));
+
+      const paragraphs = record.summary.split(/\n\n+/);
+      for (const p of paragraphs) {
+        if (p.trim()) {
+          children.push(new Paragraph({
+            spacing: { after: 200 },
+            children: [new TextRun({ text: p.trim(), size: 22 })]
+          }));
+        }
+      }
+
+      const doc = new Document({ sections: [{ children }] });
+      Packer.toBlob(doc).then(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'summary-' + name.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50) + '.docx';
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    function toggleRecordSummary(id) {
+      const row = document.getElementById('summaryRow' + id);
+      const arrow = document.getElementById('summaryArrow' + id);
+      if (!row) return;
+      if (row.style.display === 'none') {
+        row.style.display = '';
+        if (arrow) arrow.innerHTML = '&#9660;';
+      } else {
+        row.style.display = 'none';
+        if (arrow) arrow.innerHTML = '&#9654;';
+      }
     }
 
     function toggleAllMergeCb(checked) {
@@ -4013,7 +4848,7 @@ th{background:#f0f2f8;font-weight:bold;}
       const defaultName = 'Merged Timeline ' + new Date().toLocaleDateString();
       showSaveModal(defaultName, async (recordName) => {
         try {
-          const staffId = document.getElementById('staffSelector').value;
+          const staffId = loggedInStaff;
           const response = await fetch('/api/records/merge', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -4032,7 +4867,7 @@ th{background:#f0f2f8;font-weight:bold;}
     }
 
     async function loadMyRecords() {
-      const staffId = document.getElementById('staffSelector').value;
+      const staffId = loggedInStaff;
       if (!staffId) return;
 
       const container = document.getElementById('myRecordsList');
@@ -4050,10 +4885,75 @@ th{background:#f0f2f8;font-weight:bold;}
       }
     }
 
+    function renameRecord(id) {
+      const record = myRecordsData.find(r => r.id === id);
+      if (!record) return;
+      const currentName = record.record_name || (Array.isArray(record.file_names) ? record.file_names.join(', ') : record.file_names);
+      const currentCase = record.case_number || '';
+
+      const existing = document.getElementById('renameModal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'renameModal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Edit Record</h3>'
+        + '<p style="margin:0 0 16px;font-size:13px;color:var(--color-text-muted);">Update the record name or case number.</p>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record Name</label>'
+        + '<input id="renameInput" type="text" value="' + escapeHtml(currentName) + '" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Case / Matter Number <span style="font-weight:400;color:var(--color-text-muted);">(optional)</span></label>'
+        + '<input id="renameCaseInput" type="text" value="' + escapeHtml(currentCase) + '" placeholder="e.g. 2024-DC-0123" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;" />'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">'
+        + '<button id="renameCancelBtn" class="btn btn-secondary" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button id="renameSaveBtn" class="btn btn-primary" style="font-size:13px;padding:8px 18px;">Save</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+
+      const nameInput = document.getElementById('renameInput');
+      nameInput.select();
+      nameInput.focus();
+
+      const close = () => modal.remove();
+      document.getElementById('renameCancelBtn').onclick = close;
+      modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+      document.getElementById('renameSaveBtn').onclick = async () => {
+        const newName = nameInput.value.trim() || currentName;
+        const newCase = document.getElementById('renameCaseInput').value.trim();
+        close();
+
+        try {
+          // Update name
+          const r1 = await fetch('/api/records/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_name: newName })
+          });
+          const d1 = await r1.json();
+          if (!d1.success) { alert('Rename failed: ' + (d1.error || 'Unknown error')); return; }
+
+          // Update case number
+          await fetch('/api/records/case', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, case_number: newCase || null })
+          });
+
+          loadMyRecords();
+        } catch (err) { alert('Update failed: ' + err.message); }
+      };
+
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('renameSaveBtn').click();
+        if (e.key === 'Escape') close();
+      });
+    }
+
     function shareRecord(id) {
       const record = myRecordsData.find(r => r.id === id);
       if (!record) return;
-      const staffId = document.getElementById('staffSelector').value;
+      const staffId = loggedInStaff;
       const others = ['Caterina', 'Abesha', 'Robel'].filter(s => s !== staffId);
       const currentShares = record.shared_with || [];
 
@@ -4082,7 +4982,7 @@ th{background:#f0f2f8;font-weight:bold;}
     }
 
     async function submitShare(id) {
-      const staffId = document.getElementById('staffSelector').value;
+      const staffId = loggedInStaff;
       const shareWith = Array.from(document.querySelectorAll('.share-cb:checked')).map(cb => cb.value);
       document.getElementById('shareModal').remove();
       try {
@@ -4098,7 +4998,7 @@ th{background:#f0f2f8;font-weight:bold;}
     }
 
     async function loadRecord(id) {
-      const staffId = document.getElementById('staffSelector').value;
+      const staffId = loggedInStaff;
       try {
         const response = await fetch(`/api/records/${staffId}/${id}`);
         const data = await response.json();
@@ -4112,7 +5012,7 @@ th{background:#f0f2f8;font-weight:bold;}
     }
 
     async function deleteRecord(id) {
-      const staffId = document.getElementById('staffSelector').value;
+      const staffId = loggedInStaff;
       if (!confirm('Delete this saved timeline?')) return;
 
       try {
@@ -4155,7 +5055,7 @@ th{background:#f0f2f8;font-weight:bold;}
     }
 
     async function loadAuditLog() {
-      const staffId = document.getElementById('staffSelector').value;
+      const staffId = loggedInStaff;
       if (!staffId) return;
       const container = document.getElementById('auditLogList');
       try {
@@ -4279,6 +5179,17 @@ th{background:#f0f2f8;font-weight:bold;}
         });
       }
 
+      // Enter to submit translation Q&A (Shift+Enter for newline)
+      const trqTextarea = document.getElementById('translationQAQuestion');
+      if (trqTextarea) {
+        trqTextarea.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            askTranslationQuestion();
+          }
+        });
+      }
+
       // Ctrl+Enter to submit Q&A question
       const qaTextarea = document.getElementById('qaQuestion');
       if (qaTextarea) {
@@ -4302,55 +5213,53 @@ th{background:#f0f2f8;font-weight:bold;}
     });
 
     // ── Translation Staff / Records ───────────────────────────────────────────
-    let verifiedTranslateStaff = null;
-
-    function onTranslateStaffChange() {
-      const staffId = document.getElementById('translateStaffSelector').value;
-      verifiedTranslateStaff = null;
-      document.getElementById('translateRecordsPanel').style.display = 'none';
-      if (staffId) {
-        openPinModal(staffId, (id) => {
-          verifiedTranslateStaff = id;
-          document.getElementById('translateRecordsPanel').style.display = 'block';
-          loadTranslateRecords();
-        }, 'translateStaffSelector');
-      }
-    }
+    let transRecordsData = [];
+    let transRecordsSortKey = 'created_at';
+    let transRecordsSortAsc = false;
+    let translateAuditLogData = [];
+    let translationQAHistory = [];
+    let translationQATotalTokens = { input: 0, output: 0 };
 
     async function saveTranslationRecord() {
-      if (!verifiedTranslateStaff) {
-        showTranslateSaveStatus('Please select your name and enter your PIN before saving.', false);
+      if (!loggedInStaff) {
+        showTranslateSaveStatus('Please sign in before saving.', false);
         return;
       }
       if (!lastTranslation) return;
 
-      const btn = document.getElementById('saveTranslationBtn');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
+      const defaultName = lastTranslation.results.map(r => r.filename).join(', ') + ' — ' + lastTranslation.languageName;
 
-      try {
-        const fileNames = lastTranslation.results.map(r => r.filename);
-        const response = await fetch('/api/records/translations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            staff_id: verifiedTranslateStaff,
-            file_names: fileNames,
-            language: lastTranslation.language,
-            language_name: lastTranslation.languageName,
-            translation: lastTranslation.results
-          })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Save failed');
-        showTranslateSaveStatus('&#10003; Saved successfully to your records.', true);
-        loadTranslateRecords();
-      } catch (err) {
-        showTranslateSaveStatus('&#10007; ' + err.message, false);
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '&#128190; Save to My Records';
-      }
+      showSaveModal(defaultName, async (recordName) => {
+        const btn = document.getElementById('saveTranslationBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        try {
+          const fileNames = lastTranslation.results.map(r => r.filename);
+          const response = await fetch('/api/records/translations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              staff_id: loggedInStaff,
+              record_name: recordName,
+              file_names: fileNames,
+              language: lastTranslation.language,
+              language_name: lastTranslation.languageName,
+              translation: lastTranslation.results
+            })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Save failed');
+          showTranslateSaveStatus('&#10003; Saved as "' + escapeHtml(recordName) + '"', true);
+          loadTranslateRecords();
+          loadTranslateAuditLog();
+        } catch (err) {
+          showTranslateSaveStatus('&#10007; ' + err.message, false);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = '&#128190; Save to My Records';
+        }
+      });
     }
 
     function showTranslateSaveStatus(message, success) {
@@ -4359,67 +5268,269 @@ th{background:#f0f2f8;font-weight:bold;}
       el.style.display = 'block';
       el.style.background = success ? 'var(--color-success-bg)' : 'var(--color-danger-bg)';
       el.style.color = success ? 'var(--color-success)' : 'var(--color-danger)';
-      el.style.border = `1px solid ${success ? 'var(--color-success)' : 'var(--color-danger)'}`;
+      el.style.border = '1px solid ' + (success ? 'var(--color-success)' : 'var(--color-danger)');
       setTimeout(() => { el.style.display = 'none'; }, 4000);
     }
 
+    // ── Translation Records (with search/filter/sort) ────────────────────────
+
     async function loadTranslateRecords() {
-      const staffId = verifiedTranslateStaff;
+      const staffId = loggedInStaff;
       if (!staffId) return;
       const container = document.getElementById('translateRecordsList');
       container.innerHTML = '<p style="padding:16px;color:var(--color-text-muted);font-size:14px;">Loading...</p>';
 
       try {
-        const response = await fetch(`/api/records/translations/${staffId}`);
+        const response = await fetch('/api/records/translations/' + staffId);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
 
-        if (!data.records.length) {
-          container.innerHTML = '<div class="placeholder" style="padding:32px 0;"><p class="placeholder-text">No saved translations yet.</p></div>';
-          return;
-        }
-
-        container.innerHTML = data.records.map(r => `
-          <div style="border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:14px;margin-bottom:4px;">
-                <a href="#" onclick="event.preventDefault(); loadTranslateRecord(${r.id})" style="color:var(--color-primary);text-decoration:underline;cursor:pointer;" onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
-                  ${escapeHtml(Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names)}
-                </a>
-              </div>
-              <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:4px;">${escapeHtml(r.language_name)}</div>
-              <div style="font-size:12px;color:var(--color-text-muted);">Saved: ${new Date(r.created_at).toLocaleString()}</div>
-            </div>
-            <div style="display:flex;gap:8px;flex-shrink:0;">
-              <button class="btn btn-secondary" onclick="loadTranslateRecord(${r.id})" style="font-size:12px;padding:5px 12px;">Load</button>
-              <button class="btn" onclick="deleteTranslateRecord(${r.id})" style="font-size:12px;padding:5px 12px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>
-            </div>
-          </div>`).join('');
+        transRecordsData = data.records || [];
+        renderTranslateRecords();
       } catch (err) {
-        container.innerHTML = `<p style="padding:16px;color:var(--color-danger);font-size:14px;">Error: ${escapeHtml(err.message)}</p>`;
+        container.innerHTML = '<p style="padding:16px;color:var(--color-danger);font-size:14px;">Error: ' + escapeHtml(err.message) + '</p>';
       }
     }
 
+    function renderTranslateRecords() {
+      const container = document.getElementById('translateRecordsList');
+      const searchEl = document.getElementById('translateRecordsSearch');
+
+      if (!transRecordsData.length) {
+        searchEl.style.display = 'none';
+        container.innerHTML = '<div class="placeholder" style="padding:32px 0;"><p class="placeholder-text">No saved translations yet.</p></div>';
+        return;
+      }
+      searchEl.style.display = 'block';
+
+      // Filter
+      const query = (document.getElementById('transRecordSearchInput').value || '').toLowerCase();
+      const dateFrom = document.getElementById('transRecordDateFrom').value;
+      const dateTo = document.getElementById('transRecordDateTo').value;
+
+      let filtered = transRecordsData.filter(r => {
+        const fileStr = (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names).toLowerCase();
+        const langStr = (r.language_name || '').toLowerCase();
+        const matchesQuery = !query || fileStr.includes(query) || langStr.includes(query);
+        const created = (r.created_at || '').slice(0, 10);
+        const matchesFrom = !dateFrom || created >= dateFrom;
+        const matchesTo = !dateTo || created <= dateTo;
+        return matchesQuery && matchesFrom && matchesTo;
+      });
+
+      // Sort
+      filtered.sort((a, b) => {
+        let va = a[transRecordsSortKey] || '';
+        let vb = b[transRecordsSortKey] || '';
+        if (transRecordsSortKey === 'file_names') {
+          va = (Array.isArray(va) ? va.join(', ') : va).toLowerCase();
+          vb = (Array.isArray(vb) ? vb.join(', ') : vb).toLowerCase();
+        }
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        return transRecordsSortAsc ? cmp : -cmp;
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No matching records.</p></div>';
+        return;
+      }
+
+      function sortArrow(key) {
+        if (transRecordsSortKey !== key) return '';
+        return transRecordsSortAsc ? ' &#9650;' : ' &#9660;';
+      }
+
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="border-bottom:2px solid var(--color-border-light);text-align:left;">';
+      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'file_names\')">Files' + sortArrow('file_names') + '</th>';
+      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'language_name\')">Language' + sortArrow('language_name') + '</th>';
+      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'created_at\')">Saved' + sortArrow('created_at') + '</th>';
+      html += '<th style="padding:8px 12px;text-align:right;">Actions</th>';
+      html += '</tr></thead><tbody>';
+
+      for (const r of filtered) {
+        const files = Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names;
+        html += '<tr style="border-bottom:1px solid var(--color-border-light);">';
+        const displayName = r.record_name || files;
+        html += '<td style="padding:10px 12px;"><a href="#" onclick="event.preventDefault();loadTranslateRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:underline;cursor:pointer;">' + escapeHtml(displayName) + '</a></td>';
+        html += '<td style="padding:10px 12px;">' + escapeHtml(r.language_name) + '</td>';
+        html += '<td style="padding:10px 12px;white-space:nowrap;">' + new Date(r.created_at).toLocaleString() + '</td>';
+        html += '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">';
+        html += '<button class="btn btn-secondary" onclick="loadTranslateRecord(' + r.id + ')" style="font-size:11px;padding:4px 10px;">Load</button> ';
+        html += '<button class="btn" onclick="deleteTranslateRecord(' + r.id + ')" style="font-size:11px;padding:4px 10px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>';
+        html += '</td></tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    function sortTranslateRecords(key) {
+      if (transRecordsSortKey === key) {
+        transRecordsSortAsc = !transRecordsSortAsc;
+      } else {
+        transRecordsSortKey = key;
+        transRecordsSortAsc = key === 'file_names' || key === 'language_name';
+      }
+      renderTranslateRecords();
+    }
+
     async function loadTranslateRecord(id) {
-      const staffId = verifiedTranslateStaff;
+      const staffId = loggedInStaff;
       try {
-        const response = await fetch(`/api/records/translations/${staffId}/${id}`);
+        const response = await fetch('/api/records/translations/' + staffId + '/' + id);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
         const r = data.record;
         lastTranslation = { language: r.language, languageName: r.language_name, results: r.translation };
         displayTranslation(lastTranslation);
+        // Show Q&A panel when translation is loaded
+        document.getElementById('translationQAPanel').style.display = 'block';
+        window.scrollTo({ top: document.getElementById('translateResults').offsetTop - 80, behavior: 'smooth' });
       } catch (err) { alert('Failed to load: ' + err.message); }
     }
 
     async function deleteTranslateRecord(id) {
       if (!confirm('Delete this saved translation?')) return;
       try {
-        const response = await fetch(`/api/records/translations/${verifiedTranslateStaff}/${id}`, { method: 'DELETE' });
+        const response = await fetch('/api/records/translations/' + loggedInStaff + '/' + id, { method: 'DELETE' });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
         loadTranslateRecords();
+        loadTranslateAuditLog();
       } catch (err) { alert('Failed to delete: ' + err.message); }
+    }
+
+    // ── Translation Q&A ──────────────────────────────────────────────────────
+
+    async function askTranslationQuestion() {
+      if (!lastTranslation) return;
+      const questionInput = document.getElementById('translationQAQuestion');
+      const submitBtn = document.getElementById('translationQASubmitBtn');
+      const loading = document.getElementById('translationQALoading');
+      const error = document.getElementById('translationQAError');
+      const question = questionInput.value.trim();
+
+      if (!question) { showTranslationQAError('Please enter a question'); return; }
+      if (question.length < 5) { showTranslationQAError('Question is too short'); return; }
+
+      error.classList.remove('active');
+      submitBtn.disabled = true;
+      loading.classList.add('active');
+      document.getElementById('translationQAPlaceholder').classList.add('hidden');
+
+      try {
+        const response = await fetch('/api/translation-qa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            translation: lastTranslation,
+            conversationHistory: translationQAHistory
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Request failed');
+
+        translationQAHistory.push({ role: 'user', content: question });
+        translationQAHistory.push({ role: 'assistant', content: data.answer });
+        translationQATotalTokens.input += data.usage.inputTokens;
+        translationQATotalTokens.output += data.usage.outputTokens;
+        document.getElementById('translationQATokenCount').textContent =
+          'Tokens: ' + translationQATotalTokens.input.toLocaleString() + ' in / ' + translationQATotalTokens.output.toLocaleString() + ' out';
+
+        questionInput.value = '';
+        renderTranslationQAConversation();
+      } catch (err) {
+        showTranslationQAError(err.message);
+      } finally {
+        submitBtn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function renderTranslationQAConversation() {
+      const container = document.getElementById('translationQAMessages');
+      let html = '';
+      for (let i = 0; i < translationQAHistory.length; i += 2) {
+        const userMsg = translationQAHistory[i];
+        const assistantMsg = translationQAHistory[i + 1];
+        html += '<div class="qa-message">'
+          + '<div class="qa-message-user"><div class="qa-label">Your Question</div><div class="qa-content">' + escapeHtml(userMsg.content) + '</div></div>'
+          + '<div class="qa-message-assistant"><div class="qa-label">Answer</div><div class="qa-content">' + formatQAResponse(assistantMsg.content) + '</div></div>'
+          + '</div>';
+      }
+      container.innerHTML = html;
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function showTranslationQAError(msg) {
+      const el = document.getElementById('translationQAError');
+      el.textContent = msg;
+      el.classList.add('active');
+    }
+
+    function clearTranslationQA() {
+      translationQAHistory = [];
+      translationQATotalTokens = { input: 0, output: 0 };
+      document.getElementById('translationQATokenCount').textContent = '';
+      document.getElementById('translationQAMessages').innerHTML = '';
+      document.getElementById('translationQAPlaceholder').classList.remove('hidden');
+      const q = document.getElementById('translationQAQuestion');
+      if (q) q.value = '';
+      const e = document.getElementById('translationQAError');
+      if (e) e.classList.remove('active');
+    }
+
+    // ── Translation Activity Log ─────────────────────────────────────────────
+
+    async function loadTranslateAuditLog() {
+      const staffId = loggedInStaff;
+      if (!staffId) return;
+      const container = document.getElementById('translateAuditLogList');
+      try {
+        const response = await fetch('/api/records/audit/' + staffId);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        // Filter to translation-related actions only
+        translateAuditLogData = (data.logs || []).filter(l =>
+          l.action === 'save_translation' || l.action === 'delete_translation'
+        );
+        if (!translateAuditLogData.length) {
+          container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No translation activity yet.</p></div>';
+          return;
+        }
+        document.getElementById('translateAuditSearchInput').value = '';
+        renderTranslateAuditRows(translateAuditLogData, container);
+      } catch (err) {
+        container.innerHTML = '<p style="padding:16px;color:var(--color-danger);font-size:14px;">Error: ' + escapeHtml(err.message) + '</p>';
+      }
+    }
+
+    function filterTranslateAuditLog() {
+      const query = (document.getElementById('translateAuditSearchInput').value || '').toLowerCase();
+      const container = document.getElementById('translateAuditLogList');
+      if (!translateAuditLogData.length) return;
+      const filtered = query ? translateAuditLogData.filter(l =>
+        (l.action || '').toLowerCase().includes(query) || (l.details || '').toLowerCase().includes(query)
+      ) : translateAuditLogData;
+      if (!filtered.length) {
+        container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No matching activity.</p></div>';
+        return;
+      }
+      renderTranslateAuditRows(filtered, container);
+    }
+
+    function renderTranslateAuditRows(logs, container) {
+      const icons = { save_translation: '&#128190;', delete_translation: '&#128465;' };
+      container.innerHTML = logs.map(l =>
+        '<div style="padding:8px 14px;border-bottom:1px solid var(--color-border-light);font-size:13px;display:flex;align-items:center;gap:10px;">'
+        + '<span style="font-size:16px;">' + (icons[l.action] || '&#128196;') + '</span>'
+        + '<div style="flex:1;"><span style="font-weight:600;">' + escapeHtml(l.action.replace(/_/g, ' ')) + '</span>'
+        + (l.details ? '<span style="color:var(--color-text-muted);"> &mdash; ' + escapeHtml(l.details) + '</span>' : '')
+        + '</div>'
+        + '<span style="font-size:11px;color:var(--color-text-muted);white-space:nowrap;">' + new Date(l.created_at).toLocaleString() + '</span>'
+        + '</div>'
+      ).join('');
     }
 
     // ── Translation ──────────────────────────────────────────────────────────
@@ -4485,7 +5596,7 @@ th{background:#f0f2f8;font-weight:bold;}
       const error = document.getElementById('translateError');
       const placeholder = document.getElementById('translatePlaceholder');
 
-      if (!verifiedTranslateStaff) { showTranslateError('Please select your name and enter your PIN first.'); return; }
+      if (!loggedInStaff) { showTranslateError('Please sign in first.'); return; }
       if (!language) { showTranslateError('Please select a target language.'); return; }
       if (translateUploadedFiles.length === 0) { showTranslateError('Please upload at least one document.'); return; }
 
@@ -4533,6 +5644,9 @@ th{background:#f0f2f8;font-weight:bold;}
 
       results.innerHTML = html;
       results.classList.add('active');
+      // Show Q&A panel when translation is displayed
+      document.getElementById('translationQAPanel').style.display = 'block';
+      clearTranslationQA();
     }
 
     function showTranslateError(message) {
@@ -4544,10 +5658,10 @@ th{background:#f0f2f8;font-weight:bold;}
     function exportTranslation() {
       if (!lastTranslation) return;
       const langName = lastTranslation.languageName;
-      let text = `TRANSLATION — ${langName.toUpperCase()}\nGenerated: ${new Date().toLocaleString()}\n${'='.repeat(60)}\n\n`;
+      let text = 'TRANSLATION \u2014 ' + langName.toUpperCase() + '\nGenerated: ' + new Date().toLocaleString() + '\n' + '='.repeat(60) + '\n\n';
       for (const r of lastTranslation.results) {
         if (lastTranslation.results.length > 1) {
-          text += `FILE: ${r.filename}${r.pages ? ` (${r.pages} pages)` : ''}\n${'─'.repeat(40)}\n\n`;
+          text += 'FILE: ' + r.filename + (r.pages ? ' (' + r.pages + ' pages)' : '') + '\n' + '\u2500'.repeat(40) + '\n\n';
         }
         text += r.translation + '\n\n';
       }
@@ -4555,9 +5669,62 @@ th{background:#f0f2f8;font-weight:bold;}
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `translation-${lastTranslation.language}-${new Date().toISOString().slice(0,10)}.txt`;
+      link.download = 'translation-' + lastTranslation.language + '-' + new Date().toISOString().slice(0,10) + '.txt';
       link.click();
       URL.revokeObjectURL(url);
+    }
+
+    function exportTranslationDocx() {
+      if (!lastTranslation) return;
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = window.docx;
+
+      const langName = lastTranslation.languageName;
+      const children = [];
+
+      // Title
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: 'Translation \u2014 ' + langName, bold: true, size: 32 })]
+      }));
+      children.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: 'Generated: ' + new Date().toLocaleString(), size: 20, color: '888888' })]
+      }));
+      children.push(new Paragraph({ text: '' }));
+
+      for (const r of lastTranslation.results) {
+        if (lastTranslation.results.length > 1) {
+          children.push(new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: r.filename + (r.pages ? ' (' + r.pages + ' pages)' : ''), bold: true, size: 24 })]
+          }));
+        }
+        // Split translation into paragraphs
+        const paragraphs = r.translation.split(/\n\n+/);
+        for (const p of paragraphs) {
+          if (p.trim()) {
+            children.push(new Paragraph({
+              spacing: { after: 200 },
+              children: [new TextRun({ text: p.trim(), size: 22 })]
+            }));
+          }
+        }
+        children.push(new Paragraph({ text: '' }));
+      }
+
+      const doc = new Document({
+        sections: [{ children }]
+      });
+
+      Packer.toBlob(doc).then(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'translation-' + lastTranslation.language + '-' + new Date().toISOString().slice(0,10) + '.docx';
+        link.click();
+        URL.revokeObjectURL(url);
+      });
     }
 
     function clearTranslation() {

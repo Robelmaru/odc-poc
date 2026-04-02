@@ -8,6 +8,8 @@ import timeline from "./routes/timeline.js";
 import timelineQA from "./routes/timeline-qa.js";
 import records from "./routes/records.js";
 import translate from "./routes/translate.js";
+import translationQA from "./routes/translation-qa.js";
+import helpQA from "./routes/help-qa.js";
 
 const app = new Hono();
 
@@ -21,6 +23,8 @@ app.route("/api/timeline", timeline);
 app.route("/api/timeline-qa", timelineQA);
 app.route("/api/records", records);
 app.route("/api/translate", translate);
+app.route("/api/translation-qa", translationQA);
+app.route("/api/help-qa", helpQA);
 
 // Health check
 app.get("/api/health", (c) => c.json({ status: "ok" }));

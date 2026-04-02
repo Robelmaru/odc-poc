@@ -55,8 +55,8 @@ translate.post("/", async (c) => {
 
       if (file.name.endsWith(".pdf")) {
         const extracted = await extractTextFromPdf(buffer);
-        fullText = extracted.text;
-        pages = extracted.pages;
+        fullText = extracted.pages.map((p) => p.text).join("\n\n");
+        pages = extracted.totalPages;
         console.log(`    Extracted ${pages} pages, ${fullText.length.toLocaleString()} characters`);
       } else if (file.name.endsWith(".txt")) {
         fullText = await file.text();

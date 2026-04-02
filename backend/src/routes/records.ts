@@ -5,10 +5,23 @@ import {
   getRecordById,
   deleteRecord,
   updateRecordSharing,
+  updateRecordName,
   updateRecordCase,
+  updateRecordStatus,
+  updateRecordTags,
+  updateTranslationStatus,
+  updateTranslationTags,
   insertAuditLog,
   getAuditLog,
   getAuditLogAll,
+  insertNotification,
+  getNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  getUnreadNotificationCount,
+  touchSession,
+  getDashboardStats,
+  getAllRecordCounts,
   type TimelineRecord,
   insertTranslationRecord,
   getTranslationsByStaff,
@@ -48,7 +61,7 @@ records.post("/verify", async (c) => {
 
 // Save a new timeline record
 records.post("/", async (c) => {
-  const { staff_id, record_name, case_number, file_names, notes, timeline } = await c.req.json();
+  const { staff_id, record_name, case_number, file_names, notes, summary, timeline } = await c.req.json();
 
   if (!staff_id || !VALID_STAFF.includes(staff_id)) {
     return c.json({ error: "Invalid staff member" }, 400);
@@ -63,6 +76,7 @@ records.post("/", async (c) => {
     case_number: case_number || null,
     file_names: JSON.stringify(file_names),
     notes: notes || null,
+    summary: summary || null,
     timeline: JSON.stringify(timeline),
   });
 
@@ -74,14 +88,15 @@ records.post("/", async (c) => {
 // NOTE: these must be registered BEFORE /:staffId to avoid being swallowed by it
 
 records.post("/translations", async (c) => {
-  const { staff_id, file_names, language, language_name, translation } = await c.req.json();
+  const { staff_id, record_name, file_names, language, language_name, translation } = await c.req.json();
   if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!file_names || !language || !translation) return c.json({ error: "file_names, language, and translation are required" }, 400);
 
   const result = await insertTranslationRecord({
-    staff_id, file_names: JSON.stringify(file_names), language, language_name,
+    staff_id, record_name: record_name || null, file_names: JSON.stringify(file_names), language, language_name,
     translation: JSON.stringify(translation),
   });
+  await insertAuditLog({ staff_id, action: 'save_translation', details: `"${record_name || file_names.join(', ')}" to ${language_name} (ID: ${result.lastInsertRowid})` });
   return c.json({ success: true, id: result.lastInsertRowid });
 });
 
@@ -107,6 +122,7 @@ records.delete("/translations/:staffId/:id", async (c) => {
   if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const result = await deleteTranslation(id, staffId);
   if (result.changes === 0) return c.json({ error: "Record not found" }, 404);
+  await insertAuditLog({ staff_id: staffId, action: 'delete_translation', details: `Translation ${id} deleted` });
   return c.json({ success: true });
 });
 
@@ -123,7 +139,25 @@ records.post("/share", async (c) => {
   const validShares = share_with.filter((s: string) => VALID_STAFF.includes(s) && s !== staff_id);
   await updateRecordSharing(JSON.stringify(validShares), record_id);
   await insertAuditLog({ staff_id, action: 'share_record', details: `Record ${record_id} shared with ${validShares.join(', ')}` });
+  // Notify each recipient
+  const recordName = row.record_name || 'a timeline record';
+  for (const recipient of validShares) {
+    await insertNotification({ staff_id: recipient, message: `${staff_id} shared "${recordName}" with you`, link: `record:${record_id}` });
+  }
   return c.json({ success: true, shared_with: validShares });
+});
+
+// Rename a record
+records.post("/rename", async (c) => {
+  const { staff_id, record_id, record_name } = await c.req.json();
+  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!record_id || !record_name) return c.json({ error: "record_id and record_name are required" }, 400);
+
+  const row = await getRecordById(record_id);
+  if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
+
+  await updateRecordName(record_name, record_id);
+  return c.json({ success: true });
 });
 
 // Update case number for a record
@@ -291,6 +325,83 @@ records.get("/audit/:staffId", async (c) => {
   if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const logs = await getAuditLog(staffId);
   return c.json({ success: true, logs });
+});
+
+// ── Status & Tags ────────────────────────────────────────────────────────
+
+records.post("/status", async (c) => {
+  const { staff_id, record_id, record_type, status } = await c.req.json();
+  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  const validStatuses = ['draft', 'in_review', 'complete', 'flagged'];
+  if (!validStatuses.includes(status)) return c.json({ error: "Invalid status" }, 400);
+  if (record_type === 'translation') {
+    await updateTranslationStatus(record_id, status);
+  } else {
+    await updateRecordStatus(record_id, status);
+  }
+  return c.json({ success: true });
+});
+
+records.post("/tags", async (c) => {
+  const { staff_id, record_id, record_type, tags } = await c.req.json();
+  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!Array.isArray(tags)) return c.json({ error: "Tags must be an array" }, 400);
+  if (record_type === 'translation') {
+    await updateTranslationTags(record_id, JSON.stringify(tags));
+  } else {
+    await updateRecordTags(record_id, JSON.stringify(tags));
+  }
+  return c.json({ success: true });
+});
+
+// ── Notifications ────────────────────────────────────────────────────────
+
+records.get("/notifications/:staffId", async (c) => {
+  const staffId = c.req.param("staffId");
+  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  const [notifications, unread] = await Promise.all([
+    getNotifications(staffId),
+    getUnreadNotificationCount(staffId),
+  ]);
+  return c.json({ success: true, notifications, unread });
+});
+
+records.post("/notifications/read", async (c) => {
+  const { staff_id, notification_id } = await c.req.json();
+  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (notification_id === 'all') {
+    await markAllNotificationsRead(staff_id);
+  } else {
+    await markNotificationRead(notification_id, staff_id);
+  }
+  return c.json({ success: true });
+});
+
+// ── Dashboard ────────────────────────────────────────────────────────────
+
+records.get("/dashboard/:staffId", async (c) => {
+  const staffId = c.req.param("staffId");
+  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  const stats = await getDashboardStats(staffId);
+  const unread = await getUnreadNotificationCount(staffId);
+  return c.json({ success: true, ...stats, unreadNotifications: unread });
+});
+
+// ── Session Heartbeat ────────────────────────────────────────────────────
+
+records.post("/heartbeat", async (c) => {
+  const { staff_id } = await c.req.json();
+  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid" }, 400);
+  await touchSession(staff_id);
+  return c.json({ success: true });
+});
+
+// ── Admin ────────────────────────────────────────────────────────────────
+
+records.get("/admin/overview", async (c) => {
+  const counts = await getAllRecordCounts();
+  const allLogs = await getAuditLogAll();
+  return c.json({ success: true, ...counts, recentActivity: allLogs });
 });
 
 // ── Timeline Records ────────────────────────────────────────────────────────
