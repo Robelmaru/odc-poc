@@ -42,6 +42,8 @@ translate.post("/", async (c) => {
     console.log(`Translating ${files.length} file(s) to ${targetLanguage}...`);
 
     const results: { filename: string; translation: string; pages?: number }[] = [];
+    const ocrInfo: { filename: string; visionPages: number; visionClarity?: number }[] = [];
+    const sourceTexts: { filename: string; text: string }[] = [];
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
@@ -57,9 +59,14 @@ translate.post("/", async (c) => {
         const extracted = await extractTextFromPdf(buffer);
         fullText = extracted.pages.map((p) => p.text).join("\n\n");
         pages = extracted.totalPages;
-        console.log(`    Extracted ${pages} pages, ${fullText.length.toLocaleString()} characters`);
+        if (extracted.visionPages > 0) {
+          ocrInfo.push({ filename: file.name, visionPages: extracted.visionPages, visionClarity: extracted.visionClarity });
+        }
+        sourceTexts.push({ filename: file.name, text: fullText.slice(0, 50000) });
+        console.log(`    Extracted ${pages} pages, ${fullText.length.toLocaleString()} characters` + (extracted.visionPages > 0 ? `, ${extracted.visionPages} via Vision OCR (${extracted.visionClarity}% clarity)` : ''));
       } else if (file.name.endsWith(".txt")) {
         fullText = await file.text();
+        sourceTexts.push({ filename: file.name, text: fullText.slice(0, 50000) });
       } else {
         console.log(`    Skipping unsupported file type: ${file.name}`);
         continue;
@@ -71,7 +78,7 @@ translate.post("/", async (c) => {
       const translatedChunks: string[] = [];
       for (let i = 0; i < chunks.length; i++) {
         console.log(`    Chunk ${i + 1}/${chunks.length}...`);
-        const translated = await translateChunk(chunks[i], targetLanguage);
+        const translated = await translateChunk(chunks[i]!, targetLanguage!);
         translatedChunks.push(translated);
       }
 
@@ -93,6 +100,8 @@ translate.post("/", async (c) => {
       language,
       languageName: targetLanguage,
       results,
+      ocrInfo: ocrInfo.length > 0 ? ocrInfo : undefined,
+      sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
       usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
     });
   } catch (error) {
@@ -101,7 +110,7 @@ translate.post("/", async (c) => {
     if (error instanceof Anthropic.APIError) {
       return c.json(
         { error: `Claude API error: ${error.message}` },
-        (error.status as number) || 500
+        (error.status as 400 | 401 | 403 | 404 | 500) || 500
       );
     }
 

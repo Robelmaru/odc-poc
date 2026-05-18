@@ -1,12 +1,14 @@
 services:
   app:
-    build: .
+    image: dcbar/odc-poc-app:latest
     ports:
       - "3001:3000"
-    env_file:
-      - ./backend/.env
     environment:
-      - DATABASE_HOST=host.docker.internal
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_PATH=/app/backend/data/odc-poc.db
+      - PIN_CATERINA=1111
+      - PIN_ABESHA=2222
+      - PIN_ROBEL=3333
+    volumes:
+      - ./backend/data:/app/backend/data
     restart: unless-stopped

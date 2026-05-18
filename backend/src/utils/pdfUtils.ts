@@ -15,6 +15,7 @@ export interface PageText {
   pageNum: number;
   text: string;
   visionUsed?: boolean;
+  clarity?: number; // 0-100 readability score from Vision
 }
 
 export interface PdfExtraction {
@@ -24,11 +25,13 @@ export interface PdfExtraction {
   ocrQuality: string;
   ocrScore: number;
   visionPages: number;
+  visionClarity?: number; // average clarity across Vision pages
 }
 
 /**
  * Extracts text from a PDF page-by-page.
  * Uses text extraction first, then falls back to Claude Vision for sparse/image pages.
+ * Reports a clarity percentage for handwritten/scanned pages.
  */
 export async function extractTextFromPdf(
   buffer: Buffer,
@@ -45,7 +48,7 @@ export async function extractTextFromPdf(
     allPages.push({ pageNum: p.num, text: (p.text || "").trim() });
   }
 
-  // Also add pages that had no entry (completely blank in text extraction)
+  // Also add pages that had no entry
   const pageNums = new Set(allPages.map((p) => p.pageNum));
   for (let i = 1; i <= result.total; i++) {
     if (!pageNums.has(i)) {
@@ -57,6 +60,7 @@ export async function extractTextFromPdf(
   // Identify sparse pages (likely scanned/handwritten)
   const sparsePages = allPages.filter((p) => p.text.length < SPARSE_TEXT_THRESHOLD);
   let visionPages = 0;
+  let totalClarity = 0;
 
   if (sparsePages.length > 0) {
     if (onProgress) {
@@ -70,7 +74,6 @@ export async function extractTextFromPdf(
     fs.writeFileSync(tmpPdf, buffer);
 
     try {
-      // Process sparse pages with Vision in batches
       const tasks = sparsePages.map((page) => async () => {
         try {
           const imgPrefix = "page-" + page.pageNum;
@@ -82,16 +85,10 @@ export async function extractTextFromPdf(
             page: page.pageNum,
           });
 
-          // pdf-poppler names output: {prefix}-{pageNum}.jpg
-          const imgPath = path.join(tmpDir, imgPrefix + "-" + page.pageNum + ".jpg");
-          if (!fs.existsSync(imgPath)) {
-            // Try alternate naming patterns
-            const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(imgPrefix) && f.endsWith(".jpg"));
-            if (files.length === 0) return;
-            var actualPath = path.join(tmpDir, files[0]!);
-          } else {
-            var actualPath = imgPath;
-          }
+          // Find the output image
+          const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(imgPrefix) && f.endsWith(".jpg"));
+          if (files.length === 0) return;
+          const actualPath = path.join(tmpDir, files[0]!);
 
           const imgBuffer = fs.readFileSync(actualPath);
           const base64 = imgBuffer.toString("base64");
@@ -109,7 +106,21 @@ export async function extractTextFromPdf(
                   },
                   {
                     type: "text",
-                    text: "Extract ALL text from this document page. Include handwritten text, printed text, stamps, signatures, dates, annotations, and any other visible text. Return only the extracted text, nothing else.",
+                    text: `Analyze this document page image. Do two things:
+
+1. Extract ALL visible text — handwritten text, printed text, stamps, signatures, dates, annotations, form fields, checkboxes, and any other visible content. For handwritten text, do your best to decipher it even if unclear.
+
+2. Rate the CLARITY of the page on a scale of 0-100:
+   - 0-20: Illegible (cannot make out most text)
+   - 21-40: Poor (can read some words but much is unclear)
+   - 41-60: Fair (readable with effort, some unclear sections)
+   - 61-80: Good (mostly readable, minor unclear areas)
+   - 81-100: Excellent (clearly readable)
+
+Return your response in this EXACT format:
+CLARITY: [number]
+---
+[extracted text here]`,
                   },
                 ],
               },
@@ -118,19 +129,37 @@ export async function extractTextFromPdf(
 
           const textBlock = response.content.find((b) => b.type === "text");
           if (textBlock && textBlock.type === "text" && textBlock.text.trim().length > 0) {
-            page.text = textBlock.text.trim();
-            page.visionUsed = true;
-            visionPages++;
+            const responseText = textBlock.text.trim();
+
+            // Parse clarity score and text
+            const clarityMatch = responseText.match(/^CLARITY:\s*(\d+)/i);
+            let clarity = 50; // default
+            let extractedText = responseText;
+
+            if (clarityMatch) {
+              clarity = Math.min(100, Math.max(0, parseInt(clarityMatch[1]!, 10)));
+              const dividerIdx = responseText.indexOf("---");
+              if (dividerIdx !== -1) {
+                extractedText = responseText.slice(dividerIdx + 3).trim();
+              }
+            }
+
+            if (extractedText.length > 0) {
+              page.text = extractedText;
+              page.visionUsed = true;
+              page.clarity = clarity;
+              visionPages++;
+              totalClarity += clarity;
+            }
           }
 
           // Clean up image file
           try { fs.unlinkSync(actualPath); } catch { /* ignore */ }
         } catch (err) {
-          console.log("    Vision OCR failed for page " + page.pageNum + ": " + (err as Error).message.slice(0, 60));
+          console.log("    Vision OCR failed for page " + page.pageNum + ": " + (err as Error).message.slice(0, 80));
         }
       });
 
-      // Run Vision calls with concurrency limit
       await runWithConcurrency(tasks, VISION_CONCURRENCY);
     } finally {
       // Clean up temp files
@@ -143,10 +172,11 @@ export async function extractTextFromPdf(
       } catch { /* ignore */ }
     }
 
+    const avgClarity = visionPages > 0 ? Math.round(totalClarity / visionPages) : 0;
     if (onProgress) {
-      await onProgress("Vision OCR completed — extracted text from " + visionPages + " scanned pages");
+      await onProgress("Vision OCR completed — extracted text from " + visionPages + " pages (avg clarity: " + avgClarity + "%)");
     }
-    console.log("    Vision OCR done: " + visionPages + " pages processed");
+    console.log("    Vision OCR done: " + visionPages + " pages, avg clarity: " + avgClarity + "%");
   }
 
   // Recalculate stats
@@ -159,7 +189,7 @@ export async function extractTextFromPdf(
   let ocrScore = 100;
 
   if (totalChars < 20) {
-    return { pages: textPages, totalPages: result.total, totalChars, ocrQuality: "poor", ocrScore: 0, visionPages };
+    return { pages: textPages, totalPages: result.total, totalChars, ocrQuality: "poor", ocrScore: 0, visionPages, visionClarity: 0 };
   }
 
   const garbageChars = (fullText.match(/[^\x20-\x7E\n\r\t\u00C0-\u024F]/g) || []).length;
@@ -178,7 +208,8 @@ export async function extractTextFromPdf(
   else if (ocrScore >= 60) ocrQuality = "fair";
   else ocrQuality = "poor";
 
-  return { pages: textPages, totalPages: result.total, totalChars, ocrQuality, ocrScore, visionPages };
+  const avgClarity = visionPages > 0 ? Math.round(totalClarity / visionPages) : undefined;
+  return { pages: textPages, totalPages: result.total, totalChars, ocrQuality, ocrScore, visionPages, visionClarity: avgClarity };
 }
 
 /** Run async tasks with limited concurrency */
@@ -207,7 +238,7 @@ export function chunkByPages(pages: PageText[], pagesPerChunk: number = PAGES_PE
     return [
       {
         label: "",
-        text: pages.map((p) => "--- Page " + p.pageNum + (p.visionUsed ? " [Vision OCR]" : "") + " ---\n" + p.text).join("\n\n"),
+        text: pages.map((p) => "--- Page " + p.pageNum + (p.visionUsed ? " [Vision OCR" + (p.clarity != null ? " " + p.clarity + "% clarity" : "") + "]" : "") + " ---\n" + p.text).join("\n\n"),
         pageRange: pages[0]!.pageNum + "-" + pages[pages.length - 1]!.pageNum,
       },
     ];
@@ -224,7 +255,7 @@ export function chunkByPages(pages: PageText[], pagesPerChunk: number = PAGES_PE
 
     chunks.push({
       label: "(Part " + chunkIndex + " of " + totalChunks + ", pages " + firstPage + "\u2013" + lastPage + ")",
-      text: slice.map((p) => "--- Page " + p.pageNum + (p.visionUsed ? " [Vision OCR]" : "") + " ---\n" + p.text).join("\n\n"),
+      text: slice.map((p) => "--- Page " + p.pageNum + (p.visionUsed ? " [Vision OCR" + (p.clarity != null ? " " + p.clarity + "% clarity" : "") + "]" : "") + " ---\n" + p.text).join("\n\n"),
       pageRange: firstPage + "-" + lastPage,
     });
   }

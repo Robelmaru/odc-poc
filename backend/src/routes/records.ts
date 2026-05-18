@@ -28,42 +28,88 @@ import {
   getTranslationById,
   deleteTranslation,
   type TranslationRecord,
+  getUserByUsername,
+  getActiveUsernames,
+  getAllUsers,
+  createUser,
+  updateUserActive,
+  updateUserPin,
+  updateUserRole,
+  default as db,
 } from "../db/database.js";
 
-const VALID_STAFF = ["Caterina", "Abesha", "Robel"];
-
-function getPinForStaff(staffId: string): string | undefined {
-  const key = `PIN_${staffId.toUpperCase()}`;
-  return process.env[key];
+function getValidStaff(): string[] {
+  return getActiveUsernames();
 }
 
 const records = new Hono();
 
-// PIN verification
+// PIN verification (now uses DB)
 records.post("/verify", async (c) => {
   const { staff_id, pin } = await c.req.json();
+  if (!staff_id || !pin) return c.json({ error: "Username and password required" }, 400);
 
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) {
-    return c.json({ error: "Invalid staff member" }, 400);
-  }
+  const user = getUserByUsername(staff_id);
+  if (!user) return c.json({ error: "Invalid username or password" }, 401);
+  if (!user.active) return c.json({ error: "Account is disabled. Contact your administrator." }, 403);
+  if (user.pin !== pin) return c.json({ success: false, error: "Invalid username or password" }, 401);
 
-  const correctPin = getPinForStaff(staff_id);
-  if (!correctPin) {
-    return c.json({ error: "PIN not configured for this staff member" }, 500);
-  }
+  return c.json({ success: true, role: user.role });
+});
 
-  if (pin !== correctPin) {
-    return c.json({ success: false, error: "Incorrect PIN" }, 401);
-  }
+// ── Admin: User Management ───────────────────────────────────────────────
 
+records.get("/admin/users", async (c) => {
+  const users = getAllUsers();
+  return c.json({ success: true, users: users.map(u => ({ ...u, pin: '****' })) });
+});
+
+records.post("/admin/users", async (c) => {
+  const { admin_id, username, pin, role } = await c.req.json();
+  const admin = getUserByUsername(admin_id);
+  if (!admin || admin.role !== 'admin') return c.json({ error: "Admin access required" }, 403);
+  if (!username || !pin) return c.json({ error: "Username and PIN required" }, 400);
+  const existing = getUserByUsername(username);
+  if (existing) return c.json({ error: "Username already exists" }, 400);
+  createUser(username, pin, role || 'staff');
+  await insertAuditLog({ staff_id: admin_id, action: 'create_user', details: `Created user "${username}" with role ${role || 'staff'}` });
+  return c.json({ success: true });
+});
+
+records.post("/admin/users/toggle", async (c) => {
+  const { admin_id, user_id, active } = await c.req.json();
+  const admin = getUserByUsername(admin_id);
+  if (!admin || admin.role !== 'admin') return c.json({ error: "Admin access required" }, 403);
+  updateUserActive(user_id, active);
+  await insertAuditLog({ staff_id: admin_id, action: active ? 'enable_user' : 'disable_user', details: `User ID ${user_id}` });
+  return c.json({ success: true });
+});
+
+records.post("/admin/users/reset-pin", async (c) => {
+  const { admin_id, user_id, new_pin } = await c.req.json();
+  const admin = getUserByUsername(admin_id);
+  if (!admin || admin.role !== 'admin') return c.json({ error: "Admin access required" }, 403);
+  if (!new_pin) return c.json({ error: "New PIN required" }, 400);
+  updateUserPin(user_id, new_pin);
+  await insertAuditLog({ staff_id: admin_id, action: 'reset_pin', details: `Reset PIN for user ID ${user_id}` });
+  return c.json({ success: true });
+});
+
+records.post("/admin/users/role", async (c) => {
+  const { admin_id, user_id, role } = await c.req.json();
+  const admin = getUserByUsername(admin_id);
+  if (!admin || admin.role !== 'admin') return c.json({ error: "Admin access required" }, 403);
+  if (!['staff', 'admin'].includes(role)) return c.json({ error: "Invalid role" }, 400);
+  updateUserRole(user_id, role);
+  await insertAuditLog({ staff_id: admin_id, action: 'change_role', details: `User ID ${user_id} role changed to ${role}` });
   return c.json({ success: true });
 });
 
 // Save a new timeline record
 records.post("/", async (c) => {
-  const { staff_id, record_name, case_number, file_names, notes, summary, timeline } = await c.req.json();
+  const { staff_id, record_name, case_number, file_names, notes, summary, ai_score, timeline } = await c.req.json();
 
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) {
+  if (!staff_id || !getValidStaff().includes(staff_id)) {
     return c.json({ error: "Invalid staff member" }, 400);
   }
   if (!file_names || !timeline) {
@@ -77,6 +123,7 @@ records.post("/", async (c) => {
     file_names: JSON.stringify(file_names),
     notes: notes || null,
     summary: summary || null,
+    ai_score: ai_score != null ? ai_score : null,
     timeline: JSON.stringify(timeline),
   });
 
@@ -89,7 +136,7 @@ records.post("/", async (c) => {
 
 records.post("/translations", async (c) => {
   const { staff_id, record_name, file_names, language, language_name, translation } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!file_names || !language || !translation) return c.json({ error: "file_names, language, and translation are required" }, 400);
 
   const result = await insertTranslationRecord({
@@ -102,24 +149,34 @@ records.post("/translations", async (c) => {
 
 records.get("/translations/:staffId", async (c) => {
   const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!getValidStaff().includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const rows = await getTranslationsByStaff(staffId);
-  return c.json({ success: true, records: rows.map((r) => ({ ...r, file_names: JSON.parse(r.file_names) })) });
+  return c.json({ success: true, records: rows.map((r: any) => ({ ...r, file_names: JSON.parse(r.file_names) })) });
 });
 
 records.get("/translations/:staffId/:id", async (c) => {
   const staffId = c.req.param("staffId");
   const id = Number(c.req.param("id"));
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!getValidStaff().includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const row = await getTranslationById(id);
   if (!row || row.staff_id !== staffId) return c.json({ error: "Record not found" }, 404);
   return c.json({ success: true, record: { ...row, file_names: JSON.parse(row.file_names), translation: JSON.parse(row.translation) } });
 });
 
+records.post("/translations/rename", async (c) => {
+  const { staff_id, record_id, record_name } = await c.req.json();
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!record_id || !record_name) return c.json({ error: "record_id and record_name required" }, 400);
+  const row = await getTranslationById(record_id);
+  if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
+  db.prepare(`UPDATE translation_records SET record_name = ? WHERE id = ?`).run(record_name, record_id);
+  return c.json({ success: true });
+});
+
 records.delete("/translations/:staffId/:id", async (c) => {
   const staffId = c.req.param("staffId");
   const id = Number(c.req.param("id"));
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!getValidStaff().includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const result = await deleteTranslation(id, staffId);
   if (result.changes === 0) return c.json({ error: "Record not found" }, 404);
   await insertAuditLog({ staff_id: staffId, action: 'delete_translation', details: `Translation ${id} deleted` });
@@ -129,14 +186,14 @@ records.delete("/translations/:staffId/:id", async (c) => {
 // Share a record with other staff members
 records.post("/share", async (c) => {
   const { staff_id, record_id, share_with } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!record_id || !share_with) return c.json({ error: "record_id and share_with are required" }, 400);
 
   const row = await getRecordById(record_id);
   if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
 
   // share_with should be an array of staff names
-  const validShares = share_with.filter((s: string) => VALID_STAFF.includes(s) && s !== staff_id);
+  const validShares = share_with.filter((s: string) => getValidStaff().includes(s) && s !== staff_id);
   await updateRecordSharing(JSON.stringify(validShares), record_id);
   await insertAuditLog({ staff_id, action: 'share_record', details: `Record ${record_id} shared with ${validShares.join(', ')}` });
   // Notify each recipient
@@ -148,9 +205,22 @@ records.post("/share", async (c) => {
 });
 
 // Rename a record
+// Update timeline content of an existing record
+records.post("/update-timeline", async (c) => {
+  const { staff_id, record_id, timeline } = await c.req.json();
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!record_id || !timeline) return c.json({ error: "record_id and timeline required" }, 400);
+
+  const row = await getRecordById(record_id);
+  if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
+
+  db.prepare(`UPDATE timeline_records SET timeline = ? WHERE id = ?`).run(JSON.stringify(timeline), record_id);
+  return c.json({ success: true });
+});
+
 records.post("/rename", async (c) => {
   const { staff_id, record_id, record_name } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!record_id || !record_name) return c.json({ error: "record_id and record_name are required" }, 400);
 
   const row = await getRecordById(record_id);
@@ -163,7 +233,7 @@ records.post("/rename", async (c) => {
 // Update case number for a record
 records.post("/case", async (c) => {
   const { staff_id, record_id, case_number } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!record_id) return c.json({ error: "record_id is required" }, 400);
 
   const row = await getRecordById(record_id);
@@ -176,7 +246,7 @@ records.post("/case", async (c) => {
 // Merge multiple timeline records
 records.post("/merge", async (c) => {
   const { staff_id, record_ids, record_name } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!record_ids || record_ids.length < 2) return c.json({ error: "Select at least 2 records to merge" }, 400);
 
   // Load all selected records
@@ -322,7 +392,7 @@ records.post("/merge", async (c) => {
 // ── Audit Log ─────────────────────────────────────────────────────────────
 records.get("/audit/:staffId", async (c) => {
   const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!getValidStaff().includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const logs = await getAuditLog(staffId);
   return c.json({ success: true, logs });
 });
@@ -331,7 +401,7 @@ records.get("/audit/:staffId", async (c) => {
 
 records.post("/status", async (c) => {
   const { staff_id, record_id, record_type, status } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   const validStatuses = ['draft', 'in_review', 'complete', 'flagged'];
   if (!validStatuses.includes(status)) return c.json({ error: "Invalid status" }, 400);
   if (record_type === 'translation') {
@@ -344,7 +414,7 @@ records.post("/status", async (c) => {
 
 records.post("/tags", async (c) => {
   const { staff_id, record_id, record_type, tags } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (!Array.isArray(tags)) return c.json({ error: "Tags must be an array" }, 400);
   if (record_type === 'translation') {
     await updateTranslationTags(record_id, JSON.stringify(tags));
@@ -358,7 +428,7 @@ records.post("/tags", async (c) => {
 
 records.get("/notifications/:staffId", async (c) => {
   const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!getValidStaff().includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const [notifications, unread] = await Promise.all([
     getNotifications(staffId),
     getUnreadNotificationCount(staffId),
@@ -368,7 +438,7 @@ records.get("/notifications/:staffId", async (c) => {
 
 records.post("/notifications/read", async (c) => {
   const { staff_id, notification_id } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
   if (notification_id === 'all') {
     await markAllNotificationsRead(staff_id);
   } else {
@@ -381,7 +451,7 @@ records.post("/notifications/read", async (c) => {
 
 records.get("/dashboard/:staffId", async (c) => {
   const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
+  if (!getValidStaff().includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
   const stats = await getDashboardStats(staffId);
   const unread = await getUnreadNotificationCount(staffId);
   return c.json({ success: true, ...stats, unreadNotifications: unread });
@@ -391,7 +461,7 @@ records.get("/dashboard/:staffId", async (c) => {
 
 records.post("/heartbeat", async (c) => {
   const { staff_id } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid" }, 400);
+  if (!staff_id || !getValidStaff().includes(staff_id)) return c.json({ error: "Invalid" }, 400);
   await touchSession(staff_id);
   return c.json({ success: true });
 });
@@ -410,7 +480,7 @@ records.get("/admin/overview", async (c) => {
 records.get("/:staffId", async (c) => {
   const staffId = c.req.param("staffId");
 
-  if (!VALID_STAFF.includes(staffId)) {
+  if (!getValidStaff().includes(staffId)) {
     return c.json({ error: "Invalid staff member" }, 400);
   }
 
@@ -429,7 +499,7 @@ records.get("/:staffId/:id", async (c) => {
   const staffId = c.req.param("staffId");
   const id = Number(c.req.param("id"));
 
-  if (!VALID_STAFF.includes(staffId)) {
+  if (!getValidStaff().includes(staffId)) {
     return c.json({ error: "Invalid staff member" }, 400);
   }
 
@@ -457,7 +527,7 @@ records.delete("/:staffId/:id", async (c) => {
   const staffId = c.req.param("staffId");
   const id = Number(c.req.param("id"));
 
-  if (!VALID_STAFF.includes(staffId)) {
+  if (!getValidStaff().includes(staffId)) {
     return c.json({ error: "Invalid staff member" }, 400);
   }
 
@@ -470,5 +540,5 @@ records.delete("/:staffId/:id", async (c) => {
   return c.json({ success: true });
 });
 
-export { VALID_STAFF };
+export { getValidStaff };
 export default records;

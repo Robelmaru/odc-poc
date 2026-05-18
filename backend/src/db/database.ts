@@ -1,20 +1,36 @@
-import pg from "pg";
-const { Pool } = pg;
+import Database from "better-sqlite3";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const pool = new Pool({
-  host: process.env.DATABASE_HOST || "localhost",
-  port: Number(process.env.DATABASE_PORT) || 5432,
-  user: process.env.DATABASE_USER || "postgres",
-  password: process.env.DATABASE_PASSWORD || "",
-  database: process.env.DATABASE_NAME || "document_analyzer",
-});
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, "../../data/odc-poc.db");
+
+// Ensure data directory exists
+import { mkdirSync } from "fs";
+mkdirSync(path.dirname(dbPath), { recursive: true });
+
+const db = new Database(dbPath);
+db.pragma("journal_mode = WAL");
 
 // Create tables
-await pool.query(`
+db.exec(`
+  -- Migrate: add missing columns to old databases
+  CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY);
+`);
+
+const addColumnIfMissing = (table: string, column: string, definition: string) => {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+  if (!cols.find((c: any) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+};
+
+// Ensure tables exist first
+db.exec(`
   CREATE TABLE IF NOT EXISTS timeline_records (
-    id          SERIAL PRIMARY KEY,
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     staff_id    TEXT    NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     record_name TEXT,
     case_number TEXT,
     shared_with TEXT    DEFAULT '[]',
@@ -27,9 +43,9 @@ await pool.query(`
   );
 
   CREATE TABLE IF NOT EXISTS translation_records (
-    id            SERIAL PRIMARY KEY,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     staff_id      TEXT    NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     record_name   TEXT,
     file_names    TEXT    NOT NULL,
     language      TEXT    NOT NULL,
@@ -40,27 +56,55 @@ await pool.query(`
   );
 
   CREATE TABLE IF NOT EXISTS notifications (
-    id         SERIAL PRIMARY KEY,
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     staff_id   TEXT    NOT NULL,
     message    TEXT    NOT NULL,
     link       TEXT,
-    read       BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    read       INTEGER DEFAULT 0,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS staff_sessions (
     staff_id    TEXT PRIMARY KEY,
-    last_active TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    last_active TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS audit_log (
-    id         SERIAL PRIMARY KEY,
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     staff_id   TEXT    NOT NULL,
     action     TEXT    NOT NULL,
     details    TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT    NOT NULL UNIQUE,
+    pin        TEXT    NOT NULL,
+    role       TEXT    NOT NULL DEFAULT 'staff',
+    active     INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+// Seed default users if table is empty
+const userCount = (db.prepare(`SELECT COUNT(*) as count FROM users`).get() as any).count;
+if (userCount === 0) {
+  const insertUser = db.prepare(`INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`);
+  insertUser.run('Caterina', '1111', 'staff');
+  insertUser.run('Abesha', '2222', 'admin');
+  insertUser.run('Robel', '3333', 'staff');
+}
+
+// Migrate old databases that are missing newer columns
+addColumnIfMissing("timeline_records", "summary", "TEXT");
+addColumnIfMissing("timeline_records", "status", "TEXT DEFAULT 'draft'");
+addColumnIfMissing("timeline_records", "tags", "TEXT DEFAULT '[]'");
+addColumnIfMissing("timeline_records", "case_number", "TEXT");
+addColumnIfMissing("translation_records", "record_name", "TEXT");
+addColumnIfMissing("translation_records", "status", "TEXT DEFAULT 'draft'");
+addColumnIfMissing("translation_records", "tags", "TEXT DEFAULT '[]'");
+addColumnIfMissing("timeline_records", "ai_score", "INTEGER");
 
 // ── Interfaces ────────────────────────────────────────────────────────────
 
@@ -95,69 +139,62 @@ export async function insertRecord(params: {
   file_names: string;
   notes: string | null;
   summary?: string | null;
+  ai_score?: number | null;
   timeline: string;
 }) {
-  const result = await pool.query(
-    `INSERT INTO timeline_records (staff_id, record_name, case_number, file_names, notes, summary, timeline)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [params.staff_id, params.record_name, params.case_number || null, params.file_names, params.notes, params.summary || null, params.timeline]
-  );
-  return { lastInsertRowid: result.rows[0].id };
+  const result = db.prepare(
+    `INSERT INTO timeline_records (staff_id, record_name, case_number, file_names, notes, summary, ai_score, timeline)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(params.staff_id, params.record_name, params.case_number || null, params.file_names, params.notes, params.summary || null, params.ai_score ?? null, params.timeline);
+  return { lastInsertRowid: result.lastInsertRowid };
 }
 
 export async function getRecordsByStaff(staffId: string) {
-  const result = await pool.query(
-    `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, length(timeline) as timeline_size
+  return db.prepare(
+    `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, ai_score, length(timeline) as timeline_size
      FROM timeline_records
-     WHERE staff_id = $1 OR shared_with LIKE '%"' || $2 || '"%'
-     ORDER BY created_at DESC`,
-    [staffId, staffId]
-  );
-  return result.rows;
+     WHERE staff_id = ? OR shared_with LIKE '%"' || ? || '"%'
+     ORDER BY created_at DESC`
+  ).all(staffId, staffId);
 }
 
 export async function getRecordById(id: number) {
-  const result = await pool.query(`SELECT * FROM timeline_records WHERE id = $1`, [id]);
-  return result.rows[0] as TimelineRecord | undefined;
+  return db.prepare(`SELECT * FROM timeline_records WHERE id = ?`).get(id) as TimelineRecord | undefined;
 }
 
 export async function deleteRecord(id: number, staffId: string) {
-  const result = await pool.query(`DELETE FROM timeline_records WHERE id = $1 AND staff_id = $2`, [id, staffId]);
-  return { changes: result.rowCount };
+  const result = db.prepare(`DELETE FROM timeline_records WHERE id = ? AND staff_id = ?`).run(id, staffId);
+  return { changes: result.changes };
 }
 
 export async function updateRecordSharing(sharedWith: string, id: number) {
-  await pool.query(`UPDATE timeline_records SET shared_with = $1 WHERE id = $2`, [sharedWith, id]);
+  db.prepare(`UPDATE timeline_records SET shared_with = ? WHERE id = ?`).run(sharedWith, id);
 }
 
 export async function updateRecordName(recordName: string, id: number) {
-  await pool.query(`UPDATE timeline_records SET record_name = $1 WHERE id = $2`, [recordName, id]);
+  db.prepare(`UPDATE timeline_records SET record_name = ? WHERE id = ?`).run(recordName, id);
 }
 
 export async function updateRecordCase(caseNumber: string | null, id: number) {
-  await pool.query(`UPDATE timeline_records SET case_number = $1 WHERE id = $2`, [caseNumber, id]);
+  db.prepare(`UPDATE timeline_records SET case_number = ? WHERE id = ?`).run(caseNumber, id);
 }
 
 // ── Audit Log ─────────────────────────────────────────────────────────────
 
 export async function insertAuditLog(params: { staff_id: string; action: string; details: string | null }) {
-  await pool.query(
-    `INSERT INTO audit_log (staff_id, action, details) VALUES ($1, $2, $3)`,
-    [params.staff_id, params.action, params.details]
-  );
+  db.prepare(
+    `INSERT INTO audit_log (staff_id, action, details) VALUES (?, ?, ?)`
+  ).run(params.staff_id, params.action, params.details);
 }
 
 export async function getAuditLog(staffId: string) {
-  const result = await pool.query(
-    `SELECT * FROM audit_log WHERE staff_id = $1 ORDER BY created_at DESC LIMIT 100`,
-    [staffId]
-  );
-  return result.rows;
+  return db.prepare(
+    `SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 100`
+  ).all(staffId);
 }
 
 export async function getAuditLogAll() {
-  const result = await pool.query(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200`);
-  return result.rows;
+  return db.prepare(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200`).all();
 }
 
 // ── Translation Records ───────────────────────────────────────────────────
@@ -170,122 +207,163 @@ export async function insertTranslationRecord(params: {
   language_name: string;
   translation: string;
 }) {
-  const result = await pool.query(
+  const result = db.prepare(
     `INSERT INTO translation_records (staff_id, record_name, file_names, language, language_name, translation)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [params.staff_id, params.record_name || null, params.file_names, params.language, params.language_name, params.translation]
-  );
-  return { lastInsertRowid: result.rows[0].id };
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(params.staff_id, params.record_name || null, params.file_names, params.language, params.language_name, params.translation);
+  return { lastInsertRowid: result.lastInsertRowid };
 }
 
 export async function getTranslationsByStaff(staffId: string) {
-  const result = await pool.query(
+  return db.prepare(
     `SELECT id, staff_id, created_at, record_name, file_names, language, language_name, status, tags
-     FROM translation_records WHERE staff_id = $1 ORDER BY created_at DESC`,
-    [staffId]
-  );
-  return result.rows;
+     FROM translation_records WHERE staff_id = ? ORDER BY created_at DESC`
+  ).all(staffId);
 }
 
 export async function getTranslationById(id: number) {
-  const result = await pool.query(`SELECT * FROM translation_records WHERE id = $1`, [id]);
-  return result.rows[0] as TranslationRecord | undefined;
+  return db.prepare(`SELECT * FROM translation_records WHERE id = ?`).get(id) as TranslationRecord | undefined;
 }
 
 export async function deleteTranslation(id: number, staffId: string) {
-  const result = await pool.query(`DELETE FROM translation_records WHERE id = $1 AND staff_id = $2`, [id, staffId]);
-  return { changes: result.rowCount };
+  const result = db.prepare(`DELETE FROM translation_records WHERE id = ? AND staff_id = ?`).run(id, staffId);
+  return { changes: result.changes };
 }
 
 // ── Status & Tags ────────────────────────────────────────────────────────
 
 export async function updateRecordStatus(id: number, status: string) {
-  await pool.query(`UPDATE timeline_records SET status = $1 WHERE id = $2`, [status, id]);
+  db.prepare(`UPDATE timeline_records SET status = ? WHERE id = ?`).run(status, id);
 }
 
 export async function updateRecordTags(id: number, tags: string) {
-  await pool.query(`UPDATE timeline_records SET tags = $1 WHERE id = $2`, [tags, id]);
+  db.prepare(`UPDATE timeline_records SET tags = ? WHERE id = ?`).run(tags, id);
 }
 
 export async function updateTranslationStatus(id: number, status: string) {
-  await pool.query(`UPDATE translation_records SET status = $1 WHERE id = $2`, [status, id]);
+  db.prepare(`UPDATE translation_records SET status = ? WHERE id = ?`).run(status, id);
 }
 
 export async function updateTranslationTags(id: number, tags: string) {
-  await pool.query(`UPDATE translation_records SET tags = $1 WHERE id = $2`, [tags, id]);
+  db.prepare(`UPDATE translation_records SET tags = ? WHERE id = ?`).run(tags, id);
 }
 
 // ── Notifications ────────────────────────────────────────────────────────
 
 export async function insertNotification(params: { staff_id: string; message: string; link?: string }) {
-  await pool.query(
-    `INSERT INTO notifications (staff_id, message, link) VALUES ($1, $2, $3)`,
-    [params.staff_id, params.message, params.link || null]
-  );
+  db.prepare(
+    `INSERT INTO notifications (staff_id, message, link) VALUES (?, ?, ?)`
+  ).run(params.staff_id, params.message, params.link || null);
 }
 
 export async function getNotifications(staffId: string) {
-  const result = await pool.query(
-    `SELECT * FROM notifications WHERE staff_id = $1 ORDER BY created_at DESC LIMIT 50`,
-    [staffId]
-  );
-  return result.rows;
+  return db.prepare(
+    `SELECT * FROM notifications WHERE staff_id = ? ORDER BY created_at DESC LIMIT 50`
+  ).all(staffId);
 }
 
 export async function markNotificationRead(id: number, staffId: string) {
-  await pool.query(`UPDATE notifications SET read = true WHERE id = $1 AND staff_id = $2`, [id, staffId]);
+  db.prepare(`UPDATE notifications SET read = 1 WHERE id = ? AND staff_id = ?`).run(id, staffId);
 }
 
 export async function markAllNotificationsRead(staffId: string) {
-  await pool.query(`UPDATE notifications SET read = true WHERE staff_id = $1`, [staffId]);
+  db.prepare(`UPDATE notifications SET read = 1 WHERE staff_id = ?`).run(staffId);
 }
 
 export async function getUnreadNotificationCount(staffId: string): Promise<number> {
-  const result = await pool.query(`SELECT COUNT(*) as count FROM notifications WHERE staff_id = $1 AND read = false`, [staffId]);
-  return parseInt(result.rows[0].count, 10);
+  const result = db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE staff_id = ? AND read = 0`).get(staffId) as any;
+  return result.count;
 }
 
 // ── Session Timeout ──────────────────────────────────────────────────────
 
 export async function touchSession(staffId: string) {
-  await pool.query(
-    `INSERT INTO staff_sessions (staff_id, last_active) VALUES ($1, NOW())
-     ON CONFLICT (staff_id) DO UPDATE SET last_active = NOW()`,
-    [staffId]
-  );
+  db.prepare(
+    `INSERT INTO staff_sessions (staff_id, last_active) VALUES (?, datetime('now'))
+     ON CONFLICT (staff_id) DO UPDATE SET last_active = datetime('now')`
+  ).run(staffId);
 }
 
 export async function getSessionLastActive(staffId: string): Promise<Date | null> {
-  const result = await pool.query(`SELECT last_active FROM staff_sessions WHERE staff_id = $1`, [staffId]);
-  return result.rows[0]?.last_active || null;
+  const result = db.prepare(`SELECT last_active FROM staff_sessions WHERE staff_id = ?`).get(staffId) as any;
+  return result?.last_active ? new Date(result.last_active) : null;
 }
 
 // ── Dashboard Stats ──────────────────────────────────────────────────────
 
 export async function getDashboardStats(staffId: string) {
-  const [timelineCount, translationCount, sharedCount, recentActivity] = await Promise.all([
-    pool.query(`SELECT COUNT(*) as count FROM timeline_records WHERE staff_id = $1`, [staffId]),
-    pool.query(`SELECT COUNT(*) as count FROM translation_records WHERE staff_id = $1`, [staffId]),
-    pool.query(`SELECT COUNT(*) as count FROM timeline_records WHERE shared_with LIKE '%"' || $1 || '"%' AND staff_id != $1`, [staffId]),
-    pool.query(`SELECT * FROM audit_log WHERE staff_id = $1 ORDER BY created_at DESC LIMIT 5`, [staffId]),
-  ]);
+  const timelineCount = db.prepare(`SELECT COUNT(*) as count FROM timeline_records WHERE staff_id = ?`).get(staffId) as any;
+  const translationCount = db.prepare(`SELECT COUNT(*) as count FROM translation_records WHERE staff_id = ?`).get(staffId) as any;
+  const sharedCount = db.prepare(`SELECT COUNT(*) as count FROM timeline_records WHERE shared_with LIKE '%"' || ? || '"%' AND staff_id != ?`).get(staffId, staffId) as any;
+  const recentActivity = db.prepare(`SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 5`).all(staffId);
+  const timelineStatuses = db.prepare(`SELECT COALESCE(status, 'draft') as status, COUNT(*) as count FROM timeline_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`).all(staffId) as any[];
+  const translationStatuses = db.prepare(`SELECT COALESCE(status, 'draft') as status, COUNT(*) as count FROM translation_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`).all(staffId) as any[];
+  // Recent 5 per status for hover previews
+  const statusNames = ['draft', 'in_review', 'complete', 'flagged'];
+  const timelineRecent: Record<string, any[]> = {};
+  const translationRecent: Record<string, any[]> = {};
+  for (const s of statusNames) {
+    timelineRecent[s] = db.prepare(`SELECT record_name, file_names FROM timeline_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`).all(staffId, s) as any[];
+    translationRecent[s] = db.prepare(`SELECT record_name, file_names FROM translation_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`).all(staffId, s) as any[];
+  }
   return {
-    timelineRecords: parseInt(timelineCount.rows[0].count, 10),
-    translationRecords: parseInt(translationCount.rows[0].count, 10),
-    sharedWithMe: parseInt(sharedCount.rows[0].count, 10),
-    recentActivity: recentActivity.rows,
+    timelineRecords: timelineCount.count,
+    translationRecords: translationCount.count,
+    sharedWithMe: sharedCount.count,
+    recentActivity,
+    timelineStatuses,
+    translationStatuses,
+    timelineRecent,
+    translationRecent,
   };
 }
 
 // ── Admin ────────────────────────────────────────────────────────────────
 
 export async function getAllRecordCounts() {
-  const [timelines, translations, staff] = await Promise.all([
-    pool.query(`SELECT staff_id, COUNT(*) as count FROM timeline_records GROUP BY staff_id`),
-    pool.query(`SELECT staff_id, COUNT(*) as count FROM translation_records GROUP BY staff_id`),
-    pool.query(`SELECT DISTINCT staff_id FROM audit_log`),
-  ]);
-  return { timelines: timelines.rows, translations: translations.rows, activeStaff: staff.rows.map((r: any) => r.staff_id) };
+  const timelines = db.prepare(`SELECT staff_id, COUNT(*) as count FROM timeline_records GROUP BY staff_id`).all();
+  const translations = db.prepare(`SELECT staff_id, COUNT(*) as count FROM translation_records GROUP BY staff_id`).all();
+  const staff = db.prepare(`SELECT DISTINCT staff_id FROM audit_log`).all();
+  return { timelines, translations, activeStaff: (staff as any[]).map((r) => r.staff_id) };
 }
 
-export default pool;
+// ── User Management ──────────────────────────────────────────────────────
+
+export interface User {
+  id: number;
+  username: string;
+  pin: string;
+  role: string;
+  active: number;
+  created_at: string;
+}
+
+export function getAllUsers(): User[] {
+  return db.prepare(`SELECT id, username, pin, role, active, created_at FROM users ORDER BY username`).all() as User[];
+}
+
+export function getUserByUsername(username: string): User | undefined {
+  return db.prepare(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`).get(username) as User | undefined;
+}
+
+export function getActiveUsernames(): string[] {
+  return (db.prepare(`SELECT username FROM users WHERE active = 1`).all() as any[]).map(r => r.username);
+}
+
+export function createUser(username: string, pin: string, role: string) {
+  return db.prepare(`INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`).run(username, pin, role);
+}
+
+export function updateUserActive(id: number, active: boolean) {
+  db.prepare(`UPDATE users SET active = ? WHERE id = ?`).run(active ? 1 : 0, id);
+}
+
+export function updateUserPin(id: number, pin: string) {
+  db.prepare(`UPDATE users SET pin = ? WHERE id = ?`).run(pin, id);
+}
+
+export function updateUserRole(id: number, role: string) {
+  db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
+}
+
+export default db;

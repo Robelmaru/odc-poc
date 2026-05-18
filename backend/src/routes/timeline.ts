@@ -257,15 +257,24 @@ timeline.post("/", async (c) => {
           const extraction = await extractTextFromPdf(buffer, async (msg) => {
             await send("progress", { step: "vision_ocr", message: msg });
           });
-          ocrResults.push({ filename: file.name, quality: extraction.ocrQuality, score: extraction.ocrScore });
           sourceTexts.push({
             filename: file.name,
             text: extraction.pages.map((p) => p.text).join("\n").slice(0, 50000),
           });
 
           const totalPages = extraction.totalPages;
-          const visionInfo = extraction.visionPages > 0 ? ", " + extraction.visionPages + " via Vision OCR" : "";
+          const visionInfo = extraction.visionPages > 0
+            ? ", " + extraction.visionPages + " via Vision OCR"
+              + (extraction.visionClarity != null ? " (" + extraction.visionClarity + "% clarity)" : "")
+            : "";
           console.log("    Extracted " + totalPages + " pages, " + extraction.totalChars.toLocaleString() + " chars" + visionInfo);
+          ocrResults.push({
+            filename: file.name,
+            quality: extraction.ocrQuality,
+            score: extraction.ocrScore,
+            visionPages: extraction.visionPages,
+            visionClarity: extraction.visionClarity,
+          } as any);
           await send("progress", {
             step: "text_extracted",
             message: "Extracted " + totalPages + " pages (" + extraction.totalChars.toLocaleString() + " chars, OCR: " + extraction.ocrQuality + visionInfo + ")",

@@ -559,15 +559,15 @@
 
     /* Source Links */
     .source-link {
-      color: var(--color-secondary);
-      text-decoration: none;
-      font-weight: 500;
-      border-bottom: 1px solid transparent;
-      transition: border-color 0.2s;
+      color: var(--color-primary);
+      text-decoration: underline;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
     }
 
     .source-link:hover {
-      border-bottom-color: var(--color-secondary);
+      opacity: 0.75;
     }
 
     /* Violations */
@@ -1604,7 +1604,20 @@
       </div>
       <div id="loginError" style="display:none; color:var(--color-danger); font-size:13px; margin-bottom:14px; padding:10px; background:var(--color-danger-bg); border-radius:6px;"></div>
       <button class="btn btn-primary" onclick="doLogin()" style="width:100%; padding:12px; font-size:15px;">Sign In</button>
-      <p style="margin-top:16px; font-size:13px;"><a href="#" onclick="event.preventDefault(); alert('Please contact your administrator to reset your credentials.');" style="color:var(--color-primary); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot username or password?</a></p>
+      <p style="margin-top:16px; font-size:13px;"><a href="#" onclick="event.preventDefault(); document.getElementById('forgotModal').style.display='flex';" style="color:var(--color-primary); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot username or password?</a></p>
+    </div>
+  </div>
+
+  <!-- Forgot Password Modal -->
+  <div id="forgotModal" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);text-align:center;">
+      <div style="font-size:2rem;margin-bottom:12px;">&#128274;</div>
+      <h3 style="font-size:16px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Forgot Username or Password?</h3>
+      <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.6;margin:0 0 16px;">Please contact your administrator to reset your credentials, or submit a ticket at:</p>
+      <a href="https://dcbar.zendesk.com/" target="_blank" rel="noopener" style="display:inline-block;padding:10px 20px;background:var(--color-primary);color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">dcbar.zendesk.com</a>
+      <div style="margin-top:16px;">
+        <button onclick="document.getElementById('forgotModal').style.display='none'" class="btn btn-secondary" style="font-size:13px;padding:8px 20px;">Close</button>
+      </div>
     </div>
   </div>
 
@@ -1638,8 +1651,9 @@
 
   <nav class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('dashboard')" data-tab="dashboard">Dashboard</button>
-    <button class="tab-btn" onclick="switchTab('timeline')" data-tab="timeline">Document Timeline</button>
-    <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation</button>
+    <button class="tab-btn" onclick="switchTab('timeline')" data-tab="timeline">Document Insight</button>
+    <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation &amp; Handwriting</button>
+    <button class="tab-btn" onclick="switchTab('aidetect')" data-tab="aidetect">AI Detection</button>
     <button class="tab-btn" onclick="switchTab('admin')" data-tab="admin" id="adminTabBtn" style="display:none;">Admin</button>
     <div style="margin-left:auto;position:relative;" id="notifWrapper">
       <button onclick="toggleNotifPanel()" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;position:relative;" title="Notifications">&#128276;
@@ -1677,6 +1691,16 @@
           <div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">Unread Notifications</div>
         </div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div class="panel" style="padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Timeline Status</h3>
+          <div id="dashTimelineStatuses" style="display:flex;gap:12px;flex-wrap:wrap;">-</div>
+        </div>
+        <div class="panel" style="padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Translation Status</h3>
+          <div id="dashTranslationStatuses" style="display:flex;gap:12px;flex-wrap:wrap;">-</div>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="panel" style="padding:20px;">
           <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Recent Activity</h3>
@@ -1685,7 +1709,7 @@
         <div class="panel" style="padding:20px;">
           <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Quick Actions</h3>
           <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="btn btn-primary" onclick="switchTab('timeline')" style="text-align:left;padding:10px 16px;font-size:13px;">&#128197; Extract a Document Timeline</button>
+            <button class="btn btn-primary" onclick="switchTab('timeline')" style="text-align:left;padding:10px 16px;font-size:13px;">&#128197; Document Insight</button>
             <button class="btn btn-primary" onclick="switchTab('translate')" style="text-align:left;padding:10px 16px;font-size:13px;">&#127760; Translate a Document</button>
           </div>
         </div>
@@ -1798,7 +1822,7 @@
     </div>
   </div><!-- End Tab 2: Rules Q&A -->
 
-  <!-- Tab 3: Document Timeline -->
+  <!-- Tab 3: Document Insight -->
   <div class="tab-panel active" id="tab-timeline">
     <div class="container">
       <div class="panel">
@@ -1834,7 +1858,7 @@
 
       <div class="panel results-panel">
         <div class="results-header">
-          <h2 class="panel-title">Document Timeline</h2>
+          <h2 class="panel-title">Document Insight</h2>
           <div class="export-buttons" id="timelineExportButtons" style="display: none;">
             <button class="btn btn-export" onclick="exportTimelineToTxt()">Export TXT</button>
             <button class="btn btn-export" onclick="exportTimelineToDocx()">Export DOCX</button>
@@ -1943,7 +1967,7 @@
       </div>
       </div>
     </div>
-  </div><!-- End Tab 3: Document Timeline -->
+  </div><!-- End Tab 3: Document Insight -->
 
   <!-- Tab 4: Translation -->
   <div class="tab-panel" id="tab-translate">
@@ -2082,14 +2106,72 @@
     </div>
   </div><!-- End Tab 4: Translation -->
 
+  <!-- Tab: AI Detection -->
+  <div class="tab-panel" id="tab-aidetect">
+    <div class="container">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">AI Content Detection</h2>
+        </div>
+        <p style="font-size:13px;color:var(--color-text-muted);margin:0 0 16px;">Upload a document to check whether the text was written by a human or generated by an AI tool (ChatGPT, Claude, Gemini, etc.).</p>
+
+        <div class="upload-zone" id="aiDetectUploadZone" onclick="document.getElementById('aiDetectFileInput').click()"
+             ondragover="handleAiDetectDragOver(event)" ondragleave="handleAiDetectDragLeave(event)" ondrop="handleAiDetectDrop(event)">
+          <input type="file" id="aiDetectFileInput" accept=".txt,.pdf" multiple onchange="handleAiDetectFileSelect(event)" style="display: none;">
+          <div class="upload-zone-icon">&#128269;</div>
+          <div class="upload-zone-text">
+            <strong>Click to upload</strong> or drag documents here<br>
+            <span style="font-size: 13px; color: var(--color-text-muted);">PDF and TXT files supported</span>
+          </div>
+        </div>
+        <div class="file-list" id="aiDetectFileList"></div>
+
+        <div class="button-row" style="margin-top:16px;">
+          <button class="btn btn-primary" id="aiDetectBtn" onclick="runAiDetectionTab()">Analyze for AI Content</button>
+          <button class="btn btn-secondary" onclick="clearAiDetectionTab()">Clear</button>
+        </div>
+        <div class="error" id="aiDetectError"></div>
+      </div>
+
+      <div class="panel results-panel">
+        <div class="results-header">
+          <h2 class="panel-title">Detection Results</h2>
+        </div>
+        <div class="loading" id="aiDetectLoading">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Analyzing for AI patterns...</p>
+          <p class="loading-subtext">Checking sentence structure, vocabulary, and other indicators</p>
+        </div>
+        <div class="results" id="aiDetectResults"></div>
+        <div class="placeholder" id="aiDetectPlaceholder">
+          <div class="placeholder-icon">&#128269;</div>
+          <p class="placeholder-text">Upload a document and click Analyze to check for AI-generated content</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Tab: Admin -->
   <div class="tab-panel" id="tab-admin">
     <div style="max-width:1000px;margin:0 auto;padding:20px;">
-      <h2 style="font-size:20px;font-weight:700;margin:0 0 20px;color:var(--color-text);">Admin Overview</h2>
+      <h2 style="font-size:20px;font-weight:700;margin:0 0 20px;color:var(--color-text);">Admin Panel</h2>
+
+      <!-- User Management -->
+      <div class="panel" style="padding:20px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0;">User Management</h3>
+          <button class="btn btn-primary" onclick="showAddUserModal()" style="font-size:12px;padding:5px 14px;">+ Add User</button>
+        </div>
+        <div id="adminUsersList">Loading...</div>
+      </div>
+
+      <!-- Records by Staff -->
       <div class="panel" style="padding:20px;margin-bottom:16px;">
         <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Records by Staff</h3>
         <div id="adminStaffStats">Loading...</div>
       </div>
+
+      <!-- Activity Log -->
       <div class="panel" style="padding:20px;">
         <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">All Activity (Last 200)</h3>
         <input type="text" id="adminActivitySearch" oninput="filterAdminActivity()" placeholder="Search activity..." style="width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);box-sizing:border-box;margin-bottom:10px;" />
@@ -2145,6 +2227,10 @@
         document.getElementById('dashTranslationCount').textContent = data.translationRecords;
         document.getElementById('dashSharedCount').textContent = data.sharedWithMe;
         document.getElementById('dashNotifCount').textContent = data.unreadNotifications;
+
+        // Render status breakdowns
+        renderDashStatuses('dashTimelineStatuses', data.timelineStatuses || [], data.timelineRecent || {});
+        renderDashStatuses('dashTranslationStatuses', data.translationStatuses || [], data.translationRecent || {});
         const actEl = document.getElementById('dashRecentActivity');
         if (!data.recentActivity || !data.recentActivity.length) {
           actEl.innerHTML = '<p style="color:var(--color-text-muted);">No recent activity.</p>';
@@ -2158,6 +2244,35 @@
           }).join('');
         }
       } catch (e) { /* ignore */ }
+    }
+
+    function renderDashStatuses(containerId, statuses, recentMap) {
+      const el = document.getElementById(containerId);
+      const colors = { draft: '#6b7280', in_review: '#f59e0b', complete: '#10b981', flagged: '#ef4444' };
+      const labels = { draft: 'Draft', in_review: 'In Review', complete: 'Complete', flagged: 'Flagged' };
+      const allStatuses = ['draft', 'in_review', 'complete', 'flagged'];
+      const map = {};
+      statuses.forEach(function(s) { map[s.status] = s.count; });
+      var total = allStatuses.reduce(function(sum, s) { return sum + (map[s] || 0); }, 0);
+      if (!total) { el.innerHTML = '<span style="color:var(--color-text-muted);font-size:13px;">No records yet</span>'; return; }
+      el.innerHTML = allStatuses.map(function(s) {
+        var count = map[s] || 0;
+        var recent = (recentMap && recentMap[s]) || [];
+        var tooltipItems = recent.map(function(r) {
+          var name = r.record_name || '';
+          if (!name) { try { name = JSON.parse(r.file_names).join(', '); } catch(e) { name = r.file_names; } }
+          return escapeHtml(name);
+        });
+        var tooltipHtml = tooltipItems.length
+          ? tooltipItems.map(function(n) { return '<div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.15);">' + n + '</div>'; }).join('')
+          : '<div style="padding:3px 0;">No records</div>';
+        var uid = containerId + '_' + s;
+        return '<div style="text-align:center;min-width:70px;position:relative;cursor:pointer;padding:6px 8px;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background=\'#3b82f6\';this.querySelector(\'.dash-num\').style.color=\'#fff\';this.querySelector(\'.dash-lbl\').style.color=\'rgba(255,255,255,0.8)\';document.getElementById(\'' + uid + '\').style.display=\'block\';" onmouseout="this.style.background=\'transparent\';this.querySelector(\'.dash-num\').style.color=\'' + colors[s] + '\';this.querySelector(\'.dash-lbl\').style.color=\'var(--color-text-muted)\';document.getElementById(\'' + uid + '\').style.display=\'none\';">'
+          + '<div class="dash-num" style="font-size:22px;font-weight:700;color:' + colors[s] + ';transition:color 0.15s;">' + count + '</div>'
+          + '<div class="dash-lbl" style="font-size:11px;color:var(--color-text-muted);transition:color 0.15s;">' + labels[s] + '</div>'
+          + '<div id="' + uid + '" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;background:#1e3a5f;color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;white-space:nowrap;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.2);text-align:left;min-width:160px;">' + tooltipHtml + '</div>'
+          + '</div>';
+      }).join('');
     }
 
     // ── Notifications ─────────────────────────────────────────────────────
@@ -2211,6 +2326,15 @@
       { value: 'complete', label: 'Complete', color: '#10b981' },
       { value: 'flagged', label: 'Flagged', color: '#ef4444' },
     ];
+
+    function renderAiScoreBadge(score) {
+      if (score == null) return '';
+      var color, label;
+      if (score <= 30) { color = '#10b981'; label = 'AI: ' + score + '%'; }
+      else if (score <= 60) { color = '#f59e0b'; label = 'AI: ' + score + '%'; }
+      else { color = '#ef4444'; label = 'AI: ' + score + '%'; }
+      return '<span style="font-size:10px;padding:2px 6px;border-radius:10px;color:#fff;background:' + color + ';font-weight:600;margin-left:6px;" title="AI content likelihood: ' + score + '%">' + label + '</span>';
+    }
 
     function renderStatusBadge(status) {
       const opt = STATUS_OPTIONS.find(function(s) { return s.value === status; }) || STATUS_OPTIONS[0];
@@ -2411,7 +2535,117 @@
     // ── Admin Panel ───────────────────────────────────────────────────────
     let adminActivityData = [];
 
+    // ── Admin User Management ───────────────────────────────────────────────
+
+    async function loadAdminUsers() {
+      const container = document.getElementById('adminUsersList');
+      try {
+        const r = await fetch('/api/records/admin/users');
+        const data = await r.json();
+        if (!data.success) return;
+        var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+          + '<thead><tr style="border-bottom:2px solid var(--color-border);text-align:left;">'
+          + '<th style="padding:8px 12px;">Username</th>'
+          + '<th style="padding:8px 12px;">Role</th>'
+          + '<th style="padding:8px 12px;">Status</th>'
+          + '<th style="padding:8px 12px;">Created</th>'
+          + '<th style="padding:8px 12px;text-align:right;">Actions</th>'
+          + '</tr></thead><tbody>';
+        data.users.forEach(function(u) {
+          var statusColor = u.active ? '#10b981' : '#ef4444';
+          var statusLabel = u.active ? 'Active' : 'Disabled';
+          var roleBadge = u.role === 'admin'
+            ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:#8b5cf6;font-weight:600;">ADMIN</span>'
+            : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:#6b7280;font-weight:600;">STAFF</span>';
+          html += '<tr style="border-bottom:1px solid var(--color-border-light);">'
+            + '<td style="padding:10px 12px;font-weight:600;">' + escapeHtml(u.username) + '</td>'
+            + '<td style="padding:10px 12px;">' + roleBadge + '</td>'
+            + '<td style="padding:10px 12px;"><span style="color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span></td>'
+            + '<td style="padding:10px 12px;font-size:12px;color:var(--color-text-muted);">' + new Date(u.created_at).toLocaleDateString() + '</td>'
+            + '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">'
+            + '<button class="btn btn-secondary" onclick="adminResetPin(' + u.id + ',\'' + escapeHtml(u.username) + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Reset PIN">&#128273; Reset PIN</button>'
+            + '<button class="btn btn-secondary" onclick="adminToggleRole(' + u.id + ',\'' + u.role + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Toggle role">' + (u.role === 'admin' ? 'Make Staff' : 'Make Admin') + '</button>'
+            + '<button class="btn" onclick="adminToggleUser(' + u.id + ',' + u.active + ',\'' + escapeHtml(u.username) + '\')" style="font-size:11px;padding:3px 8px;background:' + (u.active ? 'var(--color-danger-bg)' : 'var(--color-success-bg)') + ';color:' + (u.active ? 'var(--color-danger)' : 'var(--color-success)') + ';border:1px solid ' + (u.active ? 'var(--color-danger)' : 'var(--color-success)') + ';">' + (u.active ? 'Disable' : 'Enable') + '</button>'
+            + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (e) { container.innerHTML = 'Failed to load users.'; }
+    }
+
+    function showAddUserModal() {
+      var existing = document.getElementById('addUserModal');
+      if (existing) existing.remove();
+      var modal = document.createElement('div');
+      modal.id = 'addUserModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 16px;font-size:17px;color:var(--color-text);">Add New User</h3>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Username</label>'
+        + '<input id="newUserName" type="text" placeholder="Enter name" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">PIN</label>'
+        + '<input id="newUserPin" type="text" placeholder="Enter PIN" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Role</label>'
+        + '<select id="newUserRole" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:16px;">'
+        + '<option value="staff">Staff</option><option value="admin">Admin</option></select>'
+        + '<div id="addUserError" style="display:none;color:var(--color-danger);font-size:13px;margin-bottom:12px;"></div>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button class="btn btn-secondary" onclick="document.getElementById(\'addUserModal\').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button class="btn btn-primary" onclick="submitAddUser()" style="font-size:13px;padding:8px 18px;">Add User</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+      document.getElementById('newUserName').focus();
+    }
+
+    async function submitAddUser() {
+      var username = document.getElementById('newUserName').value.trim();
+      var pin = document.getElementById('newUserPin').value.trim();
+      var role = document.getElementById('newUserRole').value;
+      var errEl = document.getElementById('addUserError');
+      if (!username || !pin) { errEl.textContent = 'Username and PIN are required.'; errEl.style.display = 'block'; return; }
+      try {
+        var r = await fetch('/api/records/admin/users', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_id: loggedInStaff, username: username, pin: pin, role: role })
+        });
+        var data = await r.json();
+        if (!data.success) { errEl.textContent = data.error || 'Failed'; errEl.style.display = 'block'; return; }
+        document.getElementById('addUserModal').remove();
+        loadAdminUsers();
+      } catch (e) { errEl.textContent = 'Failed to add user.'; errEl.style.display = 'block'; }
+    }
+
+    async function adminResetPin(userId, username) {
+      var newPin = prompt('Enter new PIN for ' + username + ':');
+      if (!newPin || !newPin.trim()) return;
+      await fetch('/api/records/admin/users/reset-pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, new_pin: newPin.trim() })
+      });
+      alert('PIN reset for ' + username);
+    }
+
+    async function adminToggleRole(userId, currentRole) {
+      var newRole = currentRole === 'admin' ? 'staff' : 'admin';
+      await fetch('/api/records/admin/users/role', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, role: newRole })
+      });
+      loadAdminUsers();
+    }
+
+    async function adminToggleUser(userId, currentActive, username) {
+      var action = currentActive ? 'disable' : 'enable';
+      if (!confirm(action.charAt(0).toUpperCase() + action.slice(1) + ' user "' + username + '"?')) return;
+      await fetch('/api/records/admin/users/toggle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, active: !currentActive })
+      });
+      loadAdminUsers();
+    }
+
     async function loadAdminPanel() {
+      loadAdminUsers();
       try {
         const r = await fetch('/api/records/admin/overview');
         const data = await r.json();
@@ -2517,16 +2751,17 @@
       { section: 'Translation', title: 'Ask About This Translation', text: 'After translating or loading a translation, ask questions about terminology, content, or translation choices in the Q&A panel.' },
       { section: 'Translation', title: 'Translation Activity Log', text: 'View a history of your translation saves and deletes. Searchable by keyword.' },
 
-      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Timeline or Translation' },
+      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Timeline Status breakdown: Draft, In Review, Complete, Flagged counts (hover to see recent files)\n\u2022 Translation Status breakdown: same as above\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Timeline or Translation' },
 
-      { section: 'Records Management', title: 'Status Tracking', text: 'Each record has a status badge: Draft, In Review, Complete, or Flagged.\n\u2022 Click the gear icon (\u2699) next to a record to change its status\n\u2022 Color-coded: gray=Draft, yellow=In Review, green=Complete, red=Flagged' },
+      { section: 'Records Management', title: 'Status Tracking', text: 'Each record has a status badge: Draft, In Review, Complete, or Flagged.\n\u2022 Click the gear icon (\u2699) in the Actions column to change status via a dropdown\n\u2022 Color-coded: gray=Draft, yellow=In Review, green=Complete, red=Flagged\n\u2022 Status is a sortable column in My Records' },
       { section: 'Records Management', title: 'Tags / Labels', text: 'Click the tag icon (\ud83c\udff7) next to any record to add custom labels.\n\u2022 Enter tags as comma-separated values (e.g. "Urgent, Smith Case, 2024")\n\u2022 Tags appear as blue badges on the record\n\u2022 Useful for organizing by topic, case type, or urgency' },
       { section: 'Records Management', title: 'Print Timeline', text: 'Click "Print Timeline" in My Records to open a clean, formatted print page in a new window. Includes all events in a table with key dates.' },
       { section: 'Records Management', title: 'Compare Timelines', text: 'Click "Compare" in My Records to select two records and view them side-by-side in a new window.' },
       { section: 'Records Management', title: 'Bulk Export', text: 'Select multiple records using checkboxes, then click "Bulk Export DOCX" to download them all as a single Word document with separate sections.' },
       { section: 'Records Management', title: 'Notifications', text: 'The bell icon in the tab bar shows your unread notification count.\n\u2022 You get notified when someone shares a record with you\n\u2022 Click the bell to view all notifications\n\u2022 "Mark all read" clears the unread badge' },
 
-      { section: 'Admin', title: 'Admin Panel', text: 'The Admin tab shows:\n\u2022 Records count per staff member (timelines + translations)\n\u2022 Full activity log across all staff (last 200 entries)\n\u2022 Searchable by keyword' },
+      { section: 'Admin', title: 'Admin Panel', text: 'The Admin tab is only visible to admin users (e.g. Abesha). It includes:\n\u2022 User Management: add users, disable/enable accounts, reset PINs, change roles\n\u2022 Records by Staff: timeline and translation counts per staff member\n\u2022 Full activity log across all staff (last 200 entries), searchable by keyword\n\nDisabled users cannot log in and see "Account is disabled".' },
+      { section: 'Admin', title: 'Add / Manage Users', text: 'In the Admin tab, click "+ Add User" to create a new account with a username, PIN, and role (Staff or Admin).\n\u2022 Reset PIN: click the key icon to set a new password for any user\n\u2022 Make Staff / Make Admin: toggle a user\'s role\n\u2022 Disable / Enable: deactivate or reactivate a user account\n\nAll admin actions are recorded in the audit trail.' },
 
       { section: 'Tips', title: 'Session Timeout', text: 'For security, you are automatically logged out after 30 minutes of inactivity. Any mouse, keyboard, click, or scroll activity resets the timer.' },
       { section: 'Tips', title: 'Large Documents (500+ pages)', text: 'Documents over 500 pages are split into larger chunks (~100 pages each) to optimize processing. You\'ll see a progress bar showing chunk-by-chunk extraction.' },
@@ -3147,11 +3382,12 @@
     }
 
     document.addEventListener('click', function(event) {
-      if (event.target.classList.contains('source-link')) {
+      const link = event.target.closest('.source-link');
+      if (link) {
         event.preventDefault();
-        const filename = event.target.dataset.filename;
-        const page = event.target.dataset.page ? parseInt(event.target.dataset.page) : null;
-        const quote = event.target.dataset.quote || '';
+        const filename = link.dataset.filename;
+        const page = link.dataset.page ? parseInt(link.dataset.page) : null;
+        const quote = link.dataset.quote || '';
 
         // If we have source texts, open the source panel and highlight
         if (lastSourceTexts.length > 0) {
@@ -3897,17 +4133,46 @@ All conclusions require human review and professional judgment.
 
       let html = '';
 
-      // OCR Quality warnings
+      // OCR Quality & Vision Clarity
       if (ocrResults && ocrResults.length > 0) {
-        const warnings = ocrResults.filter(r => r.quality !== 'good');
+        // Show Vision clarity for any file that used Vision OCR
+        const visionFiles = ocrResults.filter(r => r.visionPages > 0);
+        if (visionFiles.length > 0) {
+          html += '<div class="section" style="margin-bottom:16px;">';
+          visionFiles.forEach(r => {
+            const clarity = r.visionClarity != null ? r.visionClarity : 0;
+            let clarityColor, clarityLabel, clarityBg;
+            if (clarity >= 81) { clarityColor = '#10b981'; clarityLabel = 'Excellent'; clarityBg = '#ecfdf5'; }
+            else if (clarity >= 61) { clarityColor = '#3b82f6'; clarityLabel = 'Good'; clarityBg = '#eff6ff'; }
+            else if (clarity >= 41) { clarityColor = '#f59e0b'; clarityLabel = 'Fair'; clarityBg = '#fffbeb'; }
+            else if (clarity >= 21) { clarityColor = '#f97316'; clarityLabel = 'Poor'; clarityBg = '#fff7ed'; }
+            else { clarityColor = '#ef4444'; clarityLabel = 'Illegible'; clarityBg = '#fef2f2'; }
+            html += `
+              <div style="padding:12px 16px;margin-bottom:6px;background:${clarityBg};border:1px solid ${clarityColor};border-radius:8px;font-size:13px;display:flex;align-items:center;gap:14px;">
+                <div style="text-align:center;min-width:60px;padding:8px;background:${clarityColor};border-radius:8px;">
+                  <div style="font-size:20px;font-weight:700;color:#fff;">${clarity}%</div>
+                  <div style="font-size:9px;color:rgba(255,255,255,0.85);font-weight:600;">CLARITY</div>
+                </div>
+                <div>
+                  <strong>${escapeHtml(r.filename)}</strong>
+                  <span style="color:${clarityColor};font-weight:600;margin-left:6px;">${clarityLabel} readability</span>
+                  <div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">${r.visionPages} page(s) processed with Vision OCR</div>
+                  ${clarity < 41 ? '<div style="font-size:12px;color:var(--color-danger);margin-top:2px;">&#9888; Handwriting may be too unclear for accurate extraction — verify against original.</div>' : ''}
+                </div>
+              </div>`;
+          });
+          html += '</div>';
+        }
+
+        const warnings = ocrResults.filter(r => r.quality !== 'good' && !(r.visionPages > 0));
         if (warnings.length > 0) {
-          html += `<div class="section" style="margin-bottom:16px;">`;
+          html += '<div class="section" style="margin-bottom:16px;">';
           warnings.forEach(r => {
             const color = r.quality === 'poor' ? 'var(--color-danger)' : 'var(--color-warning)';
             const bg = r.quality === 'poor' ? 'var(--color-danger-bg)' : 'var(--color-warning-bg)';
             html += `
               <div style="padding:10px 14px;margin-bottom:6px;background:${bg};border:1px solid ${color};border-radius:8px;font-size:13px;display:flex;align-items:center;gap:10px;">
-                <span style="font-size:18px;">${r.quality === 'poor' ? '&#9888;' : '&#9888;'}</span>
+                <span style="font-size:18px;">&#9888;</span>
                 <div>
                   <strong style="color:${color};">${r.quality === 'poor' ? 'Low' : 'Fair'} scan quality</strong> for <strong>${escapeHtml(r.filename)}</strong>
                   <span style="color:var(--color-text-muted);"> (score: ${r.score}/100)</span>
@@ -3919,10 +4184,49 @@ All conclusions require human review and professional judgment.
         }
       }
 
-      // DOCUMENTS SUMMARY
+      // TABLE OF CONTENTS
+      html += `
+        <div class="section" style="background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">&#128214; Table of Contents</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;">
+            ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-files" style="color:var(--color-primary);text-decoration:none;">File Summaries</a>' : ''}
+            ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-docs" style="color:var(--color-primary);text-decoration:none;">Documents Analyzed (' + t.documents.length + ')</a>' : ''}
+            ${t.timelineSpan ? '<a href="#doc-insight-span" style="color:var(--color-primary);text-decoration:none;">Timeline Span</a>' : ''}
+            ${t.keyDates && t.keyDates.length > 0 ? '<a href="#doc-insight-keydates" style="color:var(--color-primary);text-decoration:none;">Key Dates (' + t.keyDates.length + ')</a>' : ''}
+            ${t.timeline && t.timeline.length > 0 ? '<a href="#doc-insight-timeline" style="color:var(--color-primary);text-decoration:none;">Chronological Timeline (' + t.timeline.length + ')</a>' : ''}
+            ${t.conflicts && t.conflicts.length > 0 ? '<a href="#doc-insight-conflicts" style="color:var(--color-primary);text-decoration:none;">Conflicts (' + t.conflicts.length + ')</a>' : ''}
+            ${t.notes && t.notes.length > 0 ? '<a href="#doc-insight-notes" style="color:var(--color-primary);text-decoration:none;">Notes</a>' : ''}
+          </div>
+        </div>
+      `;
+
+      // PER-FILE SUMMARIES (one card per uploaded file)
       if (t.documents && t.documents.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-files">
+            <div class="section-header">
+              <span class="section-icon">&#128221;</span>
+              <h3>File Summaries (${t.documents.length})</h3>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              ${t.documents.map((d, i) => `
+                <div style="border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;background:var(--color-surface);">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                    <span style="font-size:11px;font-weight:600;padding:2px 8px;background:var(--color-primary);color:#fff;border-radius:10px;text-transform:uppercase;letter-spacing:0.03em;">File ${i + 1}</span>
+                    <strong style="font-size:15px;color:var(--color-text);">${escapeHtml(d.filename)}</strong>
+                    ${d.documentType ? `<span style="font-size:10px;font-weight:600;padding:2px 7px;background:var(--color-bg);color:var(--color-text-secondary);border-radius:10px;text-transform:uppercase;">${escapeHtml(d.documentType)}</span>` : ''}
+                  </div>
+                  ${d.title ? `<div style="font-size:13px;font-weight:600;color:var(--color-text-secondary);margin-bottom:4px;">${escapeHtml(d.title)}</div>` : ''}
+                  ${d.dateRange ? `<div style="font-size:12px;font-family:var(--font-mono);color:var(--color-text-muted);margin-bottom:6px;">&#128197; ${escapeHtml(d.dateRange)}</div>` : ''}
+                  ${d.summary ? `<div style="font-size:13px;color:var(--color-text);line-height:1.6;">${escapeHtml(d.summary)}</div>` : '<div style="font-size:12px;color:var(--color-text-muted);font-style:italic;">No summary available.</div>'}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+
+        html += `
+          <div class="section" id="doc-insight-docs">
             <div class="section-header">
               <span class="section-icon">&#128195;</span>
               <h3>Documents Analyzed (${t.documents.length})</h3>
@@ -3945,7 +4249,7 @@ All conclusions require human review and professional judgment.
       // TIMELINE SPAN
       if (t.timelineSpan) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-span">
             <div class="timeline-span">
               <span class="span-dates">${escapeHtml(t.timelineSpan.earliest || '?')} &rarr; ${escapeHtml(t.timelineSpan.latest || '?')}</span>
               <span class="span-duration">${escapeHtml(t.timelineSpan.totalDuration || '')}</span>
@@ -3957,7 +4261,7 @@ All conclusions require human review and professional judgment.
       // KEY DATES
       if (t.keyDates && t.keyDates.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-keydates">
             <div class="section-header">
               <span class="section-icon">&#128204;</span>
               <h3>Key Dates</h3>
@@ -3978,10 +4282,11 @@ All conclusions require human review and professional judgment.
       // CHRONOLOGICAL TIMELINE
       if (t.timeline && t.timeline.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-timeline">
             <div class="section-header">
               <span class="section-icon">&#128197;</span>
               <h3>Chronological Timeline (${t.timeline.length} events)</h3>
+              <button class="btn btn-primary" onclick="addCustomEvent()" style="font-size:12px;padding:4px 12px;margin-left:12px;" title="Add custom event">+ Add Event</button>
             </div>
             <div class="timeline" id="timelineEventsContainer">
               ${t.timeline.map((e, idx) => `
@@ -4008,7 +4313,7 @@ All conclusions require human review and professional judgment.
       // CONFLICTS
       if (t.conflicts && t.conflicts.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-conflicts">
             <div class="section-header">
               <span class="section-icon">&#9888;</span>
               <h3>Conflicts Between Documents (${t.conflicts.length})</h3>
@@ -4034,7 +4339,7 @@ All conclusions require human review and professional judgment.
       // NOTES
       if (t.notes && t.notes.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-notes">
             <div class="section-header">
               <span class="section-icon">&#128221;</span>
               <h3>Notes</h3>
@@ -4114,6 +4419,325 @@ All conclusions require human review and professional judgment.
       } else {
         panel.style.display = 'none';
         btn.innerHTML = '&#128196; View Source Text';
+      }
+    }
+
+    // ── AI Content Detection ────────────────────────────────────────────────
+
+    let lastAiDetectResults = [];
+
+    async function runAiDetection(sourceTexts) {
+      const panel = document.getElementById('aiDetectPanel');
+      if (!panel) return;
+      panel.innerHTML = '<div class="section" style="padding:14px 18px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-muted);">'
+        + '<div class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></div>'
+        + 'Running AI content analysis...</div></div>';
+
+      lastAiDetectResults = [];
+      var resultsHtml = '';
+
+      for (var i = 0; i < sourceTexts.length; i++) {
+        var src = sourceTexts[i];
+        if (!src.text || src.text.length < 100) continue;
+        try {
+          var r = await fetch('/api/ai-detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: src.text, filename: src.filename })
+          });
+          var data = await r.json();
+          if (data.success) {
+            lastAiDetectResults.push(data);
+            resultsHtml += renderAiDetectResult(data);
+          }
+        } catch (e) { /* skip */ }
+      }
+
+      if (!resultsHtml) {
+        panel.innerHTML = '';
+        return;
+      }
+
+      panel.innerHTML = '<div class="section">'
+        + '<div class="section-header" onclick="toggleCollapsible(\'aiDetectBody\')" style="cursor:pointer;user-select:none;">'
+        + '<span class="section-icon">&#128269;</span>'
+        + '<h3>AI Content Analysis</h3>'
+        + '<span class="collapse-arrow" id="aiDetectBodyArrow" style="margin-left:8px;font-size:10px;">&#9660;</span>'
+        + '</div>'
+        + '<div id="aiDetectBody">' + resultsHtml + '</div></div>';
+    }
+
+    function renderAiDetectResult(data) {
+      var score = data.overallScore || 0;
+      var color, label, bg;
+      if (score <= 30) { color = '#10b981'; label = 'Low'; bg = '#ecfdf5'; }
+      else if (score <= 60) { color = '#f59e0b'; label = 'Moderate'; bg = '#fffbeb'; }
+      else { color = '#ef4444'; label = 'High'; bg = '#fef2f2'; }
+
+      var cats = data.categories || {};
+      var isGPTZero = data.provider && data.provider.indexOf('GPTZero') !== -1;
+
+      var catNames = isGPTZero ? [
+        { key: 'aiProbability', label: 'AI Probability' },
+        { key: 'humanProbability', label: 'Human Probability' },
+        { key: 'mixedProbability', label: 'Mixed (AI + Human)' },
+        { key: 'completelyGenerated', label: 'Completely Generated' },
+      ] : [
+        { key: 'sentenceUniformity', label: 'Sentence Uniformity' },
+        { key: 'aiVocabulary', label: 'AI Vocabulary' },
+        { key: 'paragraphConsistency', label: 'Paragraph Consistency' },
+        { key: 'hedgingLanguage', label: 'Hedging Language' },
+        { key: 'naturalness', label: 'Naturalness & Voice' },
+        { key: 'structuralPatterns', label: 'Structural Patterns' },
+        { key: 'overallPolish', label: 'Overall Polish' },
+      ];
+
+      var uid = 'aidet_' + (data.filename || '').replace(/[^a-zA-Z0-9]/g, '_') + '_' + Math.floor(Math.random() * 100000);
+
+      var barsHtml = catNames.map(function(c) {
+        var val = cats[c.key];
+        if (val === null || val === undefined) return '';
+        val = Number(val) || 0;
+        var barColor;
+        if (c.key === 'humanProbability') {
+          barColor = val >= 70 ? '#10b981' : val >= 40 ? '#f59e0b' : '#ef4444';
+        } else {
+          barColor = val <= 30 ? '#10b981' : val <= 60 ? '#f59e0b' : '#ef4444';
+        }
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+          + '<span style="font-size:12px;color:var(--color-text-secondary);min-width:170px;">' + c.label + '</span>'
+          + '<div style="flex:1;height:10px;background:var(--color-border-light);border-radius:5px;overflow:hidden;position:relative;">'
+          + '<div style="width:' + val + '%;height:100%;background:' + barColor + ';border-radius:5px;min-width:' + (val > 0 ? '3px' : '0') + ';"></div></div>'
+          + '<span style="font-size:13px;font-weight:700;min-width:40px;text-align:right;color:' + barColor + ';">' + val + '%</span></div>';
+      }).join('');
+
+      // Per-sentence highlighting (GPTZero)
+      var sentencesHtml = '';
+      if (data.sentences && data.sentences.length > 0) {
+        sentencesHtml = '<div style="margin-top:14px;"><div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Per-Sentence Analysis</div>'
+          + '<div style="padding:12px 14px;background:var(--color-surface);border-radius:6px;font-size:13px;line-height:1.7;max-height:300px;overflow-y:auto;">';
+        data.sentences.forEach(function(s) {
+          var p = s.generatedProb || 0;
+          var bgC, txtC;
+          if (p >= 0.7) { bgC = 'rgba(239, 68, 68, 0.18)'; txtC = '#991b1b'; }
+          else if (p >= 0.4) { bgC = 'rgba(245, 158, 11, 0.18)'; txtC = '#92400e'; }
+          else { bgC = 'transparent'; txtC = 'var(--color-text)'; }
+          sentencesHtml += '<span style="background:' + bgC + ';color:' + txtC + ';padding:1px 2px;border-radius:2px;" title="AI probability: ' + Math.round(p * 100) + '%">' + escapeHtml(s.text) + '</span> ';
+        });
+        sentencesHtml += '</div>'
+          + '<div style="font-size:11px;color:var(--color-text-muted);margin-top:6px;">'
+          + '<span style="display:inline-block;width:10px;height:10px;background:rgba(239, 68, 68, 0.4);border-radius:2px;margin-right:4px;"></span>Likely AI (70%+) &nbsp;'
+          + '<span style="display:inline-block;width:10px;height:10px;background:rgba(245, 158, 11, 0.4);border-radius:2px;margin-right:4px;"></span>Possibly AI (40-69%)'
+          + '</div></div>';
+      }
+
+      var providerBadge = data.provider
+        ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:' + (isGPTZero ? '#3b82f6' : '#8b5cf6') + ';color:#fff;margin-left:6px;">' + escapeHtml(data.provider) + '</span>'
+        : '';
+
+      return '<div style="border:1px solid var(--color-border-light);border-radius:8px;padding:16px 18px;margin-bottom:10px;background:' + bg + ';">'
+        + '<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">'
+        + '<div style="text-align:center;min-width:70px;padding:10px;background:' + color + ';border-radius:10px;">'
+        + '<div style="font-size:24px;font-weight:700;color:#fff;">' + score + '%</div>'
+        + '<div style="font-size:10px;color:rgba(255,255,255,0.85);font-weight:600;">AI Score</div></div>'
+        + '<div style="flex:1;">'
+        + '<div style="font-size:14px;font-weight:600;color:var(--color-text);margin-bottom:2px;">' + escapeHtml(data.filename || 'Document') + providerBadge + '</div>'
+        + '<div style="font-size:13px;color:' + color + ';font-weight:600;">' + label + ' likelihood of AI-generated content</div>'
+        + '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">Confidence: ' + (data.confidence || 'medium') + '</div>'
+        + '</div></div>'
+        + '<div style="cursor:pointer;font-size:12px;color:var(--color-primary);margin-bottom:8px;" onclick="var el=document.getElementById(\'' + uid + '\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';">&#9654; View Details</div>'
+        + '<div id="' + uid + '" style="display:none;">'
+        + barsHtml
+        + (data.notes ? '<div style="margin-top:10px;padding:10px 14px;background:var(--color-surface);border-radius:6px;font-size:12px;color:var(--color-text-secondary);line-height:1.6;">' + escapeHtml(data.notes) + '</div>' : '')
+        + sentencesHtml
+        + '</div></div>';
+    }
+
+    // ── AI Detection Tab ────────────────────────────────────────────────────
+    let aiDetectFiles = [];
+
+    function handleAiDetectDragOver(e) { e.preventDefault(); document.getElementById('aiDetectUploadZone').classList.add('drag-over'); }
+    function handleAiDetectDragLeave(e) { document.getElementById('aiDetectUploadZone').classList.remove('drag-over'); }
+    function handleAiDetectDrop(e) {
+      e.preventDefault();
+      document.getElementById('aiDetectUploadZone').classList.remove('drag-over');
+      processAiDetectFiles(Array.from(e.dataTransfer.files));
+    }
+    function handleAiDetectFileSelect(e) { processAiDetectFiles(Array.from(e.target.files)); }
+
+    function processAiDetectFiles(files) {
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        if ((f.name.endsWith('.pdf') || f.name.endsWith('.txt')) && !aiDetectFiles.some(function(x) { return x.name === f.name; })) {
+          aiDetectFiles.push(f);
+        }
+      }
+      updateAiDetectFileList();
+    }
+
+    function removeAiDetectFile(idx) {
+      aiDetectFiles.splice(idx, 1);
+      updateAiDetectFileList();
+    }
+
+    function updateAiDetectFileList() {
+      var el = document.getElementById('aiDetectFileList');
+      if (!aiDetectFiles.length) { el.innerHTML = ''; return; }
+      el.innerHTML = aiDetectFiles.map(function(f, i) {
+        return '<div class="file-item"><span class="file-name">' + escapeHtml(f.name) + '</span>'
+          + '<button class="file-remove" onclick="removeAiDetectFile(' + i + ')">&times;</button></div>';
+      }).join('');
+    }
+
+    async function runAiDetectionTab() {
+      var btn = document.getElementById('aiDetectBtn');
+      var loading = document.getElementById('aiDetectLoading');
+      var results = document.getElementById('aiDetectResults');
+      var error = document.getElementById('aiDetectError');
+      var placeholder = document.getElementById('aiDetectPlaceholder');
+
+      if (aiDetectFiles.length === 0) {
+        error.textContent = 'Please upload at least one document.';
+        error.classList.add('active');
+        return;
+      }
+
+      error.classList.remove('active');
+      placeholder.style.display = 'none';
+      results.classList.remove('active');
+      btn.disabled = true;
+      loading.classList.add('active');
+
+      try {
+        var resultsHtml = '';
+        for (var i = 0; i < aiDetectFiles.length; i++) {
+          var file = aiDetectFiles[i];
+          var text = '';
+
+          if (file.name.endsWith('.txt')) {
+            text = await file.text();
+          } else if (file.name.endsWith('.pdf')) {
+            // Extract via backend
+            var fd = new FormData();
+            fd.append('file', file);
+            var extractResp = await fetch('/api/ai-detect/extract', { method: 'POST', body: fd });
+            if (!extractResp.ok) throw new Error('Failed to extract text from ' + file.name);
+            var extractData = await extractResp.json();
+            text = extractData.text || '';
+          }
+
+          if (!text || text.length < 100) {
+            resultsHtml += '<div style="padding:14px 18px;background:var(--color-warning-bg);border:1px solid var(--color-warning);border-radius:8px;margin-bottom:10px;font-size:13px;"><strong>' + escapeHtml(file.name) + '</strong>: Not enough text to analyze (minimum 100 characters).</div>';
+            continue;
+          }
+
+          var r = await fetch('/api/ai-detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, filename: file.name })
+          });
+          var data = await r.json();
+          if (data.success) {
+            resultsHtml += renderAiDetectResult(data);
+          } else {
+            resultsHtml += '<div style="padding:14px 18px;background:var(--color-danger-bg);border:1px solid var(--color-danger);border-radius:8px;margin-bottom:10px;font-size:13px;"><strong>' + escapeHtml(file.name) + '</strong>: ' + escapeHtml(data.error || 'Analysis failed') + '</div>';
+          }
+        }
+        results.innerHTML = resultsHtml || '<p style="color:var(--color-text-muted);padding:24px;text-align:center;">No results.</p>';
+        results.classList.add('active');
+      } catch (err) {
+        error.textContent = err.message;
+        error.classList.add('active');
+        placeholder.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function clearAiDetectionTab() {
+      aiDetectFiles = [];
+      document.getElementById('aiDetectFileInput').value = '';
+      document.getElementById('aiDetectFileList').innerHTML = '';
+      document.getElementById('aiDetectError').classList.remove('active');
+      document.getElementById('aiDetectResults').classList.remove('active');
+      document.getElementById('aiDetectResults').innerHTML = '';
+      document.getElementById('aiDetectPlaceholder').style.display = 'block';
+    }
+
+    function addCustomEvent() {
+      if (!lastTimeline) return;
+      var existing = document.getElementById('addEventModal');
+      if (existing) existing.remove();
+
+      var modal = document.createElement('div');
+      modal.id = 'addEventModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 14px;font-size:16px;color:var(--color-text);">Add Custom Event</h3>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Date</label>'
+        + '<input id="addEventDate" type="text" placeholder="YYYY-MM-DD or description" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Event Description</label>'
+        + '<textarea id="addEventText" placeholder="Describe the event..." style="width:100%;height:80px;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;resize:vertical;margin-bottom:12px;"></textarea>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Event Type</label>'
+        + '<select id="addEventType" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:12px;">'
+        + '<option value="OTHER">Other</option><option value="FILING">Filing</option><option value="HEARING">Hearing</option><option value="ORDER">Order</option><option value="CORRESPONDENCE">Correspondence</option><option value="DEADLINE">Deadline</option><option value="AGREEMENT">Agreement</option><option value="INCIDENT">Incident</option><option value="ADMINISTRATIVE">Administrative</option></select>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Significance</label>'
+        + '<select id="addEventSignificance" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:16px;">'
+        + '<option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="LOW">Low</option></select>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button class="btn btn-secondary" onclick="document.getElementById(\'addEventModal\').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button class="btn btn-primary" onclick="submitCustomEvent()" style="font-size:13px;padding:8px 18px;">Add</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+      document.getElementById('addEventDate').focus();
+    }
+
+    function submitCustomEvent() {
+      var date = document.getElementById('addEventDate').value.trim();
+      var text = document.getElementById('addEventText').value.trim();
+      var eventType = document.getElementById('addEventType').value;
+      var significance = document.getElementById('addEventSignificance').value;
+      if (!date || !text) { alert('Date and description are required.'); return; }
+
+      var newEvent = {
+        date: date,
+        event: text,
+        eventType: eventType,
+        significance: significance,
+        source: { filename: 'Manual Entry', page: null, quote: '' },
+        annotation: null,
+        annotationFlag: null
+      };
+
+      // Insert in chronological order
+      if (!lastTimeline.timeline) lastTimeline.timeline = [];
+      var inserted = false;
+      for (var i = 0; i < lastTimeline.timeline.length; i++) {
+        if (date < lastTimeline.timeline[i].date) {
+          lastTimeline.timeline.splice(i, 0, newEvent);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) lastTimeline.timeline.push(newEvent);
+
+      document.getElementById('addEventModal').remove();
+      displayTimeline(lastTimeline, null);
+
+      // Auto-save if editing a loaded record
+      if (loadedRecordId) {
+        fetch('/api/records/update-timeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, record_id: loadedRecordId, timeline: lastTimeline })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+          if (data.success) {
+            showSaveStatus('&#10003; Event added and record auto-saved.', true);
+            loadMyRecords();
+          }
+        }).catch(function() {});
       }
     }
 
@@ -4407,6 +5031,7 @@ th{background:#f0f2f8;font-weight:bold;}
 
     // ── Authentication ──────────────────────────────────────────────────────
     let loggedInStaff = null;
+    let loggedInRole = null;
 
     async function doLogin() {
       const username = document.getElementById('loginUsername').value.trim();
@@ -4436,7 +5061,9 @@ th{background:#f0f2f8;font-weight:bold;}
         }
 
         loggedInStaff = username;
+        loggedInRole = data.role || 'staff';
         sessionStorage.setItem('loggedInStaff', username);
+        sessionStorage.setItem('loggedInRole', loggedInRole);
         showMainApp();
       } catch (err) {
         errorEl.textContent = 'Login failed. Please try again.';
@@ -4446,7 +5073,9 @@ th{background:#f0f2f8;font-weight:bold;}
 
     function doLogout() {
       loggedInStaff = null;
+      loggedInRole = null;
       sessionStorage.removeItem('loggedInStaff');
+      sessionStorage.removeItem('loggedInRole');
       if (sessionTimer) clearTimeout(sessionTimer);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       resetToLightMode();
@@ -4467,8 +5096,8 @@ th{background:#f0f2f8;font-weight:bold;}
       document.getElementById('auditLogPanel').style.display = 'block';
       document.getElementById('translateRecordsPanel').style.display = 'block';
       document.getElementById('translateAuditLogPanel').style.display = 'block';
-      // Show admin tab (all staff can see it for now; could restrict later)
-      document.getElementById('adminTabBtn').style.display = 'inline-block';
+      // Show admin tab only for admins
+      document.getElementById('adminTabBtn').style.display = loggedInRole === 'admin' ? 'inline-block' : 'none';
       loadMyRecords();
       loadAuditLog();
       loadTranslateRecords();
@@ -4484,8 +5113,10 @@ th{background:#f0f2f8;font-weight:bold;}
     // Auto-login from session
     (function() {
       const saved = sessionStorage.getItem('loggedInStaff');
+      const savedRole = sessionStorage.getItem('loggedInRole');
       if (saved) {
         loggedInStaff = saved;
+        loggedInRole = savedRole || 'staff';
         showMainApp();
       }
     })();
@@ -4541,7 +5172,7 @@ th{background:#f0f2f8;font-weight:bold;}
           const response = await fetch('/api/records', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, summary: summary || null, timeline: lastTimeline })
+            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, summary: summary || null, ai_score: lastAiDetectResults.length > 0 ? lastAiDetectResults[0].overallScore : null, timeline: lastTimeline })
           });
 
           const data = await response.json();
@@ -4688,9 +5319,9 @@ th{background:#f0f2f8;font-weight:bold;}
         } else if (myRecordsSortKey === 'created_at') {
           va = a.created_at;
           vb = b.created_at;
-        } else if (myRecordsSortKey === 'timeline_size') {
-          va = a.timeline_size || 0;
-          vb = b.timeline_size || 0;
+        } else if (myRecordsSortKey === 'status') {
+          va = (a.status || 'draft').toLowerCase();
+          vb = (b.status || 'draft').toLowerCase();
         }
         if (va < vb) return myRecordsSortAsc ? -1 : 1;
         if (va > vb) return myRecordsSortAsc ? 1 : -1;
@@ -4718,8 +5349,8 @@ th{background:#f0f2f8;font-weight:bold;}
             <tr style="border-bottom:2px solid var(--color-border);text-align:left;">
               <th style="padding:10px 6px;width:32px;"><input type="checkbox" id="mergeSelectAll" onchange="toggleAllMergeCb(this.checked)" title="Select all" style="cursor:pointer;" /></th>
               <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('record_name')">Name${arrow('record_name')}</th>
+              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('status')">Status${arrow('status')}</th>
               <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('created_at')">Saved${arrow('created_at')}</th>
-              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('timeline_size')">Size${arrow('timeline_size')}</th>
               <th style="padding:10px 12px;width:1%;white-space:nowrap;"></th>
             </tr>
           </thead>
@@ -4733,17 +5364,17 @@ th{background:#f0f2f8;font-weight:bold;}
                 + '<a href="#" onclick="event.preventDefault(); loadRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">'
                 + escapeHtml(r.record_name || (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names))
                 + '</a>'
-                + ' ' + renderStatusBadge(r.status || 'draft')
-                + '<button onclick="changeRecordStatus(' + r.id + ',\'timeline\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Change status">&#9881;</button>'
-                + (r.case_number ? '<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px;">' + escapeHtml(r.case_number) + '</span>' : '')
+                + (r.ai_score != null ? renderAiScoreBadge(r.ai_score) : '')
                 + '<div style="margin-top:3px;">' + renderTagBadges(r.tags)
+                + (r.case_number ? '<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px;">' + escapeHtml(r.case_number) + '</span>' : '')
                 + '<button onclick="editRecordTags(' + r.id + ',\'timeline\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Edit tags">&#127991; Tags</button>'
                 + '</div>'
                 + (r.notes ? '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">' + escapeHtml(r.notes) + '</div>' : '')
                 + '</td>'
-                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + new Date(r.created_at).toLocaleString() + '</td>'
-                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + formatFileSize(r.timeline_size || 0) + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;">' + renderStatusBadge(r.status || 'draft') + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + new Date(r.created_at).toLocaleDateString() + '</td>'
                 + '<td style="padding:10px 12px;white-space:nowrap;">'
+                + '<span onclick="changeRecordStatus(' + r.id + ',\'timeline\')" style="cursor:pointer;font-size:14px;margin-right:8px;" title="Change status">&#9881;</span>'
                 + '<span onclick="renameRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Rename">&#9998;</span>'
                 + '<span onclick="shareRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Share">&#128101;</span>'
                 + '<span onclick="deleteRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;color:var(--color-danger);" title="Delete">&#128465;</span>'
@@ -4997,6 +5628,8 @@ th{background:#f0f2f8;font-weight:bold;}
       } catch (err) { alert('Share failed: ' + err.message); }
     }
 
+    let loadedRecordId = null; // track which saved record is currently loaded
+
     async function loadRecord(id) {
       const staffId = loggedInStaff;
       try {
@@ -5004,6 +5637,7 @@ th{background:#f0f2f8;font-weight:bold;}
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
 
+        loadedRecordId = id;
         displayTimeline(data.record.timeline, null);
         window.scrollTo({ top: document.getElementById('timelineResults').offsetTop - 80, behavior: 'smooth' });
       } catch (err) {
@@ -5311,7 +5945,9 @@ th{background:#f0f2f8;font-weight:bold;}
       let filtered = transRecordsData.filter(r => {
         const fileStr = (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names).toLowerCase();
         const langStr = (r.language_name || '').toLowerCase();
-        const matchesQuery = !query || fileStr.includes(query) || langStr.includes(query);
+        const nameStr = (r.record_name || '').toLowerCase();
+        var tagStr = ''; try { tagStr = JSON.parse(r.tags || '[]').join(' ').toLowerCase(); } catch(e) {}
+        const matchesQuery = !query || fileStr.includes(query) || langStr.includes(query) || nameStr.includes(query) || tagStr.includes(query);
         const created = (r.created_at || '').slice(0, 10);
         const matchesFrom = !dateFrom || created >= dateFrom;
         const matchesTo = !dateTo || created <= dateTo;
@@ -5342,7 +5978,7 @@ th{background:#f0f2f8;font-weight:bold;}
 
       let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
       html += '<thead><tr style="border-bottom:2px solid var(--color-border-light);text-align:left;">';
-      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'file_names\')">Files' + sortArrow('file_names') + '</th>';
+      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'file_names\')">Name' + sortArrow('file_names') + '</th>';
       html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'language_name\')">Language' + sortArrow('language_name') + '</th>';
       html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'created_at\')">Saved' + sortArrow('created_at') + '</th>';
       html += '<th style="padding:8px 12px;text-align:right;">Actions</th>';
@@ -5350,14 +5986,19 @@ th{background:#f0f2f8;font-weight:bold;}
 
       for (const r of filtered) {
         const files = Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names;
-        html += '<tr style="border-bottom:1px solid var(--color-border-light);">';
         const displayName = r.record_name || files;
-        html += '<td style="padding:10px 12px;"><a href="#" onclick="event.preventDefault();loadTranslateRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:underline;cursor:pointer;">' + escapeHtml(displayName) + '</a></td>';
+        html += '<tr style="border-bottom:1px solid var(--color-border-light);">';
+        html += '<td style="padding:10px 12px;">';
+        html += '<a href="#" onclick="event.preventDefault();loadTranslateRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">' + escapeHtml(displayName) + '</a>';
+        html += '<div style="margin-top:3px;">' + renderTagBadges(r.tags);
+        html += '<button onclick="editRecordTags(' + r.id + ',\'translation\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Edit tags">&#127991; Tags</button>';
+        html += '</div>';
+        html += '</td>';
         html += '<td style="padding:10px 12px;">' + escapeHtml(r.language_name) + '</td>';
-        html += '<td style="padding:10px 12px;white-space:nowrap;">' + new Date(r.created_at).toLocaleString() + '</td>';
+        html += '<td style="padding:10px 12px;white-space:nowrap;">' + new Date(r.created_at).toLocaleDateString() + '</td>';
         html += '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">';
-        html += '<button class="btn btn-secondary" onclick="loadTranslateRecord(' + r.id + ')" style="font-size:11px;padding:4px 10px;">Load</button> ';
-        html += '<button class="btn" onclick="deleteTranslateRecord(' + r.id + ')" style="font-size:11px;padding:4px 10px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>';
+        html += '<span onclick="renameTranslateRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Rename">&#9998;</span>';
+        html += '<span onclick="deleteTranslateRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;color:var(--color-danger);" title="Delete">&#128465;</span>';
         html += '</td></tr>';
       }
       html += '</tbody></table>';
@@ -5387,6 +6028,54 @@ th{background:#f0f2f8;font-weight:bold;}
         document.getElementById('translationQAPanel').style.display = 'block';
         window.scrollTo({ top: document.getElementById('translateResults').offsetTop - 80, behavior: 'smooth' });
       } catch (err) { alert('Failed to load: ' + err.message); }
+    }
+
+    function renameTranslateRecord(id) {
+      var record = transRecordsData.find(function(r) { return r.id === id; });
+      if (!record) return;
+      var currentName = record.record_name || (Array.isArray(record.file_names) ? record.file_names.join(', ') : record.file_names);
+
+      var existing = document.getElementById('renameTransModal');
+      if (existing) existing.remove();
+
+      var modal = document.createElement('div');
+      modal.id = 'renameTransModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 16px;font-size:17px;color:var(--color-text);">Edit Translation Record</h3>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record Name</label>'
+        + '<input id="renameTransInput" type="text" value="' + escapeHtml(currentName) + '" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;" />'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">'
+        + '<button id="renameTransCancel" class="btn btn-secondary" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button id="renameTransSave" class="btn btn-primary" style="font-size:13px;padding:8px 18px;">Save</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+
+      var input = document.getElementById('renameTransInput');
+      input.select();
+      input.focus();
+
+      var close = function() { modal.remove(); };
+      document.getElementById('renameTransCancel').onclick = close;
+      modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+
+      document.getElementById('renameTransSave').onclick = async function() {
+        var newName = input.value.trim() || currentName;
+        close();
+        try {
+          await fetch('/api/records/translations/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_name: newName })
+          });
+          loadTranslateRecords();
+        } catch (err) { alert('Rename failed: ' + err.message); }
+      };
+
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') document.getElementById('renameTransSave').click();
+        if (e.key === 'Escape') close();
+      });
     }
 
     async function deleteTranslateRecord(id) {
@@ -5616,6 +6305,8 @@ th{background:#f0f2f8;font-weight:bold;}
         if (!response.ok) throw new Error(data.error || 'Translation failed');
 
         lastTranslation = data;
+        lastTranslateSourceTexts = data.sourceTexts || [];
+        lastTranslateOcrInfo = data.ocrInfo || [];
         displayTranslation(data);
       } catch (err) {
         showTranslateError(err.message);
@@ -5626,27 +6317,87 @@ th{background:#f0f2f8;font-weight:bold;}
       }
     }
 
+    let lastTranslateSourceTexts = [];
+    let lastTranslateOcrInfo = [];
+
     function displayTranslation(data) {
       const results = document.getElementById('translateResults');
       document.getElementById('translateResultTitle').textContent =
-        `Translation — ${data.languageName}`;
+        'Translation \u2014 ' + data.languageName;
       document.getElementById('translateExportButtons').style.display = 'flex';
 
       let html = '';
+
+      // Vision Clarity panel
+      if (lastTranslateOcrInfo.length > 0) {
+        html += '<div style="margin-bottom:16px;">';
+        lastTranslateOcrInfo.forEach(function(r) {
+          var clarity = r.visionClarity != null ? r.visionClarity : 0;
+          var clarityColor, clarityLabel, clarityBg;
+          if (clarity >= 81) { clarityColor = '#10b981'; clarityLabel = 'Excellent'; clarityBg = '#ecfdf5'; }
+          else if (clarity >= 61) { clarityColor = '#3b82f6'; clarityLabel = 'Good'; clarityBg = '#eff6ff'; }
+          else if (clarity >= 41) { clarityColor = '#f59e0b'; clarityLabel = 'Fair'; clarityBg = '#fffbeb'; }
+          else if (clarity >= 21) { clarityColor = '#f97316'; clarityLabel = 'Poor'; clarityBg = '#fff7ed'; }
+          else { clarityColor = '#ef4444'; clarityLabel = 'Illegible'; clarityBg = '#fef2f2'; }
+          html += '<div style="padding:12px 16px;margin-bottom:6px;background:' + clarityBg + ';border:1px solid ' + clarityColor + ';border-radius:8px;font-size:13px;display:flex;align-items:center;gap:14px;">'
+            + '<div style="text-align:center;min-width:60px;padding:8px;background:' + clarityColor + ';border-radius:8px;">'
+            + '<div style="font-size:20px;font-weight:700;color:#fff;">' + clarity + '%</div>'
+            + '<div style="font-size:9px;color:rgba(255,255,255,0.85);font-weight:600;">CLARITY</div></div>'
+            + '<div><strong>' + escapeHtml(r.filename) + '</strong>'
+            + '<span style="color:' + clarityColor + ';font-weight:600;margin-left:6px;">' + clarityLabel + ' readability</span>'
+            + '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">' + r.visionPages + ' page(s) processed with Vision OCR</div>'
+            + (clarity < 41 ? '<div style="font-size:12px;color:var(--color-danger);margin-top:2px;">&#9888; Handwriting may be too unclear for accurate translation — verify against original.</div>' : '')
+            + '</div></div>';
+        });
+        html += '</div>';
+      }
+
+
       for (const r of data.results) {
         if (data.results.length > 1) {
-          html += `<div style="font-weight:700; font-size:14px; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--color-border-light);">
-            ${escapeHtml(r.filename)}${r.pages ? ` &mdash; ${r.pages} pages` : ''}
-          </div>`;
+          html += '<div style="font-weight:700; font-size:14px; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--color-border-light);">'
+            + escapeHtml(r.filename) + (r.pages ? ' \u2014 ' + r.pages + ' pages' : '')
+            + '</div>';
         }
-        html += `<div style="margin-bottom:32px;">${escapeHtml(r.translation)}</div>`;
+        html += '<div style="margin-bottom:32px;">' + escapeHtml(r.translation) + '</div>';
       }
 
       results.innerHTML = html;
       results.classList.add('active');
-      // Show Q&A panel when translation is displayed
       document.getElementById('translationQAPanel').style.display = 'block';
       clearTranslationQA();
+    }
+
+    async function runTranslateAiDetection(sourceTexts) {
+      var panel = document.getElementById('translateAiDetectPanel');
+      if (!panel) return;
+      panel.innerHTML = '<div style="padding:14px 18px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-muted);">'
+        + '<div class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></div>'
+        + 'Running AI content analysis...</div></div>';
+
+      var resultsHtml = '';
+      for (var i = 0; i < sourceTexts.length; i++) {
+        var src = sourceTexts[i];
+        if (!src.text || src.text.length < 100) continue;
+        try {
+          var r = await fetch('/api/ai-detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: src.text, filename: src.filename })
+          });
+          var data = await r.json();
+          if (data.success) resultsHtml += renderAiDetectResult(data);
+        } catch (e) { /* skip */ }
+      }
+
+      if (!resultsHtml) { panel.innerHTML = ''; return; }
+      panel.innerHTML = '<div style="margin-bottom:16px;">'
+        + '<div style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;margin-bottom:8px;" onclick="var el=document.getElementById(\'translateAiDetBody\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';">'
+        + '<span style="font-size:16px;">&#128269;</span>'
+        + '<strong style="font-size:14px;color:var(--color-text);">AI Content Analysis</strong>'
+        + '<span style="font-size:10px;color:var(--color-text-muted);">&#9660;</span></div>'
+        + '<div id="translateAiDetBody">' + resultsHtml + '</div></div>';
     }
 
     function showTranslateError(message) {
