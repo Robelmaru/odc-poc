@@ -109,7 +109,7 @@ async function extractChunk(
     }
     // Return empty timeline for this chunk rather than crashing the whole job
     console.log("    Skipping chunk " + chunkLabel + " after " + MAX_RETRIES + " retries");
-    return { documents: [], timeline: [], timelineSpan: { earliest: "", latest: "", totalDuration: "" }, conflicts: [], keyDates: [], notes: [] };
+    return { documents: [], sections: [], timeline: [], timelineSpan: { earliest: "", latest: "", totalDuration: "" }, conflicts: [], keyDates: [], notes: [] };
   }
 }
 
@@ -186,13 +186,15 @@ async function mergePartialTimelines(
 
 async function finalCleanup(tl: DocumentTimelineResult): Promise<DocumentTimelineResult> {
   try {
-    if ((tl.timeline?.length ?? 0) <= 20) return tl;
+    const timelineCount = tl.timeline?.length ?? 0;
+    const sectionsCount = tl.sections?.length ?? 0;
+    if (timelineCount <= 20 && sectionsCount <= 10) return tl;
 
     const payload = JSON.stringify(tl);
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 16384,
-      system: "You are a legal document analyst. Clean up this merged timeline: remove exact duplicates, ensure strict chronological order, verify date formats are YYYY-MM-DD, and write a concise overall summary. Output only valid JSON in the same DocumentTimelineResult format. No markdown code fences.",
+      system: "You are a legal document analyst. Clean up this merged timeline: remove exact duplicates, ensure strict chronological order, verify date formats are YYYY-MM-DD, and write a concise overall summary. Also clean up the 'sections' array (the Table of Contents of sub-documents inside each PDF): sort by filename and startPage ascending, merge adjacent fragments of the same logical sub-document (same filename, same sectionType, abutting page ranges, matching title/parties), and remove exact duplicate entries. Do NOT merge genuinely distinct sub-documents that happen to be adjacent. Output only valid JSON in the same DocumentTimelineResult format (including the 'sections' field). No markdown code fences.",
       messages: [
         {
           role: "user",

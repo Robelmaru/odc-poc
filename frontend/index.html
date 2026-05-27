@@ -3389,8 +3389,10 @@
         const page = link.dataset.page ? parseInt(link.dataset.page) : null;
         const quote = link.dataset.quote || '';
 
-        // If we have source texts, open the source panel and highlight
-        if (lastSourceTexts.length > 0) {
+        // Table-of-Contents entries always jump to the PDF page, never the text panel
+        const isTocEntry = link.classList.contains('toc-entry');
+
+        if (!isTocEntry && lastSourceTexts.length > 0) {
           openSourceWithHighlight(filename, quote);
         } else {
           openFilePreview(filename, page, quote);
@@ -4184,11 +4186,12 @@ All conclusions require human review and professional judgment.
         }
       }
 
-      // TABLE OF CONTENTS
+      // JUMP TO (in-page anchor nav)
       html += `
         <div class="section" style="background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">&#128214; Table of Contents</div>
+          <div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">&#129517; Jump to</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;">
+            ${t.sections && t.sections.length > 0 ? '<a href="#doc-insight-toc" style="color:var(--color-primary);text-decoration:none;">Table of Contents (' + t.sections.length + ')</a>' : ''}
             ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-files" style="color:var(--color-primary);text-decoration:none;">File Summaries</a>' : ''}
             ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-docs" style="color:var(--color-primary);text-decoration:none;">Documents Analyzed (' + t.documents.length + ')</a>' : ''}
             ${t.timelineSpan ? '<a href="#doc-insight-span" style="color:var(--color-primary);text-decoration:none;">Timeline Span</a>' : ''}
@@ -4199,6 +4202,69 @@ All conclusions require human review and professional judgment.
           </div>
         </div>
       `;
+
+      // TABLE OF CONTENTS (sub-document index)
+      if (t.sections && t.sections.length > 0) {
+        // Group sections by filename so the TOC reads naturally per file
+        const sectionsByFile = {};
+        t.sections.forEach(s => {
+          const fn = s.filename || 'Unknown file';
+          if (!sectionsByFile[fn]) sectionsByFile[fn] = [];
+          sectionsByFile[fn].push(s);
+        });
+        // Sort each file's sections by startPage
+        Object.keys(sectionsByFile).forEach(fn => {
+          sectionsByFile[fn].sort((a, b) => (a.startPage || 0) - (b.startPage || 0));
+        });
+
+        const formatPageRange = (s) => {
+          if (s.startPage == null && s.endPage == null) return '';
+          if (s.startPage != null && s.endPage != null && s.startPage !== s.endPage) {
+            return 'p. ' + s.startPage + '–' + s.endPage;
+          }
+          return 'p. ' + (s.startPage != null ? s.startPage : s.endPage);
+        };
+
+        html += `
+          <div class="section" id="doc-insight-toc">
+            <div class="section-header">
+              <span class="section-icon">&#128214;</span>
+              <h3>Table of Contents (${t.sections.length})</h3>
+            </div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">
+              Sub-documents detected inside the uploaded file${Object.keys(sectionsByFile).length > 1 ? 's' : ''}. Click any entry to open the source PDF at that page.
+            </div>
+            ${Object.keys(sectionsByFile).map(fn => `
+              <div style="margin-bottom:14px;">
+                ${Object.keys(sectionsByFile).length > 1 ? `<div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">${escapeHtml(fn)}</div>` : ''}
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  ${sectionsByFile[fn].map(s => {
+                    const pageRange = formatPageRange(s);
+                    const pageAttr = s.startPage != null ? 'data-page="' + s.startPage + '"' : '';
+                    return `
+                      <a class="source-link toc-entry" data-filename="${escapeHtml(fn)}" ${pageAttr} data-quote=""
+                         style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--color-surface);border:1px solid var(--color-border-light);border-radius:6px;text-decoration:none;color:inherit;cursor:pointer;transition:all 0.15s;"
+                         onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-bg)';"
+                         onmouseout="this.style.borderColor='var(--color-border-light)';this.style.background='var(--color-surface)';">
+                        ${pageRange ? `<span style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--color-primary);min-width:70px;flex-shrink:0;">${pageRange}</span>` : ''}
+                        <span style="font-size:10px;font-weight:600;padding:2px 7px;background:var(--color-primary);color:#fff;border-radius:10px;text-transform:uppercase;letter-spacing:0.03em;flex-shrink:0;">${escapeHtml(s.sectionType || 'OTHER')}</span>
+                        <div style="flex:1;min-width:0;">
+                          <div style="font-size:14px;font-weight:600;color:var(--color-text);line-height:1.4;">${escapeHtml(s.title || '(untitled section)')}</div>
+                          <div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px 12px;">
+                            ${s.date ? `<span>&#128197; ${escapeHtml(s.date)}</span>` : ''}
+                            ${s.parties ? `<span>&#128101; ${escapeHtml(s.parties)}</span>` : ''}
+                          </div>
+                          ${s.summary ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;line-height:1.5;">${escapeHtml(s.summary)}</div>` : ''}
+                        </div>
+                      </a>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
 
       // PER-FILE SUMMARIES (one card per uploaded file)
       if (t.documents && t.documents.length > 0) {
@@ -4854,6 +4920,33 @@ Generated: ${new Date().toLocaleString()}
 
 `;
 
+      // Table of Contents (sub-document index)
+      if (t.sections && t.sections.length > 0) {
+        text += `TABLE OF CONTENTS (${t.sections.length})
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        const byFile = {};
+        t.sections.forEach(s => {
+          const fn = s.filename || 'Unknown file';
+          if (!byFile[fn]) byFile[fn] = [];
+          byFile[fn].push(s);
+        });
+        Object.keys(byFile).forEach(fn => {
+          byFile[fn].sort((a, b) => (a.startPage || 0) - (b.startPage || 0));
+          text += `\n${fn}\n`;
+          byFile[fn].forEach(s => {
+            const range = (s.startPage != null && s.endPage != null && s.startPage !== s.endPage)
+              ? `p. ${s.startPage}-${s.endPage}`
+              : (s.startPage != null ? `p. ${s.startPage}` : (s.endPage != null ? `p. ${s.endPage}` : ''));
+            text += `  ${range ? range + '  ' : ''}[${s.sectionType || 'OTHER'}] ${s.title || '(untitled)'}\n`;
+            if (s.date) text += `    Date: ${s.date}\n`;
+            if (s.parties) text += `    Parties: ${s.parties}\n`;
+            if (s.summary) text += `    ${s.summary}\n`;
+          });
+        });
+        text += '\n';
+      }
+
       // Documents
       if (t.documents && t.documents.length > 0) {
         text += `DOCUMENTS ANALYZED (${t.documents.length})
@@ -4960,6 +5053,22 @@ th{background:#f0f2f8;font-weight:bold;}
 </style></head><body>`;
 
       html += `<h1>Document Timeline</h1><p style="color:#666;font-size:9pt;">Generated: ${new Date().toLocaleString()}</p>`;
+
+      if (t.sections && t.sections.length > 0) {
+        html += `<h2>Table of Contents (${t.sections.length})</h2><table><tr><th>File</th><th>Pages</th><th>Type</th><th>Title</th><th>Date</th><th>Summary</th></tr>`;
+        const sortedSections = [...t.sections].sort((a, b) => {
+          const fileCmp = (a.filename || '').localeCompare(b.filename || '');
+          if (fileCmp !== 0) return fileCmp;
+          return (a.startPage || 0) - (b.startPage || 0);
+        });
+        sortedSections.forEach(s => {
+          const range = (s.startPage != null && s.endPage != null && s.startPage !== s.endPage)
+            ? `${s.startPage}-${s.endPage}`
+            : (s.startPage != null ? `${s.startPage}` : (s.endPage != null ? `${s.endPage}` : ''));
+          html += `<tr><td>${s.filename || ''}</td><td>${range}</td><td>${s.sectionType || ''}</td><td>${s.title || ''}${s.parties ? '<br><em style="color:#666;font-size:9pt;">' + s.parties + '</em>' : ''}</td><td>${s.date || ''}</td><td>${s.summary || ''}</td></tr>`;
+        });
+        html += '</table>';
+      }
 
       if (t.documents && t.documents.length > 0) {
         html += `<h2>Documents Analyzed (${t.documents.length})</h2><table><tr><th>File</th><th>Type</th><th>Date Range</th><th>Summary</th></tr>`;
