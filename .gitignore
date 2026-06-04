@@ -3,3 +3,7 @@ node_modules/
 *.log
 .DS_Store
 .claude/
+
+# SQLite ephemeral files (only the .db file should be tracked)
+*.db-shm
+*.db-wal

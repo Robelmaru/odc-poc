@@ -105,6 +105,7 @@ addColumnIfMissing("translation_records", "record_name", "TEXT");
 addColumnIfMissing("translation_records", "status", "TEXT DEFAULT 'draft'");
 addColumnIfMissing("translation_records", "tags", "TEXT DEFAULT '[]'");
 addColumnIfMissing("timeline_records", "ai_score", "INTEGER");
+addColumnIfMissing("users", "email", "TEXT");
 
 // ── Interfaces ────────────────────────────────────────────────────────────
 
@@ -332,6 +333,7 @@ export async function getAllRecordCounts() {
 export interface User {
   id: number;
   username: string;
+  email?: string | null;
   pin: string;
   role: string;
   active: number;
@@ -339,11 +341,19 @@ export interface User {
 }
 
 export function getAllUsers(): User[] {
-  return db.prepare(`SELECT id, username, pin, role, active, created_at FROM users ORDER BY username`).all() as User[];
+  return db.prepare(`SELECT id, username, email, pin, role, active, created_at FROM users ORDER BY username`).all() as User[];
 }
 
 export function getUserByUsername(username: string): User | undefined {
   return db.prepare(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`).get(username) as User | undefined;
+}
+
+export function getUserByEmail(email: string): User | undefined {
+  return db.prepare(`SELECT * FROM users WHERE LOWER(email) = LOWER(?)`).get(email) as User | undefined;
+}
+
+export function updateUserEmail(id: number, email: string) {
+  db.prepare(`UPDATE users SET email = ? WHERE id = ?`).run(email, id);
 }
 
 export function getActiveUsernames(): string[] {

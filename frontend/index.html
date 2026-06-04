@@ -1590,23 +1590,55 @@
       <img src="odc-logo.png" alt="ODC Logo" style="width:80px; height:80px; object-fit:contain; margin-bottom:16px;" />
       <h1 style="font-size:1.3rem; font-weight:700; color:var(--color-text); margin-bottom:4px;">Office of Disciplinary Counsel</h1>
       <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:28px;">Document Analysis System</p>
-      <div style="text-align:left; margin-bottom:16px;">
-        <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Username</label>
-        <input type="text" id="loginUsername" placeholder="Enter your name"
-          style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
-          onkeydown="if(event.key==='Enter') document.getElementById('loginPassword').focus()" />
+
+      <!-- Microsoft SSO Sign-in -->
+      <button id="msSignInBtn" onclick="window.location.href='/auth/login'" style="display:none;width:100%;padding:12px 14px;font-size:14px;font-weight:600;background:#2f2f2f;color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-family:var(--font-sans);" onmouseover="this.style.background='#1a1a1a'" onmouseout="this.style.background='#2f2f2f'">
+        <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+          <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+          <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+        </svg>
+        Sign in with Microsoft
+      </button>
+
+      <div id="ssoLegacyDivider" style="display:none;margin:20px 0;text-align:center;position:relative;">
+        <hr style="border:none;border-top:1px solid var(--color-border);"/>
+        <span style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--color-surface);padding:0 12px;font-size:11px;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;">or</span>
       </div>
-      <div style="text-align:left; margin-bottom:20px;">
-        <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Password</label>
-        <input type="password" id="loginPassword" placeholder="Enter your PIN"
-          style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
-          onkeydown="if(event.key==='Enter') doLogin()" />
+
+      <div id="legacyLoginForm">
+        <div style="text-align:left; margin-bottom:16px;">
+          <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Username</label>
+          <input type="text" id="loginUsername" placeholder="Enter your name"
+            style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
+            onkeydown="if(event.key==='Enter') document.getElementById('loginPassword').focus()" />
+        </div>
+        <div style="text-align:left; margin-bottom:20px;">
+          <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Password</label>
+          <input type="password" id="loginPassword" placeholder="Enter your PIN"
+            style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
+            onkeydown="if(event.key==='Enter') doLogin()" />
+        </div>
+        <button class="btn btn-primary" onclick="doLogin()" style="width:100%; padding:12px; font-size:15px;">Sign In</button>
       </div>
-      <div id="loginError" style="display:none; color:var(--color-danger); font-size:13px; margin-bottom:14px; padding:10px; background:var(--color-danger-bg); border-radius:6px;"></div>
-      <button class="btn btn-primary" onclick="doLogin()" style="width:100%; padding:12px; font-size:15px;">Sign In</button>
+
+      <div id="loginError" style="display:none; color:var(--color-danger); font-size:13px; margin:14px 0 0; padding:10px; background:var(--color-danger-bg); border-radius:6px;"></div>
       <p style="margin-top:16px; font-size:13px;"><a href="#" onclick="event.preventDefault(); document.getElementById('forgotModal').style.display='flex';" style="color:var(--color-primary); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot username or password?</a></p>
     </div>
   </div>
+
+  <script>
+    // Check if Entra SSO is enabled and show/hide the right login UI
+    fetch('/auth/status').then(function(r) { return r.json(); }).then(function(d) {
+      if (d.enabled) {
+        document.getElementById('msSignInBtn').style.display = 'flex';
+        document.getElementById('ssoLegacyDivider').style.display = 'block';
+        // Hide legacy form by default when SSO is enabled — admins can still use PIN if needed
+        // (uncomment to hide PIN form entirely): document.getElementById('legacyLoginForm').style.display = 'none';
+      }
+    }).catch(function() {});
+  </script>
 
   <!-- Forgot Password Modal -->
   <div id="forgotModal" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
@@ -2546,6 +2578,7 @@
         var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
           + '<thead><tr style="border-bottom:2px solid var(--color-border);text-align:left;">'
           + '<th style="padding:8px 12px;">Username</th>'
+          + '<th style="padding:8px 12px;">Email (SSO)</th>'
           + '<th style="padding:8px 12px;">Role</th>'
           + '<th style="padding:8px 12px;">Status</th>'
           + '<th style="padding:8px 12px;">Created</th>'
@@ -2557,13 +2590,17 @@
           var roleBadge = u.role === 'admin'
             ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:#8b5cf6;font-weight:600;">ADMIN</span>'
             : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:#6b7280;font-weight:600;">STAFF</span>';
+          var emailCell = u.email
+            ? '<span style="font-size:12px;">' + escapeHtml(u.email) + '</span>'
+            : '<span style="font-size:11px;color:var(--color-text-muted);font-style:italic;">not set</span>';
           html += '<tr style="border-bottom:1px solid var(--color-border-light);">'
             + '<td style="padding:10px 12px;font-weight:600;">' + escapeHtml(u.username) + '</td>'
+            + '<td style="padding:10px 12px;">' + emailCell + '</td>'
             + '<td style="padding:10px 12px;">' + roleBadge + '</td>'
             + '<td style="padding:10px 12px;"><span style="color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span></td>'
             + '<td style="padding:10px 12px;font-size:12px;color:var(--color-text-muted);">' + new Date(u.created_at).toLocaleDateString() + '</td>'
             + '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">'
-            + '<button class="btn btn-secondary" onclick="adminResetPin(' + u.id + ',\'' + escapeHtml(u.username) + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Reset PIN">&#128273; Reset PIN</button>'
+            + '<button class="btn btn-secondary" onclick="adminSetEmail(' + u.id + ',\'' + escapeHtml(u.username) + '\',\'' + escapeHtml(u.email || '') + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Set email for SSO">&#9993; Email</button>'
             + '<button class="btn btn-secondary" onclick="adminToggleRole(' + u.id + ',\'' + u.role + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Toggle role">' + (u.role === 'admin' ? 'Make Staff' : 'Make Admin') + '</button>'
             + '<button class="btn" onclick="adminToggleUser(' + u.id + ',' + u.active + ',\'' + escapeHtml(u.username) + '\')" style="font-size:11px;padding:3px 8px;background:' + (u.active ? 'var(--color-danger-bg)' : 'var(--color-success-bg)') + ';color:' + (u.active ? 'var(--color-danger)' : 'var(--color-success)') + ';border:1px solid ' + (u.active ? 'var(--color-danger)' : 'var(--color-success)') + ';">' + (u.active ? 'Disable' : 'Enable') + '</button>'
             + '</td></tr>';
@@ -2579,12 +2616,13 @@
       var modal = document.createElement('div');
       modal.id = 'addUserModal';
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
-      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
-        + '<h3 style="margin:0 0 16px;font-size:17px;color:var(--color-text);">Add New User</h3>'
-        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Username</label>'
-        + '<input id="newUserName" type="text" placeholder="Enter name" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
-        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">PIN</label>'
-        + '<input id="newUserPin" type="text" placeholder="Enter PIN" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Add New User</h3>'
+        + '<p style="margin:0 0 16px;font-size:12px;color:var(--color-text-muted);">User will sign in with their Microsoft (Entra) account.</p>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Display Name</label>'
+        + '<input id="newUserName" type="text" placeholder="e.g. Jane Doe" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Email <span style="color:var(--color-text-muted);font-weight:400;">(required for SSO)</span></label>'
+        + '<input id="newUserEmail" type="email" placeholder="user@dcbar.org" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
         + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Role</label>'
         + '<select id="newUserRole" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:16px;">'
         + '<option value="staff">Staff</option><option value="admin">Admin</option></select>'
@@ -2599,20 +2637,34 @@
 
     async function submitAddUser() {
       var username = document.getElementById('newUserName').value.trim();
-      var pin = document.getElementById('newUserPin').value.trim();
+      var email = document.getElementById('newUserEmail').value.trim().toLowerCase();
       var role = document.getElementById('newUserRole').value;
       var errEl = document.getElementById('addUserError');
-      if (!username || !pin) { errEl.textContent = 'Username and PIN are required.'; errEl.style.display = 'block'; return; }
+      if (!username || !email) { errEl.textContent = 'Display name and email are required.'; errEl.style.display = 'block'; return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
       try {
         var r = await fetch('/api/records/admin/users', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ admin_id: loggedInStaff, username: username, pin: pin, role: role })
+          body: JSON.stringify({ admin_id: loggedInStaff, username: username, email: email, role: role })
         });
         var data = await r.json();
         if (!data.success) { errEl.textContent = data.error || 'Failed'; errEl.style.display = 'block'; return; }
         document.getElementById('addUserModal').remove();
         loadAdminUsers();
       } catch (e) { errEl.textContent = 'Failed to add user.'; errEl.style.display = 'block'; }
+    }
+
+    async function adminSetEmail(userId, username, currentEmail) {
+      var newEmail = prompt('Set SSO email for ' + username + ':\n(e.g. user@dcbar.org — used for Microsoft sign-in)', currentEmail || '');
+      if (newEmail === null) return;
+      newEmail = newEmail.trim().toLowerCase();
+      var r = await fetch('/api/records/admin/users/email', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, email: newEmail })
+      });
+      var data = await r.json();
+      if (!data.success) { alert('Failed: ' + (data.error || 'Unknown error')); return; }
+      loadAdminUsers();
     }
 
     async function adminResetPin(userId, username) {

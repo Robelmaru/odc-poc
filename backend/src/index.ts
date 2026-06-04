@@ -11,6 +11,7 @@ import translate from "./routes/translate.js";
 import translationQA from "./routes/translation-qa.js";
 import helpQA from "./routes/help-qa.js";
 import aiDetect from "./routes/ai-detect.js";
+import auth from "./routes/auth.js";
 
 const app = new Hono();
 
@@ -27,6 +28,7 @@ app.route("/api/translate", translate);
 app.route("/api/translation-qa", translationQA);
 app.route("/api/help-qa", helpQA);
 app.route("/api/ai-detect", aiDetect);
+app.route("/auth", auth);
 
 // Health check
 app.get("/api/health", (c) => c.json({ status: "ok" }));

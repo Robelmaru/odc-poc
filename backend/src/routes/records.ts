@@ -29,11 +29,13 @@ import {
   deleteTranslation,
   type TranslationRecord,
   getUserByUsername,
+  getUserByEmail,
   getActiveUsernames,
   getAllUsers,
   createUser,
   updateUserActive,
   updateUserPin,
+  updateUserEmail,
   updateUserRole,
   default as db,
 } from "../db/database.js";
@@ -65,14 +67,26 @@ records.get("/admin/users", async (c) => {
 });
 
 records.post("/admin/users", async (c) => {
-  const { admin_id, username, pin, role } = await c.req.json();
+  const { admin_id, username, email, pin, role } = await c.req.json();
   const admin = getUserByUsername(admin_id);
   if (!admin || admin.role !== 'admin') return c.json({ error: "Admin access required" }, 403);
-  if (!username || !pin) return c.json({ error: "Username and PIN required" }, 400);
+  if (!username) return c.json({ error: "Username required" }, 400);
+  if (!email && !pin) return c.json({ error: "Email (for SSO) or PIN required" }, 400);
   const existing = getUserByUsername(username);
   if (existing) return c.json({ error: "Username already exists" }, 400);
-  createUser(username, pin, role || 'staff');
-  await insertAuditLog({ staff_id: admin_id, action: 'create_user', details: `Created user "${username}" with role ${role || 'staff'}` });
+  if (email) {
+    const existingByEmail = getUserByEmail(email);
+    if (existingByEmail) return c.json({ error: "A user with that email already exists" }, 400);
+  }
+  // Use a random placeholder PIN if not provided (since SSO is the primary method)
+  const userPin = pin || Math.random().toString(36).slice(2, 10);
+  createUser(username, userPin, role || 'staff');
+  // Set email if provided
+  if (email) {
+    const newUser = getUserByUsername(username);
+    if (newUser) updateUserEmail(newUser.id, email);
+  }
+  await insertAuditLog({ staff_id: admin_id, action: 'create_user', details: `Created user "${username}"${email ? ' (' + email + ')' : ''} with role ${role || 'staff'}` });
   return c.json({ success: true });
 });
 
@@ -92,6 +106,15 @@ records.post("/admin/users/reset-pin", async (c) => {
   if (!new_pin) return c.json({ error: "New PIN required" }, 400);
   updateUserPin(user_id, new_pin);
   await insertAuditLog({ staff_id: admin_id, action: 'reset_pin', details: `Reset PIN for user ID ${user_id}` });
+  return c.json({ success: true });
+});
+
+records.post("/admin/users/email", async (c) => {
+  const { admin_id, user_id, email } = await c.req.json();
+  const admin = getUserByUsername(admin_id);
+  if (!admin || admin.role !== 'admin') return c.json({ error: "Admin access required" }, 403);
+  updateUserEmail(user_id, email || null);
+  await insertAuditLog({ staff_id: admin_id, action: 'set_email', details: `User ID ${user_id} email set to ${email || '(empty)'}` });
   return c.json({ success: true });
 });
 
