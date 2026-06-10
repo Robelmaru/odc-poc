@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { timelineQAPrompt } from "../skills/TimelineQA.js";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 import { sanitizeConversationHistory } from "../utils/conversation.js";
 
 const timelineQA = new Hono();
@@ -61,6 +62,7 @@ timelineQA.post("/", async (c) => {
       system: systemPrompt,
       messages,
     });
+    logTokenUsage("timeline-qa", response.usage);
 
     const textContent = response.content.find((block) => block.type === "text");
     if (!textContent || textContent.type !== "text") {

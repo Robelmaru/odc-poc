@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 
 const helpQA = new Hono();
 const anthropic = new Anthropic();
@@ -149,6 +150,7 @@ helpQA.post("/", async (c) => {
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: question }],
     });
+    logTokenUsage("help-qa", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") return c.json({ error: "No response" }, 500);

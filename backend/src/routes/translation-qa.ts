@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import Anthropic from "@anthropic-ai/sdk";
 import { translationQAPrompt } from "../skills/TranslationQA.js";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 import { sanitizeConversationHistory } from "../utils/conversation.js";
 
 const translationQA = new Hono();
@@ -34,6 +35,7 @@ translationQA.post("/", async (c) => {
       system: systemPrompt,
       messages,
     });
+    logTokenUsage("translation-qa", response.usage);
 
     const textContent = response.content.find((block) => block.type === "text");
     if (!textContent || textContent.type !== "text")

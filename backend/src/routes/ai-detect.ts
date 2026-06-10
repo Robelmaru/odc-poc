@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import Anthropic from "@anthropic-ai/sdk";
 import { extractTextFromPdf } from "../utils/pdfUtils.js";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 
 const aiDetect = new Hono();
 const anthropic = new Anthropic();
@@ -210,6 +211,7 @@ aiDetect.post("/", async (c) => {
           },
         ],
       });
+      logTokenUsage("ai-detect", response.usage);
       const tb = response.content.find((b) => b.type === "text");
       if (!tb || tb.type !== "text") throw new Error("No response");
       let raw = tb.text.trim();

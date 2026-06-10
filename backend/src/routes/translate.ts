@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { translatePrompt, SUPPORTED_LANGUAGES, type LanguageCode } from "../skills/Translate.js";
 import { extractTextFromPdf, chunkText } from "../utils/pdfUtils.js";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 
 const translate = new Hono();
 const anthropic = new Anthropic();
@@ -14,6 +15,7 @@ async function translateChunk(text: string, targetLanguage: string): Promise<str
     system: translatePrompt(targetLanguage),
     messages: [{ role: "user", content: text }],
   });
+  logTokenUsage("translate", response.usage);
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("No response from Claude");

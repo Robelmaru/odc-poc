@@ -7,6 +7,7 @@
 // the frontend can poll a long-running 1,000+ page production.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { logTokenUsage } from "./usage.js";
 import { extractTextFromPdf, chunkByPages } from "./pdfUtils.js";
 import { extractSectionsOnly } from "./timelinePipeline.js";
 import { type DocumentTimelineResult } from "../skills/DocumentTimeline.js";
@@ -85,6 +86,7 @@ export async function reconcileProductionContent(opts: {
     system: productionCompliancePrompt,
     messages: [{ role: "user", content: userContent }],
   });
+  logTokenUsage("reconcile", response.usage);
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") throw new Error("No response from model");
   const result = parseJson<ProductionComplianceResult>(block.text);

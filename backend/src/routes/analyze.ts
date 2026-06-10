@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { analyzeComplaintPrompt, type AnalysisResult } from "../skills/AnalyzeComplaint.js";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 
 const analyze = new Hono();
 
@@ -119,6 +120,7 @@ When citing sources in the timeline, you MUST use these EXACT filenames. Do not 
         },
       ],
     });
+    logTokenUsage("analyze", response.usage);
 
     // Extract text response
     const textContent = response.content.find((block) => block.type === "text");

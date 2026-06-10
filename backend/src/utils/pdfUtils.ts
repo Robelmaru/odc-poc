@@ -6,6 +6,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { logger } from "./logger.js";
+import { logTokenUsage } from "./usage.js";
 
 const PAGES_PER_CHUNK = 60;
 const SPARSE_TEXT_THRESHOLD = 50; // pages with fewer chars than this are likely scanned/handwritten
@@ -154,6 +155,7 @@ CLARITY: [number]
           },
         ],
       });
+      logTokenUsage("ocr-vision", response.usage);
       const tb = response.content.find((b) => b.type === "text");
       if (!tb || tb.type !== "text") return null;
       const rt = tb.text.trim();

@@ -12,6 +12,7 @@ import { timelineMergePrompt } from "../skills/TimelineMerge.js";
 import { sectionIndexPrompt } from "../skills/SectionIndex.js";
 import { dcRulesKnowledge } from "../knowledge/dcRules.js";
 import { logger } from "./logger.js";
+import { logTokenUsage } from "./usage.js";
 
 // System prompt for the sectioning/timeline pass. When `ruleContext` is true, the
 // DC Rules of Professional Conduct + Rule XI reference is prepended so the model
@@ -115,6 +116,7 @@ export async function extractChunk(
     system: timelineSystemPrompt(ruleContext),
     messages: [{ role: "user", content: parts }],
   });
+  logTokenUsage("timeline-extract-chunk", response.usage);
 
   if (response.stop_reason === "max_tokens") {
     logger.debug(
@@ -178,6 +180,7 @@ export async function mergeTwoTimelines(
       },
     ],
   });
+  logTokenUsage("timeline-merge", response.usage);
 
   if (response.stop_reason === "max_tokens") {
     logger.debug("    Warning: merge truncated, retrying concise...");
@@ -194,6 +197,7 @@ export async function mergeTwoTimelines(
         },
       ],
     });
+    logTokenUsage("timeline-merge-retry", retry.usage);
     const retryBlock = retry.content.find((b) => b.type === "text");
     if (!retryBlock || retryBlock.type !== "text") throw new Error("Merge retry failed");
     return parseTimelineJson(retryBlock.text);
@@ -264,6 +268,7 @@ export async function finalCleanup(tl: DocumentTimelineResult): Promise<Document
         },
       ],
     });
+    logTokenUsage("timeline-cleanup", response.usage);
 
     if (response.stop_reason === "max_tokens") {
       logger.debug("    Cleanup truncated, using unclean timeline.");
@@ -316,6 +321,7 @@ async function extractSectionsChunk(
       },
     ],
   });
+  logTokenUsage("timeline-sections", response.usage);
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") return [];
   try {

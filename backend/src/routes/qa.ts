@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { qaPrompt } from "../skills/QA.js";
 import { logger } from "../utils/logger.js";
+import { logTokenUsage } from "../utils/usage.js";
 import { sanitizeConversationHistory } from "../utils/conversation.js";
 
 const qa = new Hono();
@@ -59,6 +60,7 @@ qa.post("/", async (c) => {
       system: qaPrompt,
       messages,
     });
+    logTokenUsage("qa", response.usage);
 
     // Extract text response
     const textContent = response.content.find((block) => block.type === "text");

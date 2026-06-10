@@ -18,6 +18,7 @@ import auth from "./routes/auth.js";
 import discovery from "./routes/discovery.js";
 import session from "./routes/session.js";
 import { requireAuth, type AppEnv } from "./auth/session.js";
+import { rateLimit } from "./auth/rateLimit.js";
 import { logger } from "./utils/logger.js";
 
 const app = new Hono<AppEnv>();
@@ -58,6 +59,10 @@ app.use(
     onError: (c) => c.json({ error: `Request body exceeds the ${uploadMaxMb} MB limit` }, 413),
   }),
 );
+
+// Throttle the PIN login endpoint against brute force (SEC-014): 10 attempts
+// per IP per 5 minutes.
+app.use("/api/records/verify", rateLimit({ windowMs: 5 * 60 * 1000, max: 10, name: "login" }));
 
 // Authentication gate: every /api/* route requires a valid session cookie,
 // except the public login/health paths handled inside requireAuth.
