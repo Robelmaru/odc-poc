@@ -2,4 +2,26 @@ node_modules
 backend/node_modules
 backend/data
 .git
+.github
+.claude
 *.log
+
+# Secrets & local config — never send to the build context
+.env
+.env.*
+!backend/.env.example
+
+# Real case data / sample files
+Sample Cases/
+*.db
+*.db-shm
+*.db-wal
+
+# Tests, coverage, and docs aren't needed in the runtime image
+backend/tests
+**/*.test.ts
+coverage
+findings.md
+findings.previous.md
+CLAUDE.md
+README.md

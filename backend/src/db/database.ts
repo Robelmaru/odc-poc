@@ -534,4 +534,9 @@ export function updateUserRole(id: number, role: string) {
   db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
 }
 
+/** Lightweight liveness probe for the health endpoint (OPS-008). Throws if the DB is unreachable. */
+export function pingDb(): void {
+  db.prepare("SELECT 1").get();
+}
+
 export default db;

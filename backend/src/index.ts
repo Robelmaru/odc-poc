@@ -19,6 +19,7 @@ import discovery from "./routes/discovery.js";
 import session from "./routes/session.js";
 import { requireAuth, type AppEnv } from "./auth/session.js";
 import { rateLimit } from "./auth/rateLimit.js";
+import { pingDb } from "./db/database.js";
 import { logger } from "./utils/logger.js";
 
 const app = new Hono<AppEnv>();
@@ -83,8 +84,21 @@ app.route("/api/ai-detect", aiDetect);
 app.route("/api/discovery", discovery);
 app.route("/auth", auth);
 
-// Health check
-app.get("/api/health", (c) => c.json({ status: "ok" }));
+// Health check — probes the DB and required config so the endpoint reflects
+// real readiness, not just process liveness (OPS-008).
+app.get("/api/health", (c) => {
+  const checks = {
+    db: "ok" as "ok" | "error",
+    anthropic: process.env.ANTHROPIC_API_KEY ? "ok" : "missing",
+  };
+  try {
+    pingDb();
+  } catch {
+    checks.db = "error";
+  }
+  const healthy = checks.db === "ok" && checks.anthropic === "ok";
+  return c.json({ status: healthy ? "ok" : "degraded", checks }, healthy ? 200 : 503);
+});
 
 // Serve frontend
 app.use("/*", serveStatic({ root: "../frontend" }));
@@ -125,3 +139,20 @@ const httpServer = server as unknown as {
 httpServer.requestTimeout = 0; // no limit on time to receive a request
 httpServer.headersTimeout = 0;
 httpServer.timeout = 0; // no socket inactivity timeout
+
+// Graceful shutdown (OPS-007): on SIGTERM/SIGINT stop accepting new connections
+// and let in-flight requests (long OCR / multi-pass Claude jobs) finish before
+// exiting, with a hard cap so a stuck connection can't block forever.
+function shutdown(signal: string) {
+  logger.info("Shutdown signal received; draining in-flight requests", { signal });
+  server.close(() => {
+    logger.info("HTTP server closed; exiting");
+    process.exit(0);
+  });
+  setTimeout(() => {
+    logger.warn("Drain timeout reached; forcing exit");
+    process.exit(0);
+  }, 30_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
