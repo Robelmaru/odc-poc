@@ -45,7 +45,7 @@ and serves a single-page frontend.
 These diverge from the DC Bar platform standard **on purpose** because this is a POC. They are tracked for a future migration, not bugs to fix in passing:
 
 - **Hono instead of Fastify.** No JSON-schema route validation / auto OpenAPI yet.
-- **SQLite instead of PostgreSQL + pgvector.** No Drizzle, no migrations directory, no connection pooling/TLS.
+- **SQLite instead of PostgreSQL + pgvector** — *migration in progress.* The Drizzle target schema (`backend/src/db/schema.ts`) and generated migrations (`backend/migrations/`) exist; the runtime still uses `better-sqlite3` until the async driver cutover lands (needs a Postgres instance to validate).
 - **npm instead of pnpm**, dependencies use `^` ranges rather than exact pins, Node not pinned via Volta.
 - **No `deploy/k8s/` Kustomize tree and no `argocd/` Applications.** Deployment is local `docker compose` only.
 - **No test suite yet** (Vitest is wired but empty).

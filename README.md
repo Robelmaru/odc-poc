@@ -69,6 +69,25 @@ npm run format:check  # prettier --check
 npm test              # vitest
 ```
 
+## Database migration (SQLite → PostgreSQL + pgvector)
+
+The app currently runs on SQLite (`better-sqlite3`). Migration to the DC Bar
+platform standard — **PostgreSQL 16 + pgvector 0.7+** — is in progress. The
+Drizzle schema (`backend/src/db/schema.ts`) and generated migrations
+(`backend/migrations/`) are in place; the runtime driver cutover is staged.
+
+Local Postgres setup (matching staging/prod major version):
+
+1. Install **PostgreSQL 16** and the **pgvector** extension.
+2. `createdb odc_poc_dev`
+3. Set `DATABASE_URL` in `backend/.env` (see `.env.example`).
+4. Apply migrations: `cd backend && npm run db:migrate`
+   (the first migration enables the `vector` extension).
+5. Regenerate after schema changes: `npm run db:generate` (review the SQL, then `db:migrate`).
+
+Staging/production use a dedicated Postgres server with `?sslmode=require`;
+migrations run as a one-shot step before the app starts.
+
 ## Docker
 
 ```bash

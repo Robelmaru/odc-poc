@@ -13,7 +13,9 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -22,6 +24,7 @@
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "@vitest/coverage-v8": "^4.1.8",
+    "drizzle-kit": "0.31.10",
     "eslint": "^9.17.0",
     "prettier": "^3.4.2",
     "typescript": "^5.0.0",
@@ -33,6 +36,7 @@
     "@hono/node-server": "1.19.14",
     "@types/pg": "^8.20.0",
     "better-sqlite3": "^12.8.0",
+    "drizzle-orm": "0.45.2",
     "hono": "4.12.25",
     "pdf-parse": "^2.4.5",
     "pdf-poppler": "^0.2.3",
