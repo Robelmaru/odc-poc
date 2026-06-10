@@ -1,6 +1,9 @@
 import { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { timelineQAPrompt } from "../skills/TimelineQA.js";
+import { logger } from "../utils/logger.js";
+import { sanitizeConversationHistory } from "../utils/conversation.js";
 
 const timelineQA = new Hono();
 
@@ -35,15 +38,17 @@ timelineQA.post("/", async (c) => {
       return c.json({ error: "Timeline data is required" }, 400);
     }
 
-    console.log(`Timeline Q&A request: "${question.substring(0, 50)}${question.length > 50 ? "..." : ""}"`);
+    logger.info(
+      `Timeline Q&A request: "${question.substring(0, 50)}${question.length > 50 ? "..." : ""}"`,
+    );
 
     const timelineJson = JSON.stringify(timeline, null, 2);
     const systemPrompt = timelineQAPrompt(timelineJson);
 
     const messages: Anthropic.MessageParam[] = [];
 
-    // Add last 10 exchanges of conversation history
-    const recentHistory = conversationHistory.slice(-20);
+    // Add conversation history (validated + bounded: role, length, count)
+    const recentHistory = sanitizeConversationHistory(conversationHistory);
     for (const msg of recentHistory) {
       messages.push({ role: msg.role, content: msg.content });
     }
@@ -62,7 +67,7 @@ timelineQA.post("/", async (c) => {
       return c.json({ error: "No response from Claude" }, 500);
     }
 
-    console.log(`Timeline Q&A response generated (${textContent.text.length} characters)`);
+    logger.info(`Timeline Q&A response generated (${textContent.text.length} characters)`);
 
     return c.json({
       success: true,
@@ -73,12 +78,14 @@ timelineQA.post("/", async (c) => {
       },
     });
   } catch (error) {
-    console.error("Timeline Q&A error:", error);
+    logger.error("Timeline Q&A error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     if (error instanceof Anthropic.APIError) {
       return c.json(
         { error: `Claude API error: ${error.message}`, status: error.status },
-        (error.status as number) || 500
+        (error.status ?? 500) as ContentfulStatusCode,
       );
     }
 

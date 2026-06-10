@@ -1,13 +1,17 @@
 import { PDFParse } from "pdf-parse";
 import * as pdfPoppler from "pdf-poppler";
 import Anthropic from "@anthropic-ai/sdk";
+import { createWorker } from "tesseract.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { logger } from "./logger.js";
 
 const PAGES_PER_CHUNK = 60;
 const SPARSE_TEXT_THRESHOLD = 50; // pages with fewer chars than this are likely scanned/handwritten
-const VISION_CONCURRENCY = 3;
+// OCR fan-out. Configurable so large scanned productions can be sped up without a
+// code change; bounded to keep clear of Anthropic rate limits.
+const VISION_CONCURRENCY = Math.min(12, Math.max(1, Number(process.env.OCR_CONCURRENCY) || 6));
 
 const anthropic = new Anthropic();
 
@@ -24,8 +28,9 @@ export interface PdfExtraction {
   totalChars: number;
   ocrQuality: string;
   ocrScore: number;
-  visionPages: number;
-  visionClarity?: number; // average clarity across Vision pages
+  ocrPages: number; // pages OCR'd by any engine (local Tesseract or Vision)
+  visionPages: number; // subset of ocrPages that used the Claude Vision fallback
+  visionClarity?: number; // average clarity/confidence across OCR'd pages
 }
 
 /**
@@ -35,7 +40,8 @@ export interface PdfExtraction {
  */
 export async function extractTextFromPdf(
   buffer: Buffer,
-  onProgress?: (msg: string) => Promise<void>
+  onProgress?: (msg: string) => Promise<void>,
+  maxPages?: number,
 ): Promise<PdfExtraction> {
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   const result = await parser.getText();
@@ -57,56 +63,78 @@ export async function extractTextFromPdf(
   }
   allPages.sort((a, b) => a.pageNum - b.pageNum);
 
+  // Optional cap: only process the first N pages (used by quick comparisons so a
+  // huge document doesn't get fully OCR'd twice). totalPages still reflects the
+  // true document size so callers can report that it was sampled.
+  if (maxPages && maxPages > 0 && allPages.length > maxPages) {
+    allPages.length = maxPages;
+  }
+
   // Identify sparse pages (likely scanned/handwritten)
   const sparsePages = allPages.filter((p) => p.text.length < SPARSE_TEXT_THRESHOLD);
-  let visionPages = 0;
+  let visionPages = 0; // pages that used the Claude Vision FALLBACK
+  let ocrPages = 0; // pages OCR'd by any engine (local Tesseract or Vision)
   let totalClarity = 0;
 
   if (sparsePages.length > 0) {
     if (onProgress) {
-      await onProgress(sparsePages.length + " pages appear to be scanned/handwritten — using Vision OCR...");
+      await onProgress(sparsePages.length + " pages appear to be scanned — running OCR...");
     }
-    console.log("    Found " + sparsePages.length + " sparse pages, using Claude Vision for OCR...");
+    logger.debug("    Found " + sparsePages.length + " sparse pages, running OCR...");
 
     // Write PDF to temp file for pdf-poppler
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "odc-pdf-"));
     const tmpPdf = path.join(tmpDir, "input.pdf");
     fs.writeFileSync(tmpPdf, buffer);
 
-    try {
-      const tasks = sparsePages.map((page) => async () => {
-        try {
-          const imgPrefix = "page-" + page.pageNum;
-          await pdfPoppler.convert(tmpPdf, {
-            format: "jpeg",
-            scale: 1500,
-            out_dir: tmpDir,
-            out_prefix: imgPrefix,
-            page: page.pageNum,
-          });
+    let processed = 0;
+    const totalSparse = sparsePages.length;
 
-          // Find the output image
-          const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(imgPrefix) && f.endsWith(".jpg"));
-          if (files.length === 0) return;
-          const actualPath = path.join(tmpDir, files[0]!);
+    // OCR strategy: local Tesseract first (cheap, offline), Claude Vision as a
+    // fallback only for pages Tesseract reads with low confidence. Set
+    // OCR_ENGINE=vision to force Vision for every page.
+    const ocrEngine = (process.env.OCR_ENGINE || "local").toLowerCase();
+    const LOCAL_CONF_MIN = Number(process.env.OCR_LOCAL_CONF_MIN) || 55;
+    const poolSize = Math.max(1, Math.min(VISION_CONCURRENCY, sparsePages.length));
 
-          const imgBuffer = fs.readFileSync(actualPath);
-          const base64 = imgBuffer.toString("base64");
+    // Local Tesseract worker pool using the bundled model (no network at runtime).
+    let tessPool: any[] = [];
+    if (ocrEngine !== "vision") {
+      try {
+        const tessdata = path.resolve(process.cwd(), "data", "tessdata");
+        tessPool = await Promise.all(
+          Array.from({ length: poolSize }, () =>
+            createWorker("eng", 1, {
+              langPath: tessdata,
+              cachePath: tessdata,
+              gzip: true,
+              cacheMethod: "none",
+            }),
+          ),
+        );
+      } catch (e) {
+        logger.debug(
+          "    Local OCR unavailable (" + (e as Error).message.slice(0, 80) + ") — using Vision.",
+        );
+        tessPool = [];
+      }
+    }
+    const localAvailable = tessPool.length > 0;
+    const available = [...tessPool]; // simple worker stack; pool size === concurrency
 
-          const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 4096,
-            messages: [
+    // Claude Vision OCR for a single rendered page (fallback / forced engine).
+    const visionOcr = async (base64: string): Promise<{ text: string; clarity: number } | null> => {
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
               {
-                role: "user",
-                content: [
-                  {
-                    type: "image",
-                    source: { type: "base64", media_type: "image/jpeg", data: base64 },
-                  },
-                  {
-                    type: "text",
-                    text: `Analyze this document page image. Do two things:
+                type: "text",
+                text: `Analyze this document page image. Do two things:
 
 1. Extract ALL visible text — handwritten text, printed text, stamps, signatures, dates, annotations, form fields, checkboxes, and any other visible content. For handwritten text, do your best to decipher it even if unclear.
 
@@ -121,62 +149,166 @@ Return your response in this EXACT format:
 CLARITY: [number]
 ---
 [extracted text here]`,
-                  },
-                ],
               },
             ],
+          },
+        ],
+      });
+      const tb = response.content.find((b) => b.type === "text");
+      if (!tb || tb.type !== "text") return null;
+      const rt = tb.text.trim();
+      const cm = rt.match(/^CLARITY:\s*(\d+)/i);
+      let clarity = 50;
+      let text = rt;
+      if (cm) {
+        clarity = Math.min(100, Math.max(0, parseInt(cm[1]!, 10)));
+        const di = rt.indexOf("---");
+        if (di !== -1) text = rt.slice(di + 3).trim();
+      }
+      return { text, clarity };
+    };
+
+    try {
+      const tasks = sparsePages.map((page) => async () => {
+        try {
+          const imgPrefix = "page-" + page.pageNum;
+          await pdfPoppler.convert(tmpPdf, {
+            format: "jpeg",
+            scale: 1500,
+            out_dir: tmpDir,
+            out_prefix: imgPrefix,
+            page: page.pageNum,
           });
+          const files = fs
+            .readdirSync(tmpDir)
+            .filter((f) => f.startsWith(imgPrefix) && f.endsWith(".jpg"));
+          if (files.length === 0) return;
+          const actualPath = path.join(tmpDir, files[0]!);
 
-          const textBlock = response.content.find((b) => b.type === "text");
-          if (textBlock && textBlock.type === "text" && textBlock.text.trim().length > 0) {
-            const responseText = textBlock.text.trim();
+          let text = "";
+          let score = 0;
+          let usedVision = false;
 
-            // Parse clarity score and text
-            const clarityMatch = responseText.match(/^CLARITY:\s*(\d+)/i);
-            let clarity = 50; // default
-            let extractedText = responseText;
-
-            if (clarityMatch) {
-              clarity = Math.min(100, Math.max(0, parseInt(clarityMatch[1]!, 10)));
-              const dividerIdx = responseText.indexOf("---");
-              if (dividerIdx !== -1) {
-                extractedText = responseText.slice(dividerIdx + 3).trim();
+          // 1) Local Tesseract OCR first.
+          if (localAvailable) {
+            const tess = available.pop();
+            if (tess) {
+              try {
+                const r = await tess.recognize(actualPath);
+                text = (r.data.text || "").trim();
+                score = Math.round(r.data.confidence || 0);
+              } catch {
+                /* fall through to Vision */
+              } finally {
+                available.push(tess);
               }
-            }
-
-            if (extractedText.length > 0) {
-              page.text = extractedText;
-              page.visionUsed = true;
-              page.clarity = clarity;
-              visionPages++;
-              totalClarity += clarity;
             }
           }
 
-          // Clean up image file
-          try { fs.unlinkSync(actualPath); } catch { /* ignore */ }
+          // 2) Vision fallback when local is unavailable, too short, or low-confidence.
+          const localGood = localAvailable && text.length >= 40 && score >= LOCAL_CONF_MIN;
+          if (!localGood) {
+            try {
+              const base64 = fs.readFileSync(actualPath).toString("base64");
+              const v = await visionOcr(base64);
+              if (v && v.text.length > 0) {
+                text = v.text;
+                score = v.clarity;
+                usedVision = true;
+              }
+            } catch (err) {
+              logger.debug(
+                "    Vision OCR failed for page " +
+                  page.pageNum +
+                  ": " +
+                  (err as Error).message.slice(0, 80),
+              );
+            }
+          }
+
+          if (text.length > 0) {
+            page.text = text;
+            page.visionUsed = true;
+            page.clarity = score;
+            ocrPages++;
+            totalClarity += score;
+            if (usedVision) visionPages++;
+          }
+
+          try {
+            fs.unlinkSync(actualPath);
+          } catch {
+            /* ignore */
+          }
         } catch (err) {
-          console.log("    Vision OCR failed for page " + page.pageNum + ": " + (err as Error).message.slice(0, 80));
+          logger.debug(
+            "    OCR failed for page " + page.pageNum + ": " + (err as Error).message.slice(0, 80),
+          );
+        } finally {
+          processed++;
+          if (onProgress && (processed === totalSparse || processed % 5 === 0)) {
+            await onProgress(
+              "OCR " +
+                processed +
+                " / " +
+                totalSparse +
+                " scanned pages" +
+                (visionPages > 0 ? " (" + visionPages + " via Vision)" : "") +
+                "...",
+            );
+          }
         }
       });
 
-      await runWithConcurrency(tasks, VISION_CONCURRENCY);
+      await runWithConcurrency(tasks, localAvailable ? tessPool.length : VISION_CONCURRENCY);
     } finally {
+      for (const w of tessPool) {
+        try {
+          await w.terminate();
+        } catch {
+          /* ignore */
+        }
+      }
       // Clean up temp files
       try {
         const remaining = fs.readdirSync(tmpDir);
         for (const f of remaining) {
-          try { fs.unlinkSync(path.join(tmpDir, f)); } catch { /* ignore */ }
+          try {
+            fs.unlinkSync(path.join(tmpDir, f));
+          } catch {
+            /* ignore */
+          }
         }
         fs.rmdirSync(tmpDir);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
-    const avgClarity = visionPages > 0 ? Math.round(totalClarity / visionPages) : 0;
+    const avgClarity = ocrPages > 0 ? Math.round(totalClarity / ocrPages) : 0;
+    const engineLabel = localAvailable
+      ? "local Tesseract" + (visionPages > 0 ? " + " + visionPages + " via Vision" : "")
+      : "Vision";
     if (onProgress) {
-      await onProgress("Vision OCR completed — extracted text from " + visionPages + " pages (avg clarity: " + avgClarity + "%)");
+      await onProgress(
+        "OCR completed — extracted text from " +
+          ocrPages +
+          " pages via " +
+          engineLabel +
+          " (avg clarity/confidence: " +
+          avgClarity +
+          "%)",
+      );
     }
-    console.log("    Vision OCR done: " + visionPages + " pages, avg clarity: " + avgClarity + "%");
+    logger.debug(
+      "    OCR done: " +
+        ocrPages +
+        " pages via " +
+        engineLabel +
+        ", avg clarity " +
+        avgClarity +
+        "%",
+    );
   }
 
   // Recalculate stats
@@ -189,7 +321,16 @@ CLARITY: [number]
   let ocrScore = 100;
 
   if (totalChars < 20) {
-    return { pages: textPages, totalPages: result.total, totalChars, ocrQuality: "poor", ocrScore: 0, visionPages, visionClarity: 0 };
+    return {
+      pages: textPages,
+      totalPages: result.total,
+      totalChars,
+      ocrQuality: "poor",
+      ocrScore: 0,
+      ocrPages,
+      visionPages,
+      visionClarity: 0,
+    };
   }
 
   const garbageChars = (fullText.match(/[^\x20-\x7E\n\r\t\u00C0-\u024F]/g) || []).length;
@@ -208,8 +349,17 @@ CLARITY: [number]
   else if (ocrScore >= 60) ocrQuality = "fair";
   else ocrQuality = "poor";
 
-  const avgClarity = visionPages > 0 ? Math.round(totalClarity / visionPages) : undefined;
-  return { pages: textPages, totalPages: result.total, totalChars, ocrQuality, ocrScore, visionPages, visionClarity: avgClarity };
+  const avgClarity = ocrPages > 0 ? Math.round(totalClarity / ocrPages) : undefined;
+  return {
+    pages: textPages,
+    totalPages: result.total,
+    totalChars,
+    ocrQuality,
+    ocrScore,
+    ocrPages,
+    visionPages,
+    visionClarity: avgClarity,
+  };
 }
 
 /** Run async tasks with limited concurrency */
@@ -231,14 +381,28 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
 /**
  * Groups pages into chunks of ~pagesPerChunk pages.
  */
-export function chunkByPages(pages: PageText[], pagesPerChunk: number = PAGES_PER_CHUNK): { label: string; text: string; pageRange: string }[] {
+export function chunkByPages(
+  pages: PageText[],
+  pagesPerChunk: number = PAGES_PER_CHUNK,
+): { label: string; text: string; pageRange: string }[] {
   if (pages.length === 0) return [];
 
   if (pages.length <= pagesPerChunk) {
     return [
       {
         label: "",
-        text: pages.map((p) => "--- Page " + p.pageNum + (p.visionUsed ? " [Vision OCR" + (p.clarity != null ? " " + p.clarity + "% clarity" : "") + "]" : "") + " ---\n" + p.text).join("\n\n"),
+        text: pages
+          .map(
+            (p) =>
+              "--- Page " +
+              p.pageNum +
+              (p.visionUsed
+                ? " [Vision OCR" + (p.clarity != null ? " " + p.clarity + "% clarity" : "") + "]"
+                : "") +
+              " ---\n" +
+              p.text,
+          )
+          .join("\n\n"),
         pageRange: pages[0]!.pageNum + "-" + pages[pages.length - 1]!.pageNum,
       },
     ];
@@ -254,8 +418,28 @@ export function chunkByPages(pages: PageText[], pagesPerChunk: number = PAGES_PE
     const lastPage = slice[slice.length - 1]!.pageNum;
 
     chunks.push({
-      label: "(Part " + chunkIndex + " of " + totalChunks + ", pages " + firstPage + "\u2013" + lastPage + ")",
-      text: slice.map((p) => "--- Page " + p.pageNum + (p.visionUsed ? " [Vision OCR" + (p.clarity != null ? " " + p.clarity + "% clarity" : "") + "]" : "") + " ---\n" + p.text).join("\n\n"),
+      label:
+        "(Part " +
+        chunkIndex +
+        " of " +
+        totalChunks +
+        ", pages " +
+        firstPage +
+        "\u2013" +
+        lastPage +
+        ")",
+      text: slice
+        .map(
+          (p) =>
+            "--- Page " +
+            p.pageNum +
+            (p.visionUsed
+              ? " [Vision OCR" + (p.clarity != null ? " " + p.clarity + "% clarity" : "") + "]"
+              : "") +
+            " ---\n" +
+            p.text,
+        )
+        .join("\n\n"),
       pageRange: firstPage + "-" + lastPage,
     });
   }

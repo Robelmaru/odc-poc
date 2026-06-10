@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { ConfidentialClientApplication, type Configuration } from "@azure/msal-node";
 import { getUserByEmail, insertAuditLog } from "../db/database.js";
+import { issueSession } from "../auth/session.js";
+import { logger } from "../utils/logger.js";
 
 const auth = new Hono();
 
@@ -95,30 +97,48 @@ auth.get("/callback", async (c) => {
     });
 
     const account = tokenResponse.account;
-    const email = (account?.username || tokenResponse.idTokenClaims?.preferred_username || "").toLowerCase();
-    const name = account?.name || tokenResponse.idTokenClaims?.name || email;
+    const claims = tokenResponse.idTokenClaims as
+      | { preferred_username?: string; name?: string }
+      | undefined;
+    const email = (account?.username || claims?.preferred_username || "").toLowerCase();
+    const name = account?.name || claims?.name || email;
 
     if (!email) {
-      return c.html(renderError("No email found", "Your Microsoft account did not provide an email."));
+      return c.html(
+        renderError("No email found", "Your Microsoft account did not provide an email."),
+      );
     }
 
     // Domain check
     const domain = email.split("@")[1];
     const allowed = getAllowedDomains();
     if (allowed.length > 0 && !allowed.includes(domain || "")) {
-      return c.html(renderError("Access denied",
-        `Only users from ${allowed.join(", ")} can sign in. Your email is ${email}.`));
+      return c.html(
+        renderError(
+          "Access denied",
+          `Only users from ${allowed.join(", ")} can sign in. Your email is ${email}.`,
+        ),
+      );
     }
 
     // Match to local user
     const user = getUserByEmail(email);
     if (!user) {
-      return c.html(renderError("Account not provisioned",
-        `Your email (${email}) is not registered in this system. Please contact your administrator to add your account.`));
+      return c.html(
+        renderError(
+          "Account not provisioned",
+          `Your email (${email}) is not registered in this system. Please contact your administrator to add your account.`,
+        ),
+      );
     }
     if (!user.active) {
-      return c.html(renderError("Account disabled", "Your account is disabled. Contact your administrator."));
+      return c.html(
+        renderError("Account disabled", "Your account is disabled. Contact your administrator."),
+      );
     }
+
+    // Establish the server-side session (sets the httpOnly cookie).
+    issueSession(c, { username: user.username, role: user.role });
 
     await insertAuditLog({
       staff_id: user.username,
@@ -142,7 +162,9 @@ auth.get("/callback", async (c) => {
 <p style="font-family:sans-serif;text-align:center;margin-top:40px;">Signing you in&hellip;</p>
 </body></html>`);
   } catch (err) {
-    console.error("Auth callback error:", err);
+    logger.error("Auth callback error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return c.html(renderError("Login failed", (err as Error).message));
   }
 });

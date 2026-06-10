@@ -130,7 +130,16 @@ export interface TimelineSource {
 export interface TimelineEntry {
   date: string;
   event: string;
-  eventType: "FILING" | "HEARING" | "ORDER" | "CORRESPONDENCE" | "DEADLINE" | "AGREEMENT" | "INCIDENT" | "ADMINISTRATIVE" | "OTHER";
+  eventType:
+    | "FILING"
+    | "HEARING"
+    | "ORDER"
+    | "CORRESPONDENCE"
+    | "DEADLINE"
+    | "AGREEMENT"
+    | "INCIDENT"
+    | "ADMINISTRATIVE"
+    | "OTHER";
   significance: "HIGH" | "MEDIUM" | "LOW";
   source: TimelineSource;
 }

@@ -1,6 +1,8 @@
 import { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { analyzeComplaintPrompt, type AnalysisResult } from "../skills/AnalyzeComplaint.js";
+import { logger } from "../utils/logger.js";
 
 const analyze = new Hono();
 
@@ -22,7 +24,7 @@ analyze.post("/", async (c) => {
         return c.json({ error: "No files uploaded" }, 400);
       }
 
-      console.log(`Processing ${files.length} file(s)...`);
+      logger.info(`Processing ${files.length} file(s)...`);
 
       // Build content array with all documents
       const contentParts: Anthropic.ContentBlockParam[] = [];
@@ -32,7 +34,7 @@ analyze.post("/", async (c) => {
 
       // Process each file
       for (const file of files) {
-        console.log(`  - ${file.name} (${file.size} bytes)`);
+        logger.info(`  - ${file.name} (${file.size} bytes)`);
         fileNames.push(file.name);
 
         if (file.name.endsWith(".pdf")) {
@@ -62,7 +64,7 @@ analyze.post("/", async (c) => {
             text: `--- Document: ${file.name} ---\n\n${text}\n\n`,
           });
         } else {
-          console.log(`    Skipping unsupported file type: ${file.name}`);
+          logger.info(`    Skipping unsupported file type: ${file.name}`);
         }
       }
 
@@ -77,10 +79,10 @@ analyze.post("/", async (c) => {
       // Add the analysis instruction with explicit filename list
       contentParts.push({
         type: "text" as const,
-        text: `Please analyze ${files.length > 1 ? 'these complaint documents together as a single case' : 'this complaint document'}. If there are multiple documents, treat them as related to the same matter and cross-reference information between them.
+        text: `Please analyze ${files.length > 1 ? "these complaint documents together as a single case" : "this complaint document"}. If there are multiple documents, treat them as related to the same matter and cross-reference information between them.
 
 IMPORTANT: The uploaded documents are named EXACTLY as follows:
-${fileNames.map((name, i) => `${i + 1}. ${name}`).join('\n')}
+${fileNames.map((name, i) => `${i + 1}. ${name}`).join("\n")}
 
 When citing sources in the timeline, you MUST use these EXACT filenames. Do not use any other names, titles, or references from within the document content.`,
       });
@@ -102,7 +104,7 @@ When citing sources in the timeline, you MUST use these EXACT filenames. Do not 
         return c.json({ error: "Complaint text exceeds maximum length of 50,000 characters" }, 400);
       }
 
-      console.log(`Analyzing complaint text (${complaint.length} characters)...`);
+      logger.info(`Analyzing complaint text (${complaint.length} characters)...`);
       messageContent = `Please analyze the following complaint:\n\n${complaint}`;
     }
 
@@ -130,22 +132,27 @@ When citing sources in the timeline, you MUST use these EXACT filenames. Do not 
       // Claude sometimes wraps JSON in markdown code blocks
       let jsonText = textContent.text;
       const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
+      if (jsonMatch?.[1]) {
         jsonText = jsonMatch[1];
       }
       analysis = JSON.parse(jsonText);
     } catch (parseError) {
-      console.error("Failed to parse Claude response as JSON:", textContent.text);
+      logger.error("Failed to parse Claude response as JSON", {
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        preview: textContent.text.slice(0, 120),
+      });
       return c.json(
         {
           error: "Failed to parse analysis response",
           rawResponse: textContent.text,
         },
-        500
+        500,
       );
     }
 
-    console.log(`Analysis complete. Found ${analysis.potentialViolations?.length || 0} potential violations.`);
+    logger.info(
+      `Analysis complete. Found ${analysis.potentialViolations?.length || 0} potential violations.`,
+    );
 
     return c.json({
       success: true,
@@ -156,7 +163,9 @@ When citing sources in the timeline, you MUST use these EXACT filenames. Do not 
       },
     });
   } catch (error) {
-    console.error("Analysis error:", error);
+    logger.error("Analysis error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     if (error instanceof Anthropic.APIError) {
       return c.json(
@@ -164,7 +173,7 @@ When citing sources in the timeline, you MUST use these EXACT filenames. Do not 
           error: `Claude API error: ${error.message}`,
           status: error.status,
         },
-        error.status as number || 500
+        (error.status ?? 500) as ContentfulStatusCode,
       );
     }
 

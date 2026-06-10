@@ -1,6 +1,9 @@
 import { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { qaPrompt } from "../skills/QA.js";
+import { logger } from "../utils/logger.js";
+import { sanitizeConversationHistory } from "../utils/conversation.js";
 
 const qa = new Hono();
 
@@ -30,13 +33,13 @@ qa.post("/", async (c) => {
       return c.json({ error: "Question exceeds maximum length of 2,000 characters" }, 400);
     }
 
-    console.log(`Q&A request: "${question.substring(0, 50)}${question.length > 50 ? '...' : ''}"`);
+    logger.info(`Q&A request: "${question.substring(0, 50)}${question.length > 50 ? "..." : ""}"`);
 
     // Build messages array with conversation history for context
     const messages: Anthropic.MessageParam[] = [];
 
-    // Add conversation history (limited to last 10 exchanges to manage context)
-    const recentHistory = conversationHistory.slice(-20); // 10 exchanges = 20 messages
+    // Add conversation history (validated + bounded: role, length, count)
+    const recentHistory = sanitizeConversationHistory(conversationHistory);
     for (const msg of recentHistory) {
       messages.push({
         role: msg.role,
@@ -63,7 +66,7 @@ qa.post("/", async (c) => {
       return c.json({ error: "No response from Claude" }, 500);
     }
 
-    console.log(`Q&A response generated (${textContent.text.length} characters)`);
+    logger.info(`Q&A response generated (${textContent.text.length} characters)`);
 
     return c.json({
       success: true,
@@ -74,7 +77,7 @@ qa.post("/", async (c) => {
       },
     });
   } catch (error) {
-    console.error("Q&A error:", error);
+    logger.error("Q&A error", { error: error instanceof Error ? error.message : String(error) });
 
     if (error instanceof Anthropic.APIError) {
       return c.json(
@@ -82,7 +85,7 @@ qa.post("/", async (c) => {
           error: `Claude API error: ${error.message}`,
           status: error.status,
         },
-        error.status as number || 500
+        (error.status ?? 500) as ContentfulStatusCode,
       );
     }
 

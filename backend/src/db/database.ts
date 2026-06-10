@@ -7,10 +7,13 @@ const dbPath = process.env.DATABASE_PATH || path.join(__dirname, "../../data/odc
 
 // Ensure data directory exists
 import { mkdirSync } from "fs";
+import { hashPin, isHashed } from "../auth/pin.js";
 mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
+// SQLite ignores REFERENCES unless this is enabled per-connection (finding DB-001).
+db.pragma("foreign_keys = ON");
 
 // Create tables
 db.exec(`
@@ -85,15 +88,30 @@ db.exec(`
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- Server-side session store. The cookie carries only the opaque random
+  -- token; identity/role/expiry are authoritative here, never client-side.
+  CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    username   TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
 `);
+
+// Drop any sessions left expired from a previous run.
+db.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`).run();
 
 // Seed default users if table is empty
 const userCount = (db.prepare(`SELECT COUNT(*) as count FROM users`).get() as any).count;
 if (userCount === 0) {
-  const insertUser = db.prepare(`INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`);
-  insertUser.run('Caterina', '1111', 'staff');
-  insertUser.run('Abesha', '2222', 'admin');
-  insertUser.run('Robel', '3333', 'staff');
+  const insertUser = db.prepare(
+    `INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`,
+  );
+  insertUser.run("Caterina", hashPin("1111"), "staff");
+  insertUser.run("Abesha", hashPin("2222"), "admin");
+  insertUser.run("Robel", hashPin("3333"), "staff");
 }
 
 // Migrate old databases that are missing newer columns
@@ -106,6 +124,25 @@ addColumnIfMissing("translation_records", "status", "TEXT DEFAULT 'draft'");
 addColumnIfMissing("translation_records", "tags", "TEXT DEFAULT '[]'");
 addColumnIfMissing("timeline_records", "ai_score", "INTEGER");
 addColumnIfMissing("users", "email", "TEXT");
+
+// Indexes on hot lookup columns (finding DB-008). Every user-facing request
+// filters these tables by staff_id/status; without indexes each is a full scan.
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_timeline_staff        ON timeline_records(staff_id);
+  CREATE INDEX IF NOT EXISTS idx_timeline_status       ON timeline_records(status);
+  CREATE INDEX IF NOT EXISTS idx_translation_staff     ON translation_records(staff_id);
+  CREATE INDEX IF NOT EXISTS idx_notifications_staff   ON notifications(staff_id, read);
+  CREATE INDEX IF NOT EXISTS idx_audit_staff           ON audit_log(staff_id);
+`);
+
+// One-time migration: hash any legacy plaintext PINs in place (idempotent).
+{
+  const rows = db.prepare(`SELECT id, pin FROM users`).all() as { id: number; pin: string }[];
+  const rehash = db.prepare(`UPDATE users SET pin = ? WHERE id = ?`);
+  for (const row of rows) {
+    if (!isHashed(row.pin)) rehash.run(hashPin(row.pin), row.id);
+  }
+}
 
 // ── Interfaces ────────────────────────────────────────────────────────────
 
@@ -143,28 +180,45 @@ export async function insertRecord(params: {
   ai_score?: number | null;
   timeline: string;
 }) {
-  const result = db.prepare(
-    `INSERT INTO timeline_records (staff_id, record_name, case_number, file_names, notes, summary, ai_score, timeline)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(params.staff_id, params.record_name, params.case_number || null, params.file_names, params.notes, params.summary || null, params.ai_score ?? null, params.timeline);
+  const result = db
+    .prepare(
+      `INSERT INTO timeline_records (staff_id, record_name, case_number, file_names, notes, summary, ai_score, timeline)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      params.staff_id,
+      params.record_name,
+      params.case_number || null,
+      params.file_names,
+      params.notes,
+      params.summary || null,
+      params.ai_score ?? null,
+      params.timeline,
+    );
   return { lastInsertRowid: result.lastInsertRowid };
 }
 
 export async function getRecordsByStaff(staffId: string) {
-  return db.prepare(
-    `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, ai_score, length(timeline) as timeline_size
+  return db
+    .prepare(
+      `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, ai_score, length(timeline) as timeline_size
      FROM timeline_records
      WHERE staff_id = ? OR shared_with LIKE '%"' || ? || '"%'
-     ORDER BY created_at DESC`
-  ).all(staffId, staffId);
+     ORDER BY created_at DESC`,
+    )
+    .all(staffId, staffId);
 }
 
 export async function getRecordById(id: number) {
-  return db.prepare(`SELECT * FROM timeline_records WHERE id = ?`).get(id) as TimelineRecord | undefined;
+  return db.prepare(`SELECT * FROM timeline_records WHERE id = ?`).get(id) as
+    | TimelineRecord
+    | undefined;
 }
 
 export async function deleteRecord(id: number, staffId: string) {
-  const result = db.prepare(`DELETE FROM timeline_records WHERE id = ? AND staff_id = ?`).run(id, staffId);
+  const result = db
+    .prepare(`DELETE FROM timeline_records WHERE id = ? AND staff_id = ?`)
+    .run(id, staffId);
   return { changes: result.changes };
 }
 
@@ -182,16 +236,22 @@ export async function updateRecordCase(caseNumber: string | null, id: number) {
 
 // ── Audit Log ─────────────────────────────────────────────────────────────
 
-export async function insertAuditLog(params: { staff_id: string; action: string; details: string | null }) {
-  db.prepare(
-    `INSERT INTO audit_log (staff_id, action, details) VALUES (?, ?, ?)`
-  ).run(params.staff_id, params.action, params.details);
+export async function insertAuditLog(params: {
+  staff_id: string;
+  action: string;
+  details: string | null;
+}) {
+  db.prepare(`INSERT INTO audit_log (staff_id, action, details) VALUES (?, ?, ?)`).run(
+    params.staff_id,
+    params.action,
+    params.details,
+  );
 }
 
 export async function getAuditLog(staffId: string) {
-  return db.prepare(
-    `SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 100`
-  ).all(staffId);
+  return db
+    .prepare(`SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 100`)
+    .all(staffId);
 }
 
 export async function getAuditLogAll() {
@@ -208,26 +268,41 @@ export async function insertTranslationRecord(params: {
   language_name: string;
   translation: string;
 }) {
-  const result = db.prepare(
-    `INSERT INTO translation_records (staff_id, record_name, file_names, language, language_name, translation)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(params.staff_id, params.record_name || null, params.file_names, params.language, params.language_name, params.translation);
+  const result = db
+    .prepare(
+      `INSERT INTO translation_records (staff_id, record_name, file_names, language, language_name, translation)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      params.staff_id,
+      params.record_name || null,
+      params.file_names,
+      params.language,
+      params.language_name,
+      params.translation,
+    );
   return { lastInsertRowid: result.lastInsertRowid };
 }
 
 export async function getTranslationsByStaff(staffId: string) {
-  return db.prepare(
-    `SELECT id, staff_id, created_at, record_name, file_names, language, language_name, status, tags
-     FROM translation_records WHERE staff_id = ? ORDER BY created_at DESC`
-  ).all(staffId);
+  return db
+    .prepare(
+      `SELECT id, staff_id, created_at, record_name, file_names, language, language_name, status, tags
+     FROM translation_records WHERE staff_id = ? ORDER BY created_at DESC`,
+    )
+    .all(staffId);
 }
 
 export async function getTranslationById(id: number) {
-  return db.prepare(`SELECT * FROM translation_records WHERE id = ?`).get(id) as TranslationRecord | undefined;
+  return db.prepare(`SELECT * FROM translation_records WHERE id = ?`).get(id) as
+    | TranslationRecord
+    | undefined;
 }
 
 export async function deleteTranslation(id: number, staffId: string) {
-  const result = db.prepare(`DELETE FROM translation_records WHERE id = ? AND staff_id = ?`).run(id, staffId);
+  const result = db
+    .prepare(`DELETE FROM translation_records WHERE id = ? AND staff_id = ?`)
+    .run(id, staffId);
   return { changes: result.changes };
 }
 
@@ -251,16 +326,22 @@ export async function updateTranslationTags(id: number, tags: string) {
 
 // ── Notifications ────────────────────────────────────────────────────────
 
-export async function insertNotification(params: { staff_id: string; message: string; link?: string }) {
-  db.prepare(
-    `INSERT INTO notifications (staff_id, message, link) VALUES (?, ?, ?)`
-  ).run(params.staff_id, params.message, params.link || null);
+export async function insertNotification(params: {
+  staff_id: string;
+  message: string;
+  link?: string;
+}) {
+  db.prepare(`INSERT INTO notifications (staff_id, message, link) VALUES (?, ?, ?)`).run(
+    params.staff_id,
+    params.message,
+    params.link || null,
+  );
 }
 
 export async function getNotifications(staffId: string) {
-  return db.prepare(
-    `SELECT * FROM notifications WHERE staff_id = ? ORDER BY created_at DESC LIMIT 50`
-  ).all(staffId);
+  return db
+    .prepare(`SELECT * FROM notifications WHERE staff_id = ? ORDER BY created_at DESC LIMIT 50`)
+    .all(staffId);
 }
 
 export async function markNotificationRead(id: number, staffId: string) {
@@ -272,7 +353,9 @@ export async function markAllNotificationsRead(staffId: string) {
 }
 
 export async function getUnreadNotificationCount(staffId: string): Promise<number> {
-  const result = db.prepare(`SELECT COUNT(*) as count FROM notifications WHERE staff_id = ? AND read = 0`).get(staffId) as any;
+  const result = db
+    .prepare(`SELECT COUNT(*) as count FROM notifications WHERE staff_id = ? AND read = 0`)
+    .get(staffId) as any;
   return result.count;
 }
 
@@ -281,31 +364,90 @@ export async function getUnreadNotificationCount(staffId: string): Promise<numbe
 export async function touchSession(staffId: string) {
   db.prepare(
     `INSERT INTO staff_sessions (staff_id, last_active) VALUES (?, datetime('now'))
-     ON CONFLICT (staff_id) DO UPDATE SET last_active = datetime('now')`
+     ON CONFLICT (staff_id) DO UPDATE SET last_active = datetime('now')`,
   ).run(staffId);
 }
 
 export async function getSessionLastActive(staffId: string): Promise<Date | null> {
-  const result = db.prepare(`SELECT last_active FROM staff_sessions WHERE staff_id = ?`).get(staffId) as any;
+  const result = db
+    .prepare(`SELECT last_active FROM staff_sessions WHERE staff_id = ?`)
+    .get(staffId) as any;
   return result?.last_active ? new Date(result.last_active) : null;
+}
+
+// ── Auth Sessions (cookie-backed) ─────────────────────────────────────────
+
+export interface Session {
+  token: string;
+  username: string;
+  role: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export function createSession(token: string, username: string, role: string, ttlHours: number) {
+  db.prepare(
+    `INSERT INTO sessions (token, username, role, expires_at)
+     VALUES (?, ?, ?, datetime('now', ?))`,
+  ).run(token, username, role, `+${ttlHours} hours`);
+}
+
+/** Returns the session only if it exists and has not expired. */
+export function getSession(token: string): Session | undefined {
+  return db
+    .prepare(
+      `SELECT token, username, role, created_at, expires_at
+       FROM sessions WHERE token = ? AND expires_at > datetime('now')`,
+    )
+    .get(token) as Session | undefined;
+}
+
+export function deleteSession(token: string) {
+  db.prepare(`DELETE FROM sessions WHERE token = ?`).run(token);
 }
 
 // ── Dashboard Stats ──────────────────────────────────────────────────────
 
 export async function getDashboardStats(staffId: string) {
-  const timelineCount = db.prepare(`SELECT COUNT(*) as count FROM timeline_records WHERE staff_id = ?`).get(staffId) as any;
-  const translationCount = db.prepare(`SELECT COUNT(*) as count FROM translation_records WHERE staff_id = ?`).get(staffId) as any;
-  const sharedCount = db.prepare(`SELECT COUNT(*) as count FROM timeline_records WHERE shared_with LIKE '%"' || ? || '"%' AND staff_id != ?`).get(staffId, staffId) as any;
-  const recentActivity = db.prepare(`SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 5`).all(staffId);
-  const timelineStatuses = db.prepare(`SELECT COALESCE(status, 'draft') as status, COUNT(*) as count FROM timeline_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`).all(staffId) as any[];
-  const translationStatuses = db.prepare(`SELECT COALESCE(status, 'draft') as status, COUNT(*) as count FROM translation_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`).all(staffId) as any[];
+  const timelineCount = db
+    .prepare(`SELECT COUNT(*) as count FROM timeline_records WHERE staff_id = ?`)
+    .get(staffId) as any;
+  const translationCount = db
+    .prepare(`SELECT COUNT(*) as count FROM translation_records WHERE staff_id = ?`)
+    .get(staffId) as any;
+  const sharedCount = db
+    .prepare(
+      `SELECT COUNT(*) as count FROM timeline_records WHERE shared_with LIKE '%"' || ? || '"%' AND staff_id != ?`,
+    )
+    .get(staffId, staffId) as any;
+  const recentActivity = db
+    .prepare(`SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 5`)
+    .all(staffId);
+  const timelineStatuses = db
+    .prepare(
+      `SELECT COALESCE(status, 'draft') as status, COUNT(*) as count FROM timeline_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`,
+    )
+    .all(staffId) as any[];
+  const translationStatuses = db
+    .prepare(
+      `SELECT COALESCE(status, 'draft') as status, COUNT(*) as count FROM translation_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`,
+    )
+    .all(staffId) as any[];
   // Recent 5 per status for hover previews
-  const statusNames = ['draft', 'in_review', 'complete', 'flagged'];
+  const statusNames = ["draft", "in_review", "complete", "flagged"];
   const timelineRecent: Record<string, any[]> = {};
   const translationRecent: Record<string, any[]> = {};
   for (const s of statusNames) {
-    timelineRecent[s] = db.prepare(`SELECT record_name, file_names FROM timeline_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`).all(staffId, s) as any[];
-    translationRecent[s] = db.prepare(`SELECT record_name, file_names FROM translation_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`).all(staffId, s) as any[];
+    timelineRecent[s] = db
+      .prepare(
+        `SELECT record_name, file_names FROM timeline_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`,
+      )
+      .all(staffId, s) as any[];
+    translationRecent[s] = db
+      .prepare(
+        `SELECT record_name, file_names FROM translation_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`,
+      )
+      .all(staffId, s) as any[];
   }
   return {
     timelineRecords: timelineCount.count,
@@ -322,8 +464,12 @@ export async function getDashboardStats(staffId: string) {
 // ── Admin ────────────────────────────────────────────────────────────────
 
 export async function getAllRecordCounts() {
-  const timelines = db.prepare(`SELECT staff_id, COUNT(*) as count FROM timeline_records GROUP BY staff_id`).all();
-  const translations = db.prepare(`SELECT staff_id, COUNT(*) as count FROM translation_records GROUP BY staff_id`).all();
+  const timelines = db
+    .prepare(`SELECT staff_id, COUNT(*) as count FROM timeline_records GROUP BY staff_id`)
+    .all();
+  const translations = db
+    .prepare(`SELECT staff_id, COUNT(*) as count FROM translation_records GROUP BY staff_id`)
+    .all();
   const staff = db.prepare(`SELECT DISTINCT staff_id FROM audit_log`).all();
   return { timelines, translations, activeStaff: (staff as any[]).map((r) => r.staff_id) };
 }
@@ -341,15 +487,23 @@ export interface User {
 }
 
 export function getAllUsers(): User[] {
-  return db.prepare(`SELECT id, username, email, pin, role, active, created_at FROM users ORDER BY username`).all() as User[];
+  return db
+    .prepare(
+      `SELECT id, username, email, pin, role, active, created_at FROM users ORDER BY username`,
+    )
+    .all() as User[];
 }
 
 export function getUserByUsername(username: string): User | undefined {
-  return db.prepare(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`).get(username) as User | undefined;
+  return db.prepare(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`).get(username) as
+    | User
+    | undefined;
 }
 
 export function getUserByEmail(email: string): User | undefined {
-  return db.prepare(`SELECT * FROM users WHERE LOWER(email) = LOWER(?)`).get(email) as User | undefined;
+  return db.prepare(`SELECT * FROM users WHERE LOWER(email) = LOWER(?)`).get(email) as
+    | User
+    | undefined;
 }
 
 export function updateUserEmail(id: number, email: string) {
@@ -357,11 +511,15 @@ export function updateUserEmail(id: number, email: string) {
 }
 
 export function getActiveUsernames(): string[] {
-  return (db.prepare(`SELECT username FROM users WHERE active = 1`).all() as any[]).map(r => r.username);
+  return (db.prepare(`SELECT username FROM users WHERE active = 1`).all() as any[]).map(
+    (r) => r.username,
+  );
 }
 
 export function createUser(username: string, pin: string, role: string) {
-  return db.prepare(`INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`).run(username, pin, role);
+  return db
+    .prepare(`INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`)
+    .run(username, hashPin(pin), role);
 }
 
 export function updateUserActive(id: number, active: boolean) {
@@ -369,7 +527,7 @@ export function updateUserActive(id: number, active: boolean) {
 }
 
 export function updateUserPin(id: number, pin: string) {
-  db.prepare(`UPDATE users SET pin = ? WHERE id = ?`).run(pin, id);
+  db.prepare(`UPDATE users SET pin = ? WHERE id = ?`).run(hashPin(pin), id);
 }
 
 export function updateUserRole(id: number, role: string) {

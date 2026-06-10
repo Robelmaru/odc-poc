@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import Anthropic from "@anthropic-ai/sdk";
 import { extractTextFromPdf } from "../utils/pdfUtils.js";
+import { logger } from "../utils/logger.js";
 
 const aiDetect = new Hono();
 const anthropic = new Anthropic();
@@ -103,7 +104,7 @@ async function callGPTZero(text: string, filename: string) {
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
-      "Accept": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify({ document: truncated, multilingual: false }),
   });
@@ -144,7 +145,13 @@ async function callGPTZero(text: string, filename: string) {
       completelyGenerated: Math.round((doc.completely_generated_prob ?? 0) * 100),
     },
     confidence: doc.confidence_category || "medium",
-    notes: label + ". " + (doc.predicted_class ? "GPTZero predicted class: " + doc.predicted_class + "." : "") + " Based on " + sentences.length + " sentence(s) analyzed.",
+    notes:
+      label +
+      ". " +
+      (doc.predicted_class ? "GPTZero predicted class: " + doc.predicted_class + "." : "") +
+      " Based on " +
+      sentences.length +
+      " sentence(s) analyzed.",
     sentences,
     filename,
   };
@@ -163,12 +170,14 @@ aiDetect.post("/", async (c) => {
         const gptzResult = await callGPTZero(text, filename || "Unknown");
         return c.json({ success: true, ...gptzResult });
       } catch (err) {
-        console.log("GPTZero failed, falling back to Claude:", (err as Error).message);
+        logger.warn("GPTZero failed, falling back to Claude", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
     // Fallback: Claude-based detection
-    let sample = '';
+    let sample = "";
     if (text.length <= 15000) {
       sample = text;
     } else {
@@ -177,7 +186,12 @@ aiDetect.post("/", async (c) => {
       const middleStart = Math.floor(text.length / 2) - Math.floor(chunkSize / 2);
       const middle = text.slice(middleStart, middleStart + chunkSize);
       const end = text.slice(-chunkSize);
-      sample = beginning + '\n\n[...middle section...]\n\n' + middle + '\n\n[...later section...]\n\n' + end;
+      sample =
+        beginning +
+        "\n\n[...middle section...]\n\n" +
+        middle +
+        "\n\n[...later section...]\n\n" +
+        end;
     }
 
     // Run detection twice and average for consistency
@@ -190,15 +204,20 @@ aiDetect.post("/", async (c) => {
         messages: [
           {
             role: "user",
-            content: "Analyze this text for AI-generated content. Be thorough and skeptical. Remember: if you see AI patterns, score them HIGH, not low.\n\n" + sample,
+            content:
+              "Analyze this text for AI-generated content. Be thorough and skeptical. Remember: if you see AI patterns, score them HIGH, not low.\n\n" +
+              sample,
           },
         ],
       });
       const tb = response.content.find((b) => b.type === "text");
       if (!tb || tb.type !== "text") throw new Error("No response");
       let raw = tb.text.trim();
-      if (raw.startsWith("```")) raw = raw.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-      try { return JSON.parse(raw); } catch {
+      if (raw.startsWith("```"))
+        raw = raw.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      try {
+        return JSON.parse(raw);
+      } catch {
         const m = raw.match(/\{[\s\S]*\}/);
         if (m) return JSON.parse(m[0]);
         throw new Error("Parse failed");
@@ -214,7 +233,7 @@ aiDetect.post("/", async (c) => {
     if (result1.categories && result2.categories) {
       for (const key of Object.keys(result1.categories)) {
         result.categories[key] = Math.round(
-          Math.max(result1.categories[key] || 0, result2.categories[key] || 0)
+          Math.max(result1.categories[key] || 0, result2.categories[key] || 0),
         );
       }
     }
@@ -231,7 +250,9 @@ aiDetect.post("/", async (c) => {
       ...result,
     });
   } catch (error) {
-    console.error("AI detection error:", error);
+    logger.error("AI detection error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     if (error instanceof Anthropic.APIError) {
       return c.json({ error: "Claude API error: " + error.message }, 500);
     }

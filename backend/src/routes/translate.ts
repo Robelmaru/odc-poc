@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import Anthropic from "@anthropic-ai/sdk";
 import { translatePrompt, SUPPORTED_LANGUAGES, type LanguageCode } from "../skills/Translate.js";
 import { extractTextFromPdf, chunkText } from "../utils/pdfUtils.js";
+import { logger } from "../utils/logger.js";
 
 const translate = new Hono();
 const anthropic = new Anthropic();
@@ -39,7 +40,7 @@ translate.post("/", async (c) => {
     }
 
     const targetLanguage = SUPPORTED_LANGUAGES[language as LanguageCode];
-    console.log(`Translating ${files.length} file(s) to ${targetLanguage}...`);
+    logger.info(`Translating ${files.length} file(s) to ${targetLanguage}...`);
 
     const results: { filename: string; translation: string; pages?: number }[] = [];
     const ocrInfo: { filename: string; visionPages: number; visionClarity?: number }[] = [];
@@ -48,7 +49,7 @@ translate.post("/", async (c) => {
     let totalOutputTokens = 0;
 
     for (const file of files) {
-      console.log(`  Processing: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      logger.info(`  Processing: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
@@ -60,24 +61,33 @@ translate.post("/", async (c) => {
         fullText = extracted.pages.map((p) => p.text).join("\n\n");
         pages = extracted.totalPages;
         if (extracted.visionPages > 0) {
-          ocrInfo.push({ filename: file.name, visionPages: extracted.visionPages, visionClarity: extracted.visionClarity });
+          ocrInfo.push({
+            filename: file.name,
+            visionPages: extracted.visionPages,
+            visionClarity: extracted.visionClarity,
+          });
         }
         sourceTexts.push({ filename: file.name, text: fullText.slice(0, 50000) });
-        console.log(`    Extracted ${pages} pages, ${fullText.length.toLocaleString()} characters` + (extracted.visionPages > 0 ? `, ${extracted.visionPages} via Vision OCR (${extracted.visionClarity}% clarity)` : ''));
+        logger.info(
+          `    Extracted ${pages} pages, ${fullText.length.toLocaleString()} characters` +
+            (extracted.visionPages > 0
+              ? `, ${extracted.visionPages} via Vision OCR (${extracted.visionClarity}% clarity)`
+              : ""),
+        );
       } else if (file.name.endsWith(".txt")) {
         fullText = await file.text();
         sourceTexts.push({ filename: file.name, text: fullText.slice(0, 50000) });
       } else {
-        console.log(`    Skipping unsupported file type: ${file.name}`);
+        logger.info(`    Skipping unsupported file type: ${file.name}`);
         continue;
       }
 
       const chunks = chunkText(fullText);
-      console.log(`    Translating in ${chunks.length} chunk(s)...`);
+      logger.info(`    Translating in ${chunks.length} chunk(s)...`);
 
       const translatedChunks: string[] = [];
       for (let i = 0; i < chunks.length; i++) {
-        console.log(`    Chunk ${i + 1}/${chunks.length}...`);
+        logger.info(`    Chunk ${i + 1}/${chunks.length}...`);
         const translated = await translateChunk(chunks[i]!, targetLanguage!);
         translatedChunks.push(translated);
       }
@@ -93,7 +103,7 @@ translate.post("/", async (c) => {
       return c.json({ error: "No supported files could be processed." }, 400);
     }
 
-    console.log(`Translation complete for ${results.length} file(s).`);
+    logger.info(`Translation complete for ${results.length} file(s).`);
 
     return c.json({
       success: true,
@@ -105,12 +115,14 @@ translate.post("/", async (c) => {
       usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
     });
   } catch (error) {
-    console.error("Translation error:", error);
+    logger.error("Translation error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     if (error instanceof Anthropic.APIError) {
       return c.json(
         { error: `Claude API error: ${error.message}` },
-        (error.status as 400 | 401 | 403 | 404 | 500) || 500
+        (error.status as 400 | 401 | 403 | 404 | 500) || 500,
       );
     }
 

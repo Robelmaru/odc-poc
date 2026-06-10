@@ -1,5 +1,5 @@
 // AnalyzeComplaint skill - uses shared knowledge base
-import { dcRulesKnowledge } from '../knowledge/dcRules';
+import { dcRulesKnowledge } from "../knowledge/dcRules.js";
 
 export const analyzeComplaintPrompt = `You are a legal analyst for the DC Office of Disciplinary Counsel. Your role is to analyze complaints against attorneys and identify potential violations of the DC Rules of Professional Conduct.
 

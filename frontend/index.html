@@ -1579,6 +1579,19 @@
         page-break-inside: avoid;
       }
     }
+
+    /* ── Discovery tab ── */
+    .disc-lbl { font-size:11px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:4px; }
+    .disc-in, .disc-sel { width:100%; padding:8px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface); box-sizing:border-box; }
+    .disc-stat { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; }
+    .disc-row { cursor:pointer; }
+    .disc-row:hover { background:var(--color-bg); }
+    .disc-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+    .ci-received  { background:#e6f4ea; color:#1e7e34; }
+    .ci-partial   { background:#fff4e0; color:#9a6700; }
+    .ci-missing   { background:#fde8e8; color:#c0392b; }
+    .ci-defective { background:#f3e0f7; color:#8e44ad; }
+    .ci-pending   { background:var(--color-border-light); color:var(--color-text-muted); }
   </style>
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 </head>
@@ -1686,6 +1699,7 @@
     <button class="tab-btn" onclick="switchTab('timeline')" data-tab="timeline">Document Insight</button>
     <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation &amp; Handwriting</button>
     <button class="tab-btn" onclick="switchTab('aidetect')" data-tab="aidetect">AI Detection</button>
+    <button class="tab-btn" onclick="switchTab('discovery')" data-tab="discovery">Discovery</button>
     <button class="tab-btn" onclick="switchTab('admin')" data-tab="admin" id="adminTabBtn" style="display:none;">Admin</button>
     <div style="margin-left:auto;position:relative;" id="notifWrapper">
       <button onclick="toggleNotifPanel()" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;position:relative;" title="Notifications">&#128276;
@@ -1879,12 +1893,19 @@
           <textarea class="qa-textarea" id="timelineContext" placeholder="Provide any additional context about these documents (e.g., case name, relevant parties, date ranges of interest)..."></textarea>
         </div>
 
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;">
+          <input type="checkbox" id="timelineRuleXi" style="width:16px;height:16px;cursor:pointer;">
+          <span>&#9878; Use Rule XI context — analyze through the DC Rules / Rule XI disciplinary lens (weighs significance toward potential rule violations). The result saves &amp; exports like any timeline.</span>
+        </label>
+
         <div class="button-row">
           <button class="btn btn-primary" id="timelineBtn" onclick="extractTimeline()">
             Extract Timeline
           </button>
+          <button class="btn btn-secondary" id="ruleXiCompareBtn" onclick="compareRuleXI()" title="Analyze the first uploaded file twice — with and without DC Rules / Rule XI context — and compare side by side">&#9878; Rule XI Comparison</button>
           <button class="btn btn-secondary" onclick="clearTimeline()">Clear</button>
         </div>
+        <div style="font-size:12px;color:var(--color-text-muted);margin-top:6px;">Rule XI Comparison runs the analysis with and without the disciplinary-rules context so you can see how it changes the result. Use a modestly sized file.</div>
         <div class="error" id="timelineError"></div>
       </div>
 
@@ -2183,6 +2204,47 @@
     </div>
   </div>
 
+  <!-- Tab: Discovery -->
+  <div class="tab-panel" id="tab-discovery">
+    <div style="max-width:1100px;margin:0 auto;padding:20px;">
+
+      <!-- Discovery dashboard strip -->
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <h2 class="panel-title">&#128203; Discovery &amp; Productions</h2>
+          <button class="btn btn-secondary" onclick="loadDiscovery()" style="font-size:11px;padding:3px 8px;">&#8635; Refresh</button>
+        </div>
+        <p style="font-size:13px;color:var(--color-text-muted);margin:0 0 14px;">Track subpoenas to respondent attorneys, ingest their productions (client file &amp; financial records), and reconcile what was produced against what was demanded.</p>
+        <div id="discoveryDashboard" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
+      </div>
+
+      <!-- Cases list -->
+      <div class="panel" id="discoveryCasesPanel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <h2 class="panel-title">Cases</h2>
+          <button class="btn btn-primary" onclick="toggleNewCaseForm()" style="font-size:12px;padding:6px 12px;">+ New Case</button>
+        </div>
+        <div id="newCaseForm" style="display:none;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:14px;margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label class="disc-lbl">Respondent attorney</label><input id="ncRespondent" class="disc-in" placeholder="e.g. Jane Attorney"></div>
+            <div><label class="disc-lbl">Firm (optional)</label><input id="ncFirm" class="disc-in" placeholder="e.g. LarJack PLLC"></div>
+            <div><label class="disc-lbl">Client / matter party</label><input id="ncClient" class="disc-in" placeholder="e.g. Mary D. Goode"></div>
+            <div><label class="disc-lbl">Matter caption (optional)</label><input id="ncCaption" class="disc-in" placeholder="e.g. Estate of Mary D. Goode"></div>
+          </div>
+          <div class="button-row" style="margin-top:12px;">
+            <button class="btn btn-primary" onclick="createCase()" style="font-size:12px;padding:6px 14px;">Create Case</button>
+            <button class="btn btn-secondary" onclick="toggleNewCaseForm()" style="font-size:12px;padding:6px 14px;">Cancel</button>
+          </div>
+          <div class="error" id="newCaseError"></div>
+        </div>
+        <div id="discoveryCasesList"><p style="color:var(--color-text-muted);font-size:13px;">Loading cases…</p></div>
+      </div>
+
+      <!-- Case detail -->
+      <div class="panel" id="discoveryCaseDetail" style="display:none;"></div>
+    </div>
+  </div>
+
   <!-- Tab: Admin -->
   <div class="tab-panel" id="tab-admin">
     <div style="max-width:1000px;margin:0 auto;padding:20px;">
@@ -2435,7 +2497,7 @@
       if (!lastTimeline) { alert('Please extract or load a timeline first, then click Print.'); return; }
       const win = window.open('', '_blank');
       let html = '<html><head><title>Timeline Print</title><style>body{font-family:Arial,sans-serif;padding:40px;color:#333;font-size:13px;}h1{font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top;}th{background:#f5f5f5;font-size:11px;text-transform:uppercase;}@media print{body{padding:20px;}}</style></head><body>';
-      html += '<h1>Document Timeline</h1>';
+      html += '<h1>Document Insight</h1>';
       if (lastTimeline.documents) {
         html += '<p><strong>Documents:</strong> ' + lastTimeline.documents.map(function(d) { return d.filename || d.title; }).join(', ') + '</p>';
       }
@@ -2780,20 +2842,25 @@
 
     // ── Help Panel ─────────────────────────────────────────────────────────
     const helpTopics = [
+      { section: 'Getting Started', title: 'Signing In', text: 'Sign in with Microsoft (single sign-on) using your dcbar.org account, or with a username and PIN. Click the avatar in the top-right header to see your name and sign out.' },
+      { section: 'Getting Started', title: 'Tabs Overview', text: 'The app has these tabs:\n• Dashboard — your home view with stats and recent activity\n• Document Insight — analyze documents into a timeline, sub-document index, duplicates, and a Rule XI comparison (formerly “Document Timeline”)\n• Translation & Handwriting — translate documents and OCR handwriting/scans\n• AI Detection — check whether text was AI-generated\n• Discovery — track subpoenas and reconcile attorney productions against what was requested\n• Admin — (admins only) manage users and view the full activity log' },
       { section: 'Getting Started', title: 'Dark Mode', text: 'Toggle dark mode using the moon icon button in the top-right header. Your preference is saved across sessions.' },
 
-      { section: 'Document Timeline', title: 'Upload Documents', text: 'Drag and drop PDF or TXT files into the upload area, or click to browse. Multiple files can be uploaded at once. The system extracts text and analyzes all documents together.' },
-      { section: 'Document Timeline', title: 'Extract Timeline', text: 'Click "Extract Timeline" to analyze your uploaded documents. The system extracts dates, events, and people into a chronological timeline. Large documents (500+ pages) are automatically split into chunks and processed in parallel.' },
-      { section: 'Document Timeline', title: 'Handwritten / Scanned Pages', text: 'Pages with little or no selectable text are automatically detected and processed using AI Vision OCR. This works for handwritten notes, scanned documents, and image-based PDFs.' },
-      { section: 'Document Timeline', title: 'Save to My Records', text: 'After extracting a timeline, click the save button to store it. You can name the record, add a case/matter number, and review an auto-generated document summary before saving.' },
-      { section: 'Document Timeline', title: 'My Records', text: 'View all your saved timelines. Features include:\n\u2022 Search by name, notes, or case number\n\u2022 Filter by date range\n\u2022 Sort by clicking column headers\n\u2022 Expand the arrow next to a name to view the document summary\n\u2022 Click the document name to load the full timeline' },
-      { section: 'Document Timeline', title: 'Annotate Events (Add Notes)', text: 'After extracting a timeline, each event has a note icon. Click it to open the "Annotate Event" modal where you can:\n\u2022 Set a flag: Verify this date, Important, or Conflict\n\u2022 Add a free-text note to the event\n\u2022 Remove annotations with the X button\nAnnotations appear inline under the event and are saved when you save the record.' },
-      { section: 'Document Timeline', title: 'Record Actions (Icons)', text: '\u270E Pencil \u2014 Edit the record name and case/matter number\n\ud83d\udc65 People \u2014 Share the record with other staff members\n\ud83d\uddd1 Trash \u2014 Delete the record permanently' },
-      { section: 'Document Timeline', title: 'Export DOCX Formatting', text: 'When exporting a timeline to Word (DOCX):\n\u2022 HIGH significance events are highlighted in yellow with bold text\n\u2022 Annotations appear with an orange left border in italic\n\u2022 Regular events have a plain white background\nThis makes it easy to spot the most important events when reviewing the document.' },
-      { section: 'Document Timeline', title: 'Export Summary (DOCX)', text: 'When viewing a record summary (expanded arrow), click "Export DOCX" to download the summary as a Word document.' },
-      { section: 'Document Timeline', title: 'Merge Records', text: 'Use the checkboxes to select 2 or more records, then click "Merge Selected" to combine their timelines into a single deduplicated record.' },
-      { section: 'Document Timeline', title: 'Ask About This Timeline', text: 'After extracting or loading a timeline, use the Q&A panel to ask questions about the events, dates, parties, and patterns. Supports multi-turn conversation with full context.' },
-      { section: 'Document Timeline', title: 'Activity Log', text: 'View a history of your actions \u2014 saves, deletes, shares, and merges. Searchable by keyword.' },
+      { section: 'Document Insight', title: 'Upload Documents', text: 'Drag and drop PDF or TXT files into the upload area, or click to browse. Multiple files can be uploaded at once. The system extracts text and analyzes all documents together.' },
+      { section: 'Document Insight', title: 'Extract Timeline', text: 'Click "Extract Timeline" to analyze your uploaded documents. The system extracts dates, events, and people into a chronological timeline. Large documents (500+ pages) are automatically split into chunks and processed in parallel.' },
+      { section: 'Document Insight', title: 'Handwritten / Scanned Pages (OCR)', text: 'Pages with little or no selectable text are automatically detected and OCR’d. The app runs local OCR (Tesseract) first — fast and at no API cost — and only falls back to Claude Vision for pages the local engine reads with low confidence. This handles scanned documents, image-based PDFs, and handwriting. Large scanned productions of 1,000+ pages are supported; you’ll see a live “OCR 340 / 1227” progress count.' },
+      { section: 'Document Insight', title: 'Table of Contents (Sub-documents)', text: 'A single PDF often bundles many sub-documents (invoice, engagement letter, bank statement, check, etc.). The analyzer detects each one and builds a clickable Table of Contents grouped by file. Click any entry to open the source PDF at that page — e.g. jump straight to the “engagement contract.”' },
+      { section: 'Document Insight', title: 'Duplicate Content Detection', text: 'The analyzer flags duplicate content blocks — EXACT (identical) and NEAR (highly similar) — within a single file or across files. Each finding lists the page locations (click to open). Useful for spotting repeated pages, re-sent documents, or near-identical statements with small changes.' },
+      { section: 'Document Insight', title: 'Rule XI Comparison', text: 'Click “⚖ Rule XI Comparison” to analyze the first uploaded file twice — once without and once with the DC Rules of Professional Conduct / Rule XI as interpretive context — and view the two results side by side. A metrics table shows the differences (sub-documents, events, HIGH-significance events, key dates, conflicts). Use a modestly sized file, as it runs two passes.' },
+      { section: 'Document Insight', title: 'Save to My Records', text: 'After extracting a timeline, click the save button to store it. You can name the record, add a case/matter number, and review an auto-generated document summary before saving.' },
+      { section: 'Document Insight', title: 'My Records', text: 'View all your saved timelines. Features include:\n\u2022 Search by name, notes, or case number\n\u2022 Filter by date range\n\u2022 Sort by clicking column headers\n\u2022 Expand the arrow next to a name to view the document summary\n\u2022 Click the document name to load the full timeline' },
+      { section: 'Document Insight', title: 'Annotate Events (Add Notes)', text: 'After extracting a timeline, each event has a note icon. Click it to open the "Annotate Event" modal where you can:\n\u2022 Set a flag: Verify this date, Important, or Conflict\n\u2022 Add a free-text note to the event\n\u2022 Remove annotations with the X button\nAnnotations appear inline under the event and are saved when you save the record.' },
+      { section: 'Document Insight', title: 'Record Actions (Icons)', text: '\u270E Pencil \u2014 Edit the record name and case/matter number\n\ud83d\udc65 People \u2014 Share the record with other staff members\n\ud83d\uddd1 Trash \u2014 Delete the record permanently' },
+      { section: 'Document Insight', title: 'Export DOCX Formatting', text: 'When exporting a timeline to Word (DOCX):\n\u2022 HIGH significance events are highlighted in yellow with bold text\n\u2022 Annotations appear with an orange left border in italic\n\u2022 Regular events have a plain white background\nThis makes it easy to spot the most important events when reviewing the document.' },
+      { section: 'Document Insight', title: 'Export Summary (DOCX)', text: 'When viewing a record summary (expanded arrow), click "Export DOCX" to download the summary as a Word document.' },
+      { section: 'Document Insight', title: 'Merge Records', text: 'Use the checkboxes to select 2 or more records, then click "Merge Selected" to combine their timelines into a single deduplicated record.' },
+      { section: 'Document Insight', title: 'Ask About This Timeline', text: 'After extracting or loading a timeline, use the Q&A panel to ask questions about the events, dates, parties, and patterns. Supports multi-turn conversation with full context.' },
+      { section: 'Document Insight', title: 'Activity Log', text: 'View a history of your actions \u2014 saves, deletes, shares, and merges. Searchable by keyword.' },
 
       { section: 'Translation', title: 'Translate a Document', text: 'Select a target language (English, Spanish, or Brazilian Portuguese), upload one or more PDF/TXT files, and click "Translate". Large documents are chunked and translated automatically.' },
       { section: 'Translation', title: 'Source Language Detection', text: 'The system automatically detects the source language. For example, uploading a Spanish document and selecting English will translate it to English.' },
@@ -2803,7 +2870,16 @@
       { section: 'Translation', title: 'Ask About This Translation', text: 'After translating or loading a translation, ask questions about terminology, content, or translation choices in the Q&A panel.' },
       { section: 'Translation', title: 'Translation Activity Log', text: 'View a history of your translation saves and deletes. Searchable by keyword.' },
 
-      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Timeline Status breakdown: Draft, In Review, Complete, Flagged counts (hover to see recent files)\n\u2022 Translation Status breakdown: same as above\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Timeline or Translation' },
+      { section: 'Discovery', title: 'What Discovery Does', text: 'The Discovery tab tracks the subpoena → production → review workflow for a disciplinary matter. For each case (docket) you issue a subpoena to the respondent attorney, upload the attorney’s production (client file and/or financial records), and the app reconciles what was produced against what the subpoena demanded — flagging missing items, Rule 1.15 trust-record gaps, and drafting a deficiency letter.' },
+      { section: 'Discovery', title: 'Create a Docket (Case)', text: 'Click “+ New Case” and enter the respondent attorney (and optional firm), the client/matter party, and a caption. The app assigns a docket number automatically (e.g. ODC-2026-0001). Cases are listed with their phase and status; click a row to open the case detail.' },
+      { section: 'Discovery', title: 'Issue a Subpoena', text: 'In a case, choose the subpoena type and set the issued + response-due dates, then click “+ Subpoena”. The standard document-request checklist is seeded automatically by type:\n• Client file + Financial records (BOTH) → 12 items\n• Client file only → 5 items\n• Financial records only → 7 items\nThese 12 items come from ODC’s standard subpoena attachment. Match the type to the matter — requesting financial records on a non-financial matter will show those items as “missing.”' },
+      { section: 'Discovery', title: 'Upload & Process a Production', text: 'Click “📤 Upload & process a production” on a subpoena and select the attorney’s PDF. The app runs in the background: extract text → OCR scanned pages (local first, Vision fallback) → index sub-documents → reconcile. You’ll see live status — “OCR 340 / 1227”, “Indexing sub-documents”, then “Reconciling”. Large scanned productions are supported and OCR runs at essentially no API cost.' },
+      { section: 'Discovery', title: 'Reconciliation Results', text: 'When processing finishes, each requested item gets a status badge:\n• RECEIVED — the actual artifact is present\n• PARTIAL — present but incomplete (e.g. some months of statements)\n• MISSING — not produced (note: demand/cover-letter text that merely names an item does NOT count as produced)\n• DEFECTIVE — present but unusable/illegible\nEach received item links to the sub-document that satisfied it.' },
+      { section: 'Discovery', title: 'Rule 1.15 Flags & Deficiency Letter', text: 'If trust-record items (general ledger, subsidiary client ledger) are missing or defective on a matter involving client funds, the app raises a Rule 1.15 (Safekeeping Property) flag. When anything is missing/partial/defective, it also drafts a follow-up deficiency letter describing exactly what the attorney must still produce (expand “Draft deficiency letter”).' },
+      { section: 'Discovery', title: 'Discovery Dashboard & Overdue Subpoenas', text: 'The top of the Discovery tab shows case counts by phase and an Overdue widget. A subpoena is overdue when its response deadline (or extended deadline) has passed without a full production. Overdue subpoenas are listed in red.' },
+      { section: 'Discovery', title: 'Delete a Docket or Production', text: 'Click the 🗑 icon on a case row to delete a docket — this permanently removes its subpoenas and productions (saved Document Insight timeline records are preserved, just unlinked). Click the 🗑 on an individual production to remove just that production. Both require confirmation and are recorded in the audit log.' },
+
+      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Timeline Status breakdown: Draft, In Review, Complete, Flagged counts (hover to see recent files)\n\u2022 Translation Status breakdown: same as above\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Document Insight or Translation' },
 
       { section: 'Records Management', title: 'Status Tracking', text: 'Each record has a status badge: Draft, In Review, Complete, or Flagged.\n\u2022 Click the gear icon (\u2699) in the Actions column to change status via a dropdown\n\u2022 Color-coded: gray=Draft, yellow=In Review, green=Complete, red=Flagged\n\u2022 Status is a sortable column in My Records' },
       { section: 'Records Management', title: 'Tags / Labels', text: 'Click the tag icon (\ud83c\udff7) next to any record to add custom labels.\n\u2022 Enter tags as comma-separated values (e.g. "Urgent, Smith Case, 2024")\n\u2022 Tags appear as blue badges on the record\n\u2022 Useful for organizing by topic, case type, or urgency' },
@@ -2816,7 +2892,7 @@
       { section: 'Admin', title: 'Add / Manage Users', text: 'In the Admin tab, click "+ Add User" to create a new account with a username, PIN, and role (Staff or Admin).\n\u2022 Reset PIN: click the key icon to set a new password for any user\n\u2022 Make Staff / Make Admin: toggle a user\'s role\n\u2022 Disable / Enable: deactivate or reactivate a user account\n\nAll admin actions are recorded in the audit trail.' },
 
       { section: 'Tips', title: 'Session Timeout', text: 'For security, you are automatically logged out after 30 minutes of inactivity. Any mouse, keyboard, click, or scroll activity resets the timer.' },
-      { section: 'Tips', title: 'Large Documents (500+ pages)', text: 'Documents over 500 pages are split into larger chunks (~100 pages each) to optimize processing. You\'ll see a progress bar showing chunk-by-chunk extraction.' },
+      { section: 'Tips', title: 'Large & Scanned Documents', text: 'Documents over 500 pages are split into larger chunks (~100 pages each) and processed in parallel. Fully-scanned/image-only documents (including 1,000+ page productions) are OCR’d locally first (Tesseract) with Claude Vision used only as a fallback for low-confidence pages — fast and at near-zero API cost. You’ll see a live page-by-page progress count during OCR.' },
       { section: 'Tips', title: 'Keyboard Shortcuts', text: 'Enter \u2014 Submit a question in Q&A panels\nShift+Enter \u2014 New line in Q&A text areas\nCtrl+S \u2014 Save the current timeline record' },
       { section: 'Tips', title: 'Source Links in Timelines', text: 'Clickable source links in timeline events open a preview of the original document at the referenced page. If loaded from saved records (file not in session), you\'ll see the source reference info instead.' },
     ];
@@ -2904,7 +2980,7 @@
         sections[t.section].push(t);
       }
 
-      const sectionIcons = { 'Getting Started': '\ud83d\ude80', 'Dashboard': '\ud83d\udcca', 'Document Timeline': '\ud83d\udcc5', 'Translation': '\ud83c\udf10', 'Records Management': '\ud83d\udcc1', 'Admin': '\ud83d\udd12', 'Tips': '\ud83d\udca1' };
+      const sectionIcons = { 'Getting Started': '\ud83d\ude80', 'Dashboard': '\ud83d\udcca', 'Document Insight': '\ud83d\udcc5', 'Discovery': '\ud83d\udccb', 'Translation': '\ud83c\udf10', 'Records Management': '\ud83d\udcc1', 'Admin': '\ud83d\udd12', 'Tips': '\ud83d\udca1' };
 
       let html = '';
       for (const [section, items] of Object.entries(sections)) {
@@ -2978,6 +3054,273 @@
       document.getElementById('tab-' + tabId).classList.add('active');
       if (tabId === 'admin') loadAdminPanel();
       if (tabId === 'dashboard') loadDashboard();
+      if (tabId === 'discovery') loadDiscovery();
+    }
+
+    // ========================================
+    // Discovery (subpoenas / productions / reconciliation)
+    // ========================================
+    let discoveryCurrentCaseId = null;
+    const DISC_ITEM_LABELS = {}; // id -> label, filled from /checklist
+
+    async function loadDiscovery() {
+      try {
+        if (Object.keys(DISC_ITEM_LABELS).length === 0) {
+          const cl = await (await fetch('/api/discovery/checklist')).json();
+          (cl.checklist || []).forEach(i => { DISC_ITEM_LABELS[i.id] = i.label; });
+        }
+        const [dash, cases] = await Promise.all([
+          (await fetch('/api/discovery/dashboard')).json(),
+          (await fetch('/api/discovery/cases')).json()
+        ]);
+        renderDiscoveryDashboard(dash);
+        renderCasesList(cases.cases || []);
+        if (discoveryCurrentCaseId) openCase(discoveryCurrentCaseId);
+      } catch (e) {
+        document.getElementById('discoveryCasesList').innerHTML = '<p style="color:var(--color-danger,#c0392b);font-size:13px;">Failed to load discovery data.</p>';
+      }
+    }
+
+    function discStatCard(label, value, color) {
+      return '<div style="flex:1;min-width:120px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:12px 14px;">'
+        + '<div style="font-size:24px;font-weight:700;color:' + (color || 'var(--color-text)') + ';">' + value + '</div>'
+        + '<div style="font-size:12px;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.03em;">' + label + '</div></div>';
+    }
+
+    function renderDiscoveryDashboard(d) {
+      const el = document.getElementById('discoveryDashboard');
+      const overdue = d.overdueSubpoenas || [];
+      let html = discStatCard('Cases', d.totalCases || 0)
+        + discStatCard('Overdue subpoenas', overdue.length, overdue.length ? 'var(--color-danger,#c0392b)' : 'var(--color-text)');
+      const phases = d.byPhase || {};
+      Object.keys(phases).forEach(p => html += discStatCard(p.replace(/_/g, ' '), phases[p]));
+      if (overdue.length) {
+        html += '<div style="flex-basis:100%;margin-top:6px;font-size:12px;color:var(--color-danger,#c0392b);">&#9888; Overdue: '
+          + overdue.map(o => escapeHtml(o.docket_number) + ' (' + o.type + ', due ' + (o.deadline || '?') + ')').join(' · ') + '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function renderCasesList(cases) {
+      const el = document.getElementById('discoveryCasesList');
+      if (!cases.length) { el.innerHTML = '<p style="color:var(--color-text-muted);font-size:13px;">No cases yet. Create one to start tracking subpoenas.</p>'; return; }
+      let h = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="text-align:left;border-bottom:2px solid var(--color-border-light);color:var(--color-text-muted);font-size:11px;text-transform:uppercase;">'
+        + '<th style="padding:6px 8px;">Docket</th><th style="padding:6px 8px;">Client / Matter</th><th style="padding:6px 8px;">Phase</th><th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;"></th></tr></thead><tbody>';
+      cases.forEach(c => {
+        h += '<tr class="disc-row" onclick="openCase(' + c.id + ')" style="border-bottom:1px solid var(--color-border-light);">'
+          + '<td style="padding:8px;font-weight:600;">' + escapeHtml(c.docket_number) + '</td>'
+          + '<td style="padding:8px;">' + escapeHtml(c.client_name || c.matter_caption || '—') + '</td>'
+          + '<td style="padding:8px;">' + escapeHtml((c.phase || '').replace(/_/g, ' ')) + '</td>'
+          + '<td style="padding:8px;">' + escapeHtml(c.status || '') + '</td>'
+          + '<td style="padding:8px;text-align:right;"><span onclick="event.stopPropagation();deleteDiscoveryCase(' + c.id + ',\'' + escapeHtml(c.docket_number) + '\')" style="cursor:pointer;font-size:15px;color:var(--color-danger,#c0392b);" title="Delete docket">&#128465;</span></td></tr>';
+      });
+      el.innerHTML = h + '</tbody></table>';
+    }
+
+    async function deleteDiscoveryCase(id, docket) {
+      if (!confirm('Delete docket ' + docket + ' and ALL of its subpoenas and productions?\n\nThis is permanent and will be recorded in the audit log.')) return;
+      try {
+        const r = await fetch('/api/discovery/cases/' + id + '?staff_id=' + encodeURIComponent(loggedInStaff || ''), { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!d.success) throw new Error(d.error || ('HTTP ' + r.status));
+        if (discoveryCurrentCaseId === id) closeCaseDetail();
+        loadDiscovery();
+      } catch (e) { alert('Failed to delete docket: ' + e.message); }
+    }
+
+    async function deleteDiscoveryProduction(id) {
+      if (!confirm('Delete this production and its reconciliation results?\n\nThis is permanent and will be recorded in the audit log.')) return;
+      try {
+        const r = await fetch('/api/discovery/productions/' + id + '?staff_id=' + encodeURIComponent(loggedInStaff || ''), { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!d.success) throw new Error(d.error || ('HTTP ' + r.status));
+        if (discoveryCurrentCaseId) openCase(discoveryCurrentCaseId);
+      } catch (e) { alert('Failed to delete production: ' + e.message); }
+    }
+
+    function toggleNewCaseForm() {
+      const f = document.getElementById('newCaseForm');
+      f.style.display = f.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function createCase() {
+      const err = document.getElementById('newCaseError');
+      err.classList.remove('active');
+      const name = document.getElementById('ncRespondent').value.trim();
+      if (!name) { err.textContent = 'Respondent attorney name is required.'; err.classList.add('active'); return; }
+      try {
+        const resp = await (await fetch('/api/discovery/respondents', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, name, firm: document.getElementById('ncFirm').value.trim() || null })
+        })).json();
+        const cs = await (await fetch('/api/discovery/cases', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, respondent_id: resp.id, client_name: document.getElementById('ncClient').value.trim() || null, matter_caption: document.getElementById('ncCaption').value.trim() || null })
+        })).json();
+        ['ncRespondent','ncFirm','ncClient','ncCaption'].forEach(id => document.getElementById(id).value = '');
+        toggleNewCaseForm();
+        await loadDiscovery();
+        if (cs.id) openCase(cs.id);
+      } catch (e) { err.textContent = 'Failed to create case.'; err.classList.add('active'); }
+    }
+
+    async function openCase(id) {
+      discoveryCurrentCaseId = id;
+      const panel = document.getElementById('discoveryCaseDetail');
+      panel.style.display = 'block';
+      try {
+        const data = await (await fetch('/api/discovery/cases/' + id)).json();
+        renderCaseDetail(data);
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) { panel.innerHTML = '<p style="color:var(--color-danger,#c0392b);">Failed to load case.</p>'; }
+    }
+
+    function closeCaseDetail() {
+      discoveryCurrentCaseId = null;
+      document.getElementById('discoveryCaseDetail').style.display = 'none';
+    }
+
+    function checklistBadge(status) {
+      const s = (status || 'pending').toLowerCase();
+      return '<span class="disc-badge ci-' + s + '">' + s + '</span>';
+    }
+
+    function renderCaseDetail(data) {
+      const c = data.case; const subs = data.subpoenas || [];
+      let h = '<div class="panel-header"><h2 class="panel-title">' + escapeHtml(c.docket_number) + ' — ' + escapeHtml(c.client_name || c.matter_caption || '') + '</h2>'
+        + '<button class="btn btn-secondary" onclick="closeCaseDetail()" style="font-size:11px;padding:3px 10px;">Close</button></div>';
+      h += '<div style="font-size:13px;color:var(--color-text-muted);margin-bottom:14px;">Phase: ' + escapeHtml((c.phase || '').replace(/_/g, ' ')) + ' · Status: ' + escapeHtml(c.status || '') + '</div>';
+
+      // New subpoena form
+      h += '<div style="background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:12px;margin-bottom:14px;">'
+        + '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:10px;align-items:end;">'
+        + '<div><label class="disc-lbl">Subpoena type</label><select id="nsType" class="disc-sel"><option value="BOTH">Client file + Financial records</option><option value="CLIENT_FILE">Client file only</option><option value="FINANCIAL_RECORDS">Financial records only</option></select></div>'
+        + '<div><label class="disc-lbl">Issued</label><input id="nsIssued" type="date" class="disc-in"></div>'
+        + '<div><label class="disc-lbl">Response due</label><input id="nsDue" type="date" class="disc-in"></div>'
+        + '<div><button class="btn btn-primary" onclick="createSubpoena(' + c.id + ')" style="font-size:12px;padding:8px 14px;">+ Subpoena</button></div>'
+        + '</div></div>';
+
+      if (!subs.length) {
+        h += '<p style="color:var(--color-text-muted);font-size:13px;">No subpoenas yet. Issue one above, then upload the attorney\'s production to reconcile it.</p>';
+      }
+      subs.forEach(s => {
+        h += '<div style="border:1px solid var(--color-border-light);border-radius:8px;padding:14px;margin-bottom:12px;">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
+          + '<div style="font-weight:600;font-size:14px;">Subpoena #' + s.id + ' · ' + s.subpoena_type.replace(/_/g, ' ') + '</div>'
+          + '<div style="font-size:12px;color:var(--color-text-muted);">Issued ' + (s.issuance_date || '—') + ' · Due ' + (s.extended_deadline || s.response_deadline || '—') + ' · <strong>' + escapeHtml(s.status) + '</strong></div></div>';
+        h += '<div style="font-size:12px;color:var(--color-text-muted);margin:6px 0;">' + (s.requested_items || []).length + ' items requested</div>';
+        h += '<button class="btn btn-primary" onclick="startNewProduction(' + s.id + ')" style="font-size:12px;padding:6px 12px;">&#128228; Upload &amp; process a production</button>';
+
+        (s.productions || []).forEach(p => {
+          h += '<div style="margin-top:12px;border-top:1px dashed var(--color-border-light);padding-top:10px;">';
+          h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+            + '<div id="prodStatus-' + p.id + '" style="font-size:12px;color:var(--color-text-muted);margin-bottom:6px;">'
+            + 'Production v' + p.version_number + (p.received_date ? ' · received ' + p.received_date : '')
+            + ' · <strong>' + escapeHtml(p.status) + '</strong>'
+            + (p.page_count ? ' · ' + p.page_count + ' pp' : '')
+            + (p.is_image_only ? ' · <span title="scanned, OCR\'d">image-only/OCR</span>' : '')
+            + '</div>'
+            + '<span onclick="deleteDiscoveryProduction(' + p.id + ')" style="cursor:pointer;font-size:14px;color:var(--color-danger,#c0392b);flex-shrink:0;" title="Delete production">&#128465;</span>'
+            + '</div>';
+          const items = p.items || [];
+          if (items.length) {
+            h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">';
+            items.forEach(it => {
+              h += '<tr style="border-bottom:1px solid var(--color-border-light);">'
+                + '<td style="padding:5px 6px;width:62px;">' + checklistBadge(it.status) + '</td>'
+                + '<td style="padding:5px 6px;">' + escapeHtml(DISC_ITEM_LABELS[it.item_type] || it.item_type) + '</td>'
+                + '<td style="padding:5px 6px;color:var(--color-text-muted);">' + escapeHtml(it.source_section_id || '') + '</td></tr>';
+            });
+            h += '</table>';
+          }
+          // Rule 1.15 flags
+          let flags = []; try { flags = JSON.parse(p.rule115_flags || '[]'); } catch (e) {}
+          if (flags.length) {
+            h += '<div style="margin-top:8px;background:#fde8e8;border:1px solid #f5c6cb;border-radius:6px;padding:8px 10px;font-size:12px;color:#c0392b;">'
+              + '<strong>&#9888; Rule 1.15 flags</strong><ul style="margin:4px 0 0;padding-left:18px;">'
+              + flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') + '</ul></div>';
+          }
+          if (p.follow_up) {
+            h += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--color-primary);">Draft deficiency letter</summary>'
+              + '<div style="white-space:pre-wrap;font-size:12px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:6px;padding:10px;margin-top:6px;">' + escapeHtml(p.follow_up) + '</div></details>';
+          }
+          h += '</div>';
+        });
+        h += '</div>';
+      });
+      document.getElementById('discoveryCaseDetail').innerHTML = h;
+    }
+
+    async function createSubpoena(caseId) {
+      try {
+        await fetch('/api/discovery/cases/' + caseId + '/subpoenas', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, subpoena_type: document.getElementById('nsType').value, issuance_date: document.getElementById('nsIssued').value || null, response_deadline: document.getElementById('nsDue').value || null })
+        });
+        openCase(caseId);
+        loadDiscovery();
+      } catch (e) { alert('Failed to create subpoena.'); }
+    }
+
+    let _pendingProductionSubpoena = null;
+    function startNewProduction(subpoenaId) {
+      _pendingProductionSubpoena = subpoenaId;
+      let input = document.getElementById('discProdFileInput');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'file'; input.id = 'discProdFileInput'; input.accept = '.pdf'; input.style.display = 'none';
+        input.onchange = onProductionFileChosen;
+        document.body.appendChild(input);
+      }
+      input.value = '';
+      input.click();
+    }
+
+    async function onProductionFileChosen(ev) {
+      const file = ev.target.files[0];
+      const subpoenaId = _pendingProductionSubpoena;
+      if (!file || !subpoenaId) return;
+      try {
+        if (!loggedInStaff) throw new Error('You are not signed in. Refresh the page and sign in again.');
+        // 1) create the production record
+        const createResp = await fetch('/api/discovery/subpoenas/' + subpoenaId + '/productions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, received_date: new Date().toISOString().slice(0, 10) })
+        });
+        const prod = await createResp.json().catch(() => ({}));
+        if (!prod.id) {
+          throw new Error((prod.error || 'could not create production')
+            + ' [HTTP ' + createResp.status + ', signed in as "' + loggedInStaff + '", subpoena ' + subpoenaId + ']');
+        }
+        // 2) upload + process
+        const fd = new FormData();
+        fd.append('staff_id', loggedInStaff);
+        fd.append('file', file);
+        const procResp = await fetch('/api/discovery/productions/' + prod.id + '/process', { method: 'POST', body: fd });
+        const started = await procResp.json().catch(() => ({}));
+        if (!started.success) throw new Error((started.error || 'processing did not start') + ' [HTTP ' + procResp.status + ']');
+        openCase(discoveryCurrentCaseId);
+        pollProductionJob(prod.id);
+      } catch (e) { alert('Upload/processing failed: ' + e.message); }
+    }
+
+    async function pollProductionJob(productionId) {
+      let done = false, tries = 0;
+      while (!done && tries < 400) {
+        tries++;
+        await new Promise(r => setTimeout(r, 4000));
+        let job;
+        try { job = (await (await fetch('/api/discovery/productions/' + productionId + '/job')).json()).job; } catch (e) { continue; }
+        if (!job) continue;
+        const el = document.getElementById('prodStatus-' + productionId);
+        if (el) el.innerHTML = '<span class="loading-spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;"></span> ' + escapeHtml(job.status) + ' — ' + escapeHtml(job.message || '');
+        if (job.status === 'done' || job.status === 'failed') {
+          done = true;
+          if (job.status === 'failed' && el) el.innerHTML = '<span style="color:var(--color-danger,#c0392b);">Processing failed: ' + escapeHtml(job.error || '') + '</span>';
+          openCase(discoveryCurrentCaseId);
+          loadDiscovery();
+        }
+      }
     }
 
     // ========================================
@@ -3364,7 +3707,7 @@
       if (!fileEntry) {
         const pageHtml = page ? '<div style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 12px;">Page ' + page + '</div>' : '';
         const quoteHtml = quote ? '<div style="margin-top: 12px; padding: 14px 18px; background: var(--color-bg); border-left: 3px solid var(--color-primary); border-radius: 4px; font-size: 14px; color: var(--color-text); line-height: 1.6; font-style: italic;">' + escapeHtml(quote) + '</div>' : '';
-        const reuploadHtml = '<div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-light); font-size: 12px; color: var(--color-text-muted);">To view the full document, re-upload it in the Document Timeline tab.</div>';
+        const reuploadHtml = '<div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-light); font-size: 12px; color: var(--color-text-muted);">To view the full document, re-upload it in the Document Insight tab.</div>';
         pageIndicatorEl.textContent = page ? 'Page ' + page : '';
         bodyEl.innerHTML = '<div style="padding: 28px 24px;">'
           + '<div style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">Source Reference</div>'
@@ -4093,6 +4436,10 @@ All conclusions require human review and professional judgment.
         if (additionalContext) {
           formData.append('additionalContext', additionalContext);
         }
+        const ruleXiEl = document.getElementById('timelineRuleXi');
+        if (ruleXiEl && ruleXiEl.checked) {
+          formData.append('ruleContext', 'true');
+        }
 
         const response = await fetch('/api/timeline', {
           method: 'POST',
@@ -4161,7 +4508,7 @@ All conclusions require human review and professional judgment.
         if (!resultData) throw new Error('No result received from server');
 
         lastSourceTexts = resultData.sourceTexts || [];
-        displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults);
+        displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults, resultData.duplicates);
       } catch (err) {
         showTimelineError(err.message);
       } finally {
@@ -4177,7 +4524,7 @@ All conclusions require human review and professional judgment.
       document.getElementById('timelinePlaceholder').style.display = 'block';
     }
 
-    function displayTimeline(t, usage, ocrResults) {
+    function displayTimeline(t, usage, ocrResults, duplicates) {
       const results = document.getElementById('timelineResults');
       lastTimeline = t;
       document.getElementById('timelineExportButtons').style.display = 'flex';
@@ -4239,10 +4586,12 @@ All conclusions require human review and professional judgment.
       }
 
       // JUMP TO (in-page anchor nav)
+      const dupCount = duplicates && duplicates.matches ? duplicates.matches.length : 0;
       html += `
         <div class="section" style="background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;margin-bottom:16px;">
           <div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">&#129517; Jump to</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;">
+            ${dupCount > 0 ? '<a href="#doc-insight-duplicates" style="color:var(--color-primary);text-decoration:none;">Duplicate Content (' + dupCount + ')</a>' : ''}
             ${t.sections && t.sections.length > 0 ? '<a href="#doc-insight-toc" style="color:var(--color-primary);text-decoration:none;">Table of Contents (' + t.sections.length + ')</a>' : ''}
             ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-files" style="color:var(--color-primary);text-decoration:none;">File Summaries</a>' : ''}
             ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-docs" style="color:var(--color-primary);text-decoration:none;">Documents Analyzed (' + t.documents.length + ')</a>' : ''}
@@ -4254,6 +4603,34 @@ All conclusions require human review and professional judgment.
           </div>
         </div>
       `;
+
+      // DUPLICATE CONTENT BLOCKS
+      if (duplicates && duplicates.matches && duplicates.matches.length > 0) {
+        const dupRow = (b) => {
+          const pageAttr = b.page != null ? 'data-page="' + b.page + '"' : '';
+          const pg = b.page != null ? 'p. ' + b.page : '';
+          return `<a class="source-link toc-entry" data-filename="${escapeHtml(b.filename)}" ${pageAttr} data-quote=""
+                     style="display:flex;gap:10px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-border-light);border-radius:6px;text-decoration:none;color:inherit;cursor:pointer;align-items:flex-start;">
+                    <span style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--color-primary);min-width:48px;flex-shrink:0;">${pg}</span>
+                    <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;">${escapeHtml(b.filename)}</div><div style="font-size:12px;color:var(--color-text-muted);">${escapeHtml(b.preview)}…</div></div>
+                  </a>`;
+        };
+        html += `
+          <div class="section" id="doc-insight-duplicates">
+            <div class="section-header"><span class="section-icon">&#128203;</span><h3>Duplicate Content (${duplicates.matches.length})</h3></div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">Identical or near-identical content blocks detected within or across files. Click a location to open the source page.${duplicates.note ? ' <em>' + escapeHtml(duplicates.note) + '</em>' : ''}</div>
+            ${duplicates.matches.map(m => `
+              <div style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:8px;padding:10px 12px;">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                  <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;${m.type === 'EXACT' ? 'background:#fde8e8;color:#c0392b;' : 'background:#fff4e0;color:#9a6700;'}">${m.type === 'EXACT' ? 'Exact duplicate' : 'Near duplicate (' + Math.round(m.similarity * 100) + '%)'}</span>
+                  <span style="font-size:11px;color:var(--color-text-muted);">${m.scope === 'cross-file' ? 'across files' : 'within a file'} · ${m.blocks.length} locations</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;">${m.blocks.map(dupRow).join('')}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
 
       // TABLE OF CONTENTS (sub-document index)
       if (t.sections && t.sections.length > 0) {
@@ -5092,7 +5469,7 @@ All dates and events should be verified against original documents.
       const t = lastTimeline;
 
       let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>Document Timeline</title>
+<head><meta charset="utf-8"><title>Document Insight</title>
 <style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#333;}
 h1{font-size:18pt;color:#1e368e;border-bottom:2px solid #1e368e;padding-bottom:6px;}
 h2{font-size:14pt;color:#1e368e;margin-top:18pt;}
@@ -5104,7 +5481,7 @@ th{background:#f0f2f8;font-weight:bold;}
 .disclaimer{margin-top:20pt;padding:10pt;background:#f8f8f8;border:1px solid #ddd;font-size:9pt;color:#666;}
 </style></head><body>`;
 
-      html += `<h1>Document Timeline</h1><p style="color:#666;font-size:9pt;">Generated: ${new Date().toLocaleString()}</p>`;
+      html += `<h1>Document Insight</h1><p style="color:#666;font-size:9pt;">Generated: ${new Date().toLocaleString()}</p>`;
 
       if (t.sections && t.sections.length > 0) {
         html += `<h2>Table of Contents (${t.sections.length})</h2><table><tr><th>File</th><th>Pages</th><th>Type</th><th>Title</th><th>Date</th><th>Summary</th></tr>`;
@@ -5176,8 +5553,107 @@ th{background:#f0f2f8;font-weight:bold;}
       URL.revokeObjectURL(url);
     }
 
+    // ── Rule XI comparison (with vs without disciplinary-rules context) ──
+    async function compareRuleXI() {
+      const btn = document.getElementById('ruleXiCompareBtn');
+      const loading = document.getElementById('timelineLoading');
+      const results = document.getElementById('timelineResults');
+      const error = document.getElementById('timelineError');
+      const placeholder = document.getElementById('timelinePlaceholder');
+      error.classList.remove('active');
+      if (!loggedInStaff) { showTimelineError('Please sign in first.'); return; }
+      if (!timelineUploadedFiles.length) { showTimelineError('Please upload a document first.'); return; }
+
+      placeholder.style.display = 'none';
+      results.classList.remove('active');
+      btn.disabled = true;
+      document.getElementById('timelineBtn').disabled = true;
+      loading.classList.add('active');
+      document.getElementById('timelineProgressText').textContent = 'Running Rule XI comparison…';
+      document.getElementById('timelineProgressDetail').textContent = 'Analyzing the document twice — with and without Rule XI context. This runs two passes, so it takes longer.';
+      document.getElementById('timelineProgressBar').style.display = 'none';
+
+      try {
+        const entry = timelineUploadedFiles[0];
+        const fileObj = entry && entry.file ? entry.file : entry;
+        if (!fileObj || !fileObj.name) throw new Error('Could not read the uploaded file. Please re-upload and try again.');
+        const fd = new FormData();
+        fd.append('file', fileObj);
+        const resp = await fetch('/api/timeline/compare', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Comparison failed');
+        renderRuleXICompare(data);
+      } catch (err) {
+        showTimelineError(err.message);
+      } finally {
+        btn.disabled = false;
+        document.getElementById('timelineBtn').disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function ruleXiMetrics(t) {
+      return {
+        sections: (t.sections || []).length,
+        events: (t.timeline || []).length,
+        keyDates: (t.keyDates || []).length,
+        conflicts: (t.conflicts || []).length,
+        high: (t.timeline || []).filter(e => e.significance === 'HIGH').length,
+      };
+    }
+
+    function renderRuleXICompare(data) {
+      const results = document.getElementById('timelineResults');
+      // Hide the single-analysis-only controls; this is a comparison view.
+      document.getElementById('timelineExportButtons').style.display = 'none';
+      const a = ruleXiMetrics(data.without), b = ruleXiMetrics(data.withRuleXI);
+      const metricRow = (label, av, bv) => {
+        const diff = bv - av;
+        const diffStr = diff === 0 ? '' : (diff > 0 ? ' <span style="color:#1e7e34;">(+' + diff + ')</span>' : ' <span style="color:#c0392b;">(' + diff + ')</span>');
+        return `<tr style="border-bottom:1px solid var(--color-border-light);"><td style="padding:6px 10px;">${label}</td><td style="padding:6px 10px;text-align:center;">${av}</td><td style="padding:6px 10px;text-align:center;font-weight:600;">${bv}${diffStr}</td></tr>`;
+      };
+      const colSections = (t) => (t.sections || []).length
+        ? (t.sections || []).map(s => `<div style="padding:6px 8px;border:1px solid var(--color-border-light);border-radius:5px;margin-bottom:5px;"><span style="font-size:9px;font-weight:700;padding:1px 6px;background:var(--color-primary);color:#fff;border-radius:8px;text-transform:uppercase;">${escapeHtml(s.sectionType || 'OTHER')}</span> <span style="font-size:12px;">${escapeHtml(s.title || '(untitled)')}</span>${s.summary ? '<div style="font-size:11px;color:var(--color-text-muted);margin-top:3px;">' + escapeHtml(s.summary) + '</div>' : ''}</div>`).join('')
+        : '<div style="font-size:12px;color:var(--color-text-muted);">(none)</div>';
+      const colNotes = (t) => (t.notes || []).length
+        ? '<ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--color-text-secondary);">' + (t.notes || []).map(n => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>'
+        : '<div style="font-size:12px;color:var(--color-text-muted);">(none)</div>';
+
+      let html = `
+        <div class="section">
+          <div class="section-header"><span class="section-icon">&#9878;</span><h3>Rule XI Comparison — ${escapeHtml(data.filename)}</h3></div>
+          <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">${data.totalPages} page(s)${data.truncated ? ' — compared the first ' + data.sampledPages + ' pages (a sample, so the two passes return quickly)' : ''}${data.visionPages ? ' · ' + data.visionPages + ' page(s) via Vision OCR' : ''}. Both columns analyze the same extracted text; the right column additionally receives the DC Rules of Professional Conduct &amp; Rule XI as interpretive context.</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px;border:1px solid var(--color-border-light);border-radius:8px;overflow:hidden;">
+            <thead><tr style="background:var(--color-bg);text-align:left;"><th style="padding:8px 10px;">Metric</th><th style="padding:8px 10px;text-align:center;">Without Rule XI</th><th style="padding:8px 10px;text-align:center;">With Rule XI</th></tr></thead>
+            <tbody>
+              ${metricRow('Sub-documents (sections)', a.sections, b.sections)}
+              ${metricRow('Timeline events', a.events, b.events)}
+              ${metricRow('— of which HIGH significance', a.high, b.high)}
+              ${metricRow('Key dates', a.keyDates, b.keyDates)}
+              ${metricRow('Conflicts flagged', a.conflicts, b.conflicts)}
+            </tbody>
+          </table>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <h4 style="font-size:13px;margin:0 0 8px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.04em;">Without Rule XI</h4>
+              ${colSections(data.without)}
+              <div style="font-size:12px;font-weight:700;margin:10px 0 4px;">Notes</div>${colNotes(data.without)}
+            </div>
+            <div style="border-left:2px solid var(--color-primary);padding-left:16px;">
+              <h4 style="font-size:13px;margin:0 0 8px;color:var(--color-primary);text-transform:uppercase;letter-spacing:0.04em;">With Rule XI context</h4>
+              ${colSections(data.withRuleXI)}
+              <div style="font-size:12px;font-weight:700;margin:10px 0 4px;">Notes</div>${colNotes(data.withRuleXI)}
+            </div>
+          </div>
+        </div>`;
+      results.innerHTML = html;
+      results.classList.add('active');
+      results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     function clearTimeline() {
       document.getElementById('timelineContext').value = '';
+      const rx = document.getElementById('timelineRuleXi'); if (rx) rx.checked = false;
       document.getElementById('timelineFileInput').value = '';
       document.getElementById('timelineFileList').innerHTML = '';
       document.getElementById('timelineError').classList.remove('active');

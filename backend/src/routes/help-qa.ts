@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "../utils/logger.js";
 
 const helpQA = new Hono();
 const anthropic = new Anthropic();
@@ -15,17 +16,20 @@ IMPORTANT RULES:
 APPLICATION FEATURES:
 
 SIGN IN / SIGN OUT:
-- Users log in with their username and PIN on the landing page
-- User accounts are managed by admins (add users, disable users, reset PINs)
+- Users can sign in with Microsoft (Entra ID single sign-on) using their dcbar.org account, or with a username and PIN on the landing page
+- User accounts are managed by admins (add users, set SSO email, disable users, reset PINs, change roles)
 - Session persists until sign out, browser close, or 30-minute inactivity timeout
 - Click the person avatar in the top-right header to see your name and sign out
 
-DOCUMENT TIMELINE TAB:
+DOCUMENT INSIGHT TAB (formerly called "Document Timeline"):
 - Upload PDF or TXT files (drag & drop or click to browse)
 - Click "Extract Timeline" to analyze documents for dates, events, and people
 - Large documents (500+ pages) are auto-chunked and processed in parallel with a progress bar
-- Handwritten/scanned pages are detected and processed with AI Vision OCR
+- Scanned/handwritten/image-only pages are OCR'd: local OCR (Tesseract) runs first at no API cost, with Claude Vision used only as a fallback for low-confidence pages. Large scanned productions (1,000+ pages) show a live "OCR 340 / 1227" progress count.
 - Results show a chronological timeline with events, sources, key dates, and conflicts
+- Table of Contents: detects distinct sub-documents bundled inside one PDF (invoice, engagement letter, bank statement, check, etc.) and lists them as a clickable index; click an entry to open the source PDF at that page
+- Duplicate Content detection: flags EXACT and NEAR-duplicate content blocks within a file or across files, with clickable page locations
+- "⚖ Rule XI Comparison" button: analyzes the first uploaded file twice — without and with DC Rules / Rule XI context — and shows the two results side by side with a metrics-difference table
 - Each event in the timeline has a note icon (pencil/memo) that opens an "Annotate Event" modal where you can:
   - Set a flag: Verify this date, Important, or Conflict
   - Add a free-text note to the event
@@ -47,7 +51,17 @@ DOCUMENT TIMELINE TAB:
   - Annotations appear with an orange left border in italic text
   - Regular events have a plain white background
 
-TRANSLATION TAB:
+DISCOVERY TAB:
+- Tracks the subpoena → production → review workflow for disciplinary matters
+- "+ New Case" creates a docket (auto-numbered, e.g. ODC-2026-0001) with respondent attorney, client/matter, and caption
+- Issue a subpoena per case: choose type (Client file + Financial records, Client-file-only, or Financial-records-only); the standard document-request checklist seeds automatically (12 items for BOTH, 5 for client-file, 7 for financial)
+- "📤 Upload & process a production": upload the attorney's PDF; it runs in the background (extract → local OCR scanned pages → index sub-documents → reconcile) with live status, and supports very large scanned productions
+- Reconciliation marks each requested item RECEIVED / PARTIAL / MISSING / DEFECTIVE; demand/cover-letter text that merely names an item does not count as produced
+- Raises Rule 1.15 (Safekeeping Property) flags when trust ledgers are missing/defective, and drafts a deficiency letter for outstanding items
+- Discovery dashboard shows case counts by phase and overdue subpoenas (deadline passed without full production)
+- Delete a docket (🗑 on a case row, cascades to its subpoenas/productions) or a single production (🗑 on the production); both confirm and are audit-logged
+
+TRANSLATION TAB (labeled "Translation & Handwriting"):
 - Select target language (English, Spanish, Brazilian Portuguese)
 - Upload PDF or TXT files
 - Click "Translate" to translate the document
@@ -65,7 +79,7 @@ DASHBOARD TAB (Home):
   - Hover over any status number to see a blue tooltip with the 5 most recent file names for that status
 - Translation Status breakdown: same as above for translations
 - Recent Activity feed showing last 5 actions
-- Quick Action buttons to jump to Document Timeline or Translation tabs
+- Quick Action buttons to jump to Document Insight or Translation tabs
 
 STATUS TRACKING:
 - Each record (timeline or translation) has a status badge: Draft, In Review, Complete, or Flagged
@@ -141,7 +155,9 @@ helpQA.post("/", async (c) => {
 
     return c.json({ success: true, answer: textBlock.text });
   } catch (error) {
-    console.error("Help Q&A error:", error);
+    logger.error("Help Q&A error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return c.json({ error: "Help request failed" }, 500);
   }
 });
