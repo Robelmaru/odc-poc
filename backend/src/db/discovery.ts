@@ -226,13 +226,46 @@ export function listRespondents(): RespondentAttorney[] {
 // ── Cases ────────────────────────────────────────────────────────────────────
 
 /** Generate the next docket number for the given year, e.g. ODC-2026-0001. */
+// Monotonic per-year docket counter (finding DB-009). Deriving the next number
+// from COUNT(*) reused numbers after a delete and could collide under concurrency.
+// A persistent counter is monotonic and atomic.
+db.exec(
+  `CREATE TABLE IF NOT EXISTS docket_sequences (year INTEGER PRIMARY KEY, last_seq INTEGER NOT NULL DEFAULT 0);`,
+);
+// Backfill from any existing dockets so we never reissue a number already in use.
+{
+  const existing = db.prepare(`SELECT docket_number FROM cases`).all() as {
+    docket_number: string;
+  }[];
+  const maxByYear = new Map<number, number>();
+  for (const r of existing) {
+    const m = /^ODC-(\d+)-(\d+)$/.exec(r.docket_number);
+    if (m) {
+      const y = Number(m[1]);
+      const s = Number(m[2]);
+      if (s > (maxByYear.get(y) ?? 0)) maxByYear.set(y, s);
+    }
+  }
+  const seed = db.prepare(
+    `INSERT INTO docket_sequences (year, last_seq) VALUES (?, ?)
+     ON CONFLICT(year) DO UPDATE SET last_seq = MAX(last_seq, excluded.last_seq)`,
+  );
+  for (const [y, s] of maxByYear) seed.run(y, s);
+}
+
 export function nextDocketNumber(year: number): string {
-  const prefix = `ODC-${year}-`;
-  const row = db
-    .prepare(`SELECT COUNT(*) AS n FROM cases WHERE docket_number LIKE ?`)
-    .get(prefix + "%") as { n: number };
-  const seq = String(row.n + 1).padStart(4, "0");
-  return `${prefix}${seq}`;
+  const next = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO docket_sequences (year, last_seq) VALUES (?, 0) ON CONFLICT(year) DO NOTHING`,
+    ).run(year);
+    db.prepare(`UPDATE docket_sequences SET last_seq = last_seq + 1 WHERE year = ?`).run(year);
+    return (
+      db.prepare(`SELECT last_seq FROM docket_sequences WHERE year = ?`).get(year) as {
+        last_seq: number;
+      }
+    ).last_seq;
+  })();
+  return `ODC-${year}-${String(next).padStart(4, "0")}`;
 }
 
 export function createCase(p: {

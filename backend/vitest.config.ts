@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
+    // Integration tests open the DB modules against an in-memory SQLite database
+    // so they never touch real case data (TEST-007).
+    env: { DATABASE_PATH: ":memory:" },
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
