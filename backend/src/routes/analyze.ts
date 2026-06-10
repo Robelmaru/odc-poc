@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import Anthropic from "@anthropic-ai/sdk";
 import { analyzeComplaintPrompt, type AnalysisResult } from "../skills/AnalyzeComplaint.js";
+import { AnalysisResultSchema } from "../schemas/claudeResults.js";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
 
@@ -137,7 +138,8 @@ When citing sources in the timeline, you MUST use these EXACT filenames. Do not 
       if (jsonMatch?.[1]) {
         jsonText = jsonMatch[1];
       }
-      analysis = JSON.parse(jsonText);
+      // Validate the model's JSON shape before returning/saving it (TS-001).
+      analysis = AnalysisResultSchema.parse(JSON.parse(jsonText)) as unknown as AnalysisResult;
     } catch (parseError) {
       logger.error("Failed to parse Claude response as JSON", {
         error: parseError instanceof Error ? parseError.message : String(parseError),

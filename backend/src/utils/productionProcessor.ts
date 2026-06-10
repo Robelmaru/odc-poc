@@ -15,6 +15,7 @@ import {
   productionCompliancePrompt,
   type ProductionComplianceResult,
 } from "../skills/ProductionCompliance.js";
+import { ProductionComplianceResultSchema } from "../schemas/claudeResults.js";
 import { insertRecord, insertNotification, insertAuditLog } from "../db/database.js";
 import {
   getProduction,
@@ -89,7 +90,11 @@ export async function reconcileProductionContent(opts: {
   logTokenUsage("reconcile", response.usage);
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") throw new Error("No response from model");
-  const result = parseJson<ProductionComplianceResult>(block.text);
+  // Validate before any DB write: per-field coercion keeps a malformed leaf from
+  // corrupting production_items; a non-object response throws and fails the job.
+  const result = ProductionComplianceResultSchema.parse(
+    parseJson<unknown>(block.text),
+  ) as unknown as ProductionComplianceResult;
 
   const items = Array.isArray(result.items) ? result.items : [];
   replaceProductionItems(
