@@ -1,0 +1,34 @@
+# Runs Claude Code review on every pull request.
+#
+# This is a single-developer project, so this workflow is the PRIMARY
+# code-quality gate — require it as a status check in branch protection on
+# staging and main (see DC Bar STANDARDS.md A.4.1).
+#
+# Setup required at the repo level (one-time):
+#   1. Install the "Claude Code" GitHub App on this repository.
+#   2. Add ANTHROPIC_API_KEY as a repository secret (or org secret scoped here).
+
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The slash commands in .claude/commands/ run as part of the review.
+          commands: "/standards-review,/security-review"

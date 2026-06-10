@@ -4,11 +4,12 @@ services:
     ports:
       - "3001:3000"
     environment:
+      # Secrets are read from the environment / local .env — never hardcoded here.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DATABASE_PATH=/app/backend/data/odc-poc.db
-      - PIN_CATERINA=1111
-      - PIN_ABESHA=2222
-      - PIN_ROBEL=3333
+      - PIN_CATERINA=${PIN_CATERINA}
+      - PIN_ABESHA=${PIN_ABESHA}
+      - PIN_ROBEL=${PIN_ROBEL}
     volumes:
       - ./backend/data:/app/backend/data
     restart: unless-stopped

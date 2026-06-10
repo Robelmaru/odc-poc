@@ -1,9 +1,27 @@
 node_modules/
 .env
+.env.local
 *.log
 .DS_Store
-.claude/
 
-# SQLite ephemeral files (only the .db file should be tracked)
+# Claude Code: keep shared review commands in the repo, ignore local settings
+.claude/*
+!.claude/commands/
+.claude/settings.local.json
+
+# SQLite databases hold real case data — never commit them
+*.db
 *.db-shm
 *.db-wal
+
+# Local data dir (SQLite DBs + vendored Tesseract data) and sample case files —
+# hold real case data / large vendored binaries; never commit
+backend/data/
+Sample Cases/
+
+# Test coverage output
+coverage/
+
+# DC Bar code-review output (point-in-time snapshots, not source)
+findings.md
+findings.previous.md

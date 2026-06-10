@@ -2,26 +2,42 @@
   "name": "odc-poc-nj",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "start": "node --env-file=.env --import=tsx src/index.ts",
-    "dev": "node --env-file=.env --import=tsx --watch src/index.ts"
+    "dev": "node --env-file=.env --import=tsx --watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/pdf-parse": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.8"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@azure/msal-node": "^5.2.2",
-    "@hono/node-server": "^1.13.0",
+    "@hono/node-server": "1.19.14",
     "@types/pg": "^8.20.0",
     "better-sqlite3": "^12.8.0",
-    "hono": "^4.11.4",
+    "hono": "4.12.25",
     "pdf-parse": "^2.4.5",
     "pdf-poppler": "^0.2.3",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "tesseract.js": "^7.0.0"
   }
 }

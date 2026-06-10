@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
-    // Environment setup
-    "lib": ["ESNext"],
-    "target": "ESNext",
+    // Environment setup (DC Bar standard: target ES2022, NodeNext modules)
+    "lib": ["ES2022"],
+    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "moduleDetection": "force",
     "allowJs": true,
     "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
 
     // No emit - tsx handles execution
     "noEmit": true,
