@@ -42,6 +42,7 @@ import {
 import { issueSession, type AppEnv } from "../auth/session.js";
 import { verifyPin } from "../auth/pin.js";
 import { safeJsonParse } from "../utils/json.js";
+import { isSimilar } from "../utils/textSimilarity.js";
 
 function getValidStaff(): string[] {
   return getActiveUsernames();
@@ -356,81 +357,7 @@ records.post("/merge", async (c) => {
 
   if (records_data.length < 2) return c.json({ error: "Could not load selected records" }, 400);
 
-  // Normalize text for fuzzy dedup: lowercase, collapse whitespace, strip punctuation
-  function normalize(s: string): string {
-    return s
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  // Extract key words (remove common filler) for comparison
-  function keyWords(s: string): Set<string> {
-    const stop = new Set([
-      "the",
-      "a",
-      "an",
-      "of",
-      "to",
-      "in",
-      "on",
-      "at",
-      "for",
-      "and",
-      "or",
-      "was",
-      "were",
-      "is",
-      "by",
-      "with",
-      "from",
-      "that",
-      "this",
-      "it",
-      "be",
-      "as",
-      "had",
-      "has",
-      "have",
-    ]);
-    return new Set(
-      normalize(s)
-        .split(" ")
-        .filter((w) => w.length > 2 && !stop.has(w)),
-    );
-  }
-
-  // Jaccard similarity: overlap of key words
-  function wordOverlap(a: string, b: string): number {
-    const wa = keyWords(a);
-    const wb = keyWords(b);
-    if (wa.size === 0 || wb.size === 0) return 0;
-    let intersection = 0;
-    for (const w of wa) {
-      if (wb.has(w)) intersection++;
-    }
-    return intersection / Math.min(wa.size, wb.size);
-  }
-
-  function isSimilar(a: string, b: string): boolean {
-    const na = normalize(a);
-    const nb = normalize(b);
-    if (na === nb) return true;
-    // Check if one contains most of the other
-    const shorter = na.length < nb.length ? na : nb;
-    const longer = na.length < nb.length ? nb : na;
-    if (
-      shorter.length > 15 &&
-      longer.includes(shorter.substring(0, Math.floor(shorter.length * 0.7)))
-    )
-      return true;
-    // Check word overlap — if 60%+ of key words match, it's the same event
-    if (wordOverlap(a, b) >= 0.6) return true;
-    return false;
-  }
-
-  // Merge timelines: combine all events, fuzzy dedup, sort by date
+  // Merge timelines: combine all events, fuzzy dedup (isSimilar), sort by date
   const mergedTimeline = records_data[0].timeline;
   for (let i = 1; i < records_data.length; i++) {
     const other = records_data[i].timeline;
