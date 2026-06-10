@@ -1,0 +1,35 @@
+name: Build and push image
+
+# Builds the application image and pushes it to the GitHub Container Registry
+# (GHCR / GitHub Packages) on merge to staging or main, tagged by commit SHA.
+# Images are NOT built on the servers. Deployment is GitOps: bump the image tag
+# in the target environment's manifests in the promotion PR.
+
+on:
+  push:
+    branches: [staging, main]
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # required to push to GHCR with GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The root Dockerfile is multi-stage and expects the repo root as context
+      # (it copies backend/ and frontend/).
+      - name: Build and push (immutable commit-SHA tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
