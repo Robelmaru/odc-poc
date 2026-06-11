@@ -11,9 +11,9 @@ resources:
 
 # Image tag for this environment. The develop -> staging promotion PR bumps newTag
 # to the commit SHA CI built (retags BOTH the Deployment and the migration Job):
-#   kustomize edit set image ghcr.io/robelmaru/odc-poc=ghcr.io/robelmaru/odc-poc:<commit-sha>
+#   kustomize edit set image ghcr.io/dc-bar-web/odc-poc=ghcr.io/dc-bar-web/odc-poc:<commit-sha>
 images:
-  - name: ghcr.io/robelmaru/odc-poc
+  - name: ghcr.io/dc-bar-web/odc-poc
     newTag: REPLACE_WITH_COMMIT_SHA
 
 patches:

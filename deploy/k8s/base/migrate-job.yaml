@@ -18,7 +18,7 @@ spec:
           # Same image+SHA as the Deployment (retagged together by the overlay).
           # Applies backend/migrations/ via the drizzle-orm migrator (drizzle-kit is
           # a devDependency and not in the production image).
-          image: ghcr.io/robelmaru/odc-poc:latest
+          image: ghcr.io/dc-bar-web/odc-poc:latest
           command: ["node", "--import=tsx", "src/migrate.ts"]
           envFrom:
             - secretRef:

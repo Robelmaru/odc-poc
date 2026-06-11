@@ -20,7 +20,7 @@ spec:
         - name: app
           # TAG is set per environment by each overlay's `images:` entry (kustomize),
           # bumped to the built commit SHA by the promotion PR.
-          image: ghcr.io/robelmaru/odc-poc:latest
+          image: ghcr.io/dc-bar-web/odc-poc:latest
           ports:
             - containerPort: 3000
           envFrom:

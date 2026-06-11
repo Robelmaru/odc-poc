@@ -24,7 +24,7 @@ Argo CD points each environment's `Application` (in `../../argocd/`) at an
 
 ## Per-app onboarding (one-time, done by an operator)
 
-1. **Image**: the GHCR package is `ghcr.io/robelmaru/odc-poc` (built/pushed by
+1. **Image**: the GHCR package is `ghcr.io/dc-bar-web/odc-poc` (built/pushed by
    `.github/workflows/build-image.yml`). Adjust `OWNER` if the repo moves orgs.
 2. **Secrets**: create the cluster Secrets in each namespace:
    - `ghcr-pull` — image-pull secret for ghcr.io.

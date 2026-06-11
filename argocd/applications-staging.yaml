@@ -13,7 +13,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Robelmaru/odc-poc.git
+    repoURL: https://github.com/DC-Bar-web/odc-poc.git
     targetRevision: staging
     path: deploy/k8s/overlays/staging
   destination:

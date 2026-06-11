@@ -25,6 +25,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GHCR repository names must be lowercase; ${{ github.repository }} preserves
+      # the org's casing (DC-Bar-web), so lowercase it explicitly.
+      - name: Compute lowercase image name
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       # The root Dockerfile is multi-stage and expects the repo root as context
       # (it copies backend/ and frontend/).
       - name: Build and push (immutable commit-SHA tag)
@@ -32,4 +38,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: ${{ steps.img.outputs.name }}:${{ github.sha }}
