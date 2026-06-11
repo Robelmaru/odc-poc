@@ -10,23 +10,24 @@ and serves a single-page frontend.
 
 ## Stack
 
-- **Runtime**: Node.js 20 LTS (executed with `tsx`, no build/emit step).
-- **Framework**: Hono (`hono` + `@hono/node-server`). *(Platform standard is Fastify — see deviations.)*
+- **Runtime**: Node.js 20 LTS (executed with `tsx`, no build/emit step), pinned via Volta.
+- **Framework**: **Fastify 5** (routes are plugins; `@fastify/{cookie,cors,helmet,multipart,rate-limit,static,swagger,swagger-ui}`). JSON-schema validation on routes; OpenAPI served at `/api/docs`.
 - **Language**: TypeScript 5, strict mode **on** (`backend/tsconfig.json`).
-- **Database**: **PostgreSQL + pgvector** via a pooled `pg` client (`backend/src/db/client.ts`), connection from `DATABASE_URL`. **Drizzle** owns the schema (`backend/src/db/schema.ts`) and migrations (`backend/migrations/`); queries are parameterized raw SQL through the pool. *(Migrated from SQLite — now matches the platform standard.)*
-- **AI**: Anthropic SDK (`@anthropic-ai/sdk`) called directly (allowed by platform standard for direct SDK use). GPTZero used for AI-text detection with a Claude fallback.
-- **Auth**: Microsoft Entra ID (Azure AD) SSO via `@azure/msal-node`, plus a legacy staff-PIN fallback.
+- **Database**: **PostgreSQL + pgvector** via a pooled `pg` client (`backend/src/db/client.ts`), connection from `DATABASE_URL`. **Drizzle** owns the schema (`backend/src/db/schema.ts`) and migrations (`backend/migrations/`); queries are parameterized raw SQL through the pool.
+- **AI**: Anthropic SDK (`@anthropic-ai/sdk`) called directly (allowed by platform standard for direct SDK use); token usage logged. GPTZero used for AI-text detection with a Claude fallback.
+- **Auth**: Microsoft Entra ID (Azure AD) SSO via `@azure/msal-node`, plus a legacy staff-PIN fallback. Server-side sessions (httpOnly cookie + `sessions` table).
 - **OCR/PDF**: `tesseract.js` (OCR), `pdf-parse` + `pdf-poppler` (PDF text/image extraction).
-- **Validation**: none formal yet (manual). *(Gap — see findings.)*
-- **Testing**: Vitest (`--passWithNoTests` today; no suite yet — see findings).
-- **Package manager**: npm. *(Platform standard is pnpm — see deviations.)*
-- **Deployment target**: local Docker / `docker compose` only (no k8s/argocd yet).
+- **Validation**: Zod for Claude JSON output (`backend/src/schemas/`); Fastify JSON-schema for request bodies.
+- **Testing**: Vitest with `@vitest/coverage-v8`; integration tests run against a real Postgres (CI spins up a pgvector service).
+- **Package manager**: **pnpm** (exact-pinned deps, `packageManager` + Volta pinned).
+- **Deployment**: local `docker compose` for dev; **`deploy/k8s/`** (Kustomize base + staging/production overlays) reconciled by **Argo CD** (`argocd/`) for staging/prod. Multi-stage non-root Docker image pushed to GHCR by CI.
 
 ## Repository layout
 
-- `backend/src/index.ts` — Hono server entry; mounts all `/api/*` routes and serves the frontend.
-- `backend/src/routes/` — one file per API surface (`analyze`, `qa`, `timeline`, `timeline-qa`, `records`, `translate`, `translation-qa`, `help-qa`, `ai-detect`, `auth`, `discovery`).
-- `backend/src/db/` — SQLite access (e.g. `discovery.ts`).
+- `backend/src/index.ts` — Fastify server entry; registers route plugins under `/api/*`, the auth hook, error handler, OpenAPI, and static frontend.
+- `backend/src/routes/` — one Fastify plugin per API surface (`analyze`, `qa`, `timeline`, `timeline-qa`, `records`, `translate`, `translation-qa`, `help-qa`, `ai-detect`, `auth`, `discovery`, `session`).
+- `backend/src/db/` — Postgres access: `client.ts` (pool + query helpers), `database.ts`, `discovery.ts`, `schema.ts` (Drizzle); migrations in `backend/migrations/`.
+- `backend/src/auth/` — `session.ts` (cookie sessions + auth hook), `pin.ts` (scrypt). `backend/src/migrate.ts` — prod migration entrypoint.
 - `backend/src/knowledge/` — domain knowledge encoded for the model (`dcRules.ts`, `subpoenaChecklist.ts`).
 - `backend/src/skills/` — higher-level analysis units (`ProductionCompliance.ts`, `SectionIndex.ts`).
 - `backend/src/utils/` — shared helpers (`pdfUtils.ts`, `duplicateDetector.ts`, `productionProcessor.ts`, `timelinePipeline.ts`, `logger.ts`).
@@ -37,18 +38,14 @@ and serves a single-page frontend.
 
 - All DB access goes through modules in `backend/src/db/` (`database.ts`, `discovery.ts`); the pooled client lives in `db/client.ts`. Routes never query the pool directly.
 - All SQL uses **bound parameters** (the `?`→`$n` helper in `db/client.ts`) — never string-concatenate user input into SQL.
-- Long-running requests (OCR, multi-pass Claude comparisons) are expected; HTTP timeouts are disabled in `index.ts` on purpose.
-- Use the structured logger in `backend/src/utils/logger.ts`; do not add `console.log` to committed code (the startup banner is the one allowed exception).
+- Long-running requests (OCR, multi-pass Claude comparisons) are expected; the Fastify request timeout is disabled in `index.ts` on purpose.
+- Use the structured logger in `backend/src/utils/logger.ts`; do not add `console.log` to committed code (the logger is the one sanctioned sink).
 
-## Known intentional deviations
+## Platform-standard conformance
 
-These diverge from the DC Bar platform standard **on purpose** because this is a POC. They are tracked for a future migration, not bugs to fix in passing:
+The platform-stack deviations that were originally documented here have been resolved: **Fastify** (was Hono), **PostgreSQL + pgvector / Drizzle migrations** (was SQLite), **pnpm + exact-pinned deps + Volta** (was npm/`^`), **multi-stage non-root Docker + GHCR**, **`deploy/k8s` Kustomize + `argocd/`**, structured logging, and a **Vitest suite + CI coverage gate** (was none).
 
-- **Hono instead of Fastify.** No JSON-schema route validation / auto OpenAPI yet.
-- ~~SQLite instead of PostgreSQL~~ — **DONE.** Migrated to PostgreSQL + pgvector with Drizzle migrations. JSON-bearing columns are still `text` (app does `JSON.stringify`/`safeJsonParse`) and 0/1 flag columns are still `integer` — a faithful engine migration; moving those to `jsonb`/`boolean` and a `shared_with` junction table (DB-006) is a tracked follow-up.
-- **npm instead of pnpm**, dependencies use `^` ranges rather than exact pins, Node not pinned via Volta.
-- **No `deploy/k8s/` Kustomize tree and no `argocd/` Applications.** Deployment is local `docker compose` only.
-- **No test suite yet** (Vitest is wired but empty).
+Remaining minor backlog (refinements, not platform deviations): JSON-bearing columns are still `text` and 0/1 flags `integer` (a faithful engine migration; `jsonb`/`boolean` + a `shared_with` junction table = DB-006 follow-up); Fastify route schemas cover request bodies + tags but not exhaustive response schemas; HTTP-route-level test coverage (TEST-013) is still thin.
 
 ## Out of scope for review
 
