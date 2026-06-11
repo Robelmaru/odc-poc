@@ -331,19 +331,26 @@ export async function getDashboardStats(staffId: string) {
     `SELECT COALESCE(status, 'draft') as status, COUNT(*)::int as count FROM translation_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`,
     [staffId],
   );
+  // Recent 5 per status for hover previews — one windowed query per table
+  // instead of one-per-status (DB-004).
   const statusNames = ["draft", "in_review", "complete", "flagged"];
-  const timelineRecent: Record<string, unknown[]> = {};
-  const translationRecent: Record<string, unknown[]> = {};
-  for (const s of statusNames) {
-    timelineRecent[s] = await query(
-      `SELECT record_name, file_names FROM timeline_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`,
-      [staffId, s],
+  const recentPerStatus = (table: string) =>
+    query<{ status: string; record_name: string | null; file_names: string }>(
+      `SELECT status, record_name, file_names FROM (
+         SELECT COALESCE(status, 'draft') AS status, record_name, file_names,
+                ROW_NUMBER() OVER (PARTITION BY COALESCE(status, 'draft') ORDER BY created_at DESC) AS rn
+         FROM ${table} WHERE staff_id = ?
+       ) ranked WHERE rn <= 5`,
+      [staffId],
     );
-    translationRecent[s] = await query(
-      `SELECT record_name, file_names FROM translation_records WHERE staff_id = ? AND COALESCE(status, 'draft') = ? ORDER BY created_at DESC LIMIT 5`,
-      [staffId, s],
-    );
-  }
+  const groupByStatus = (rows: { status: string }[]) => {
+    const out: Record<string, unknown[]> = {};
+    for (const s of statusNames) out[s] = [];
+    for (const r of rows) (out[r.status] ??= []).push(r);
+    return out;
+  };
+  const timelineRecent = groupByStatus(await recentPerStatus("timeline_records"));
+  const translationRecent = groupByStatus(await recentPerStatus("translation_records"));
   return {
     timelineRecords: timelineCount!.count,
     translationRecords: translationCount!.count,

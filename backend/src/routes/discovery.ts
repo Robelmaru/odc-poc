@@ -18,7 +18,9 @@ import {
   getOverdueSubpoenas,
   createProduction,
   getProduction,
-  listProductionsBySubpoena,
+  listProductionsForSubpoenas,
+  getItemsForProductions,
+  groupBy,
   updateProductionIntake,
   getProductionItems,
   getLatestProductionJob,
@@ -91,16 +93,20 @@ discovery.get("/cases/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const caseRow = await getCase(id);
   if (!caseRow) return c.json({ error: "Case not found" }, 404);
+  // Batched (4 queries total, not 1 + N + N×M — DB-005).
   const subpoenaRows = await listSubpoenasByCase(id);
-  const subpoenas = await Promise.all(
-    subpoenaRows.map(async (s) => {
-      const prodRows = await listProductionsBySubpoena(s.id);
-      const productions = await Promise.all(
-        prodRows.map(async (p) => ({ ...p, items: await getProductionItems(p.id) })),
-      );
-      return { ...s, requested_items: safeJsonParse(s.requested_items, []), productions };
-    }),
+  const prodRows = await listProductionsForSubpoenas(subpoenaRows.map((s) => s.id));
+  const itemRows = await getItemsForProductions(prodRows.map((p) => p.id));
+  const itemsByProd = groupBy(itemRows, (i) => i.production_id);
+  const prodsBySub = groupBy(
+    prodRows.map((p) => ({ ...p, items: itemsByProd.get(p.id) ?? [] })),
+    (p) => p.subpoena_id,
   );
+  const subpoenas = subpoenaRows.map((s) => ({
+    ...s,
+    requested_items: safeJsonParse(s.requested_items, []),
+    productions: prodsBySub.get(s.id) ?? [],
+  }));
   return c.json({ success: true, case: caseRow, subpoenas });
 });
 
@@ -188,10 +194,12 @@ discovery.get("/subpoenas/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const s = await getSubpoena(id);
   if (!s) return c.json({ error: "Subpoena not found" }, 404);
-  const prodRows = await listProductionsBySubpoena(id);
-  const productions = await Promise.all(
-    prodRows.map(async (p) => ({ ...p, items: await getProductionItems(p.id) })),
+  const prodRows = await listProductionsForSubpoenas([id]);
+  const itemsByProd = groupBy(
+    await getItemsForProductions(prodRows.map((p) => p.id)),
+    (i) => i.production_id,
   );
+  const productions = prodRows.map((p) => ({ ...p, items: itemsByProd.get(p.id) ?? [] }));
   return c.json({
     success: true,
     subpoena: { ...s, requested_items: safeJsonParse(s.requested_items, []) },

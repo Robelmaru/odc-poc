@@ -416,6 +416,42 @@ export async function getProductionItems(productionId: number): Promise<Producti
   );
 }
 
+// ── Batched fetches (collapse N+1 — DB-004/005) ──────────────────────────────
+
+/** All productions across many subpoenas, in one query. */
+export async function listProductionsForSubpoenas(subpoenaIds: number[]): Promise<ProductionRow[]> {
+  if (subpoenaIds.length === 0) return [];
+  return query<ProductionRow>(
+    `SELECT * FROM productions WHERE subpoena_id = ANY(?::int[]) ORDER BY version_number ASC`,
+    [subpoenaIds],
+  );
+}
+
+/** All production items across many productions, in one query. */
+export async function getItemsForProductions(
+  productionIds: number[],
+): Promise<ProductionItemRow[]> {
+  if (productionIds.length === 0) return [];
+  return query<ProductionItemRow>(
+    `SELECT * FROM production_items WHERE production_id = ANY(?::int[]) ORDER BY id ASC`,
+    [productionIds],
+  );
+}
+
+/** Group rows by a numeric key into a Map of arrays. */
+function groupBy<T>(rows: T[], key: (row: T) => number): Map<number, T[]> {
+  const out = new Map<number, T[]>();
+  for (const row of rows) {
+    const k = key(row);
+    const arr = out.get(k);
+    if (arr) arr.push(row);
+    else out.set(k, [row]);
+  }
+  return out;
+}
+
+export { groupBy };
+
 // ── Production jobs (background processing) ─────────────────────────────────
 
 export async function createProductionJob(productionId: number): Promise<{ id: number }> {

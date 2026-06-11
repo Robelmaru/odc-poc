@@ -8,6 +8,11 @@ import {
   createCase,
   deleteCase,
   createSubpoena,
+  createProduction,
+  replaceProductionItems,
+  listProductionsForSubpoenas,
+  getItemsForProductions,
+  groupBy,
   getOverdueSubpoenas,
 } from "../src/db/discovery.js";
 
@@ -54,6 +59,36 @@ describe("nextDocketNumber via createCase (TEST-008 / DB-009)", () => {
     const d = await createCase({ year: 2099 });
     createdCaseIds.push(d.id);
     expect(seqOf(d.docket_number)).toBe(sc + 1); // 0004-style, no reuse of 0003
+  });
+});
+
+describe("batched production fetch (DB-005)", () => {
+  it("fetches productions + items in batch and groups them by parent", async () => {
+    const caseRow = await createCase({ year: 2097 });
+    createdCaseIds.push(caseRow.id);
+    const sub = await createSubpoena({
+      case_id: caseRow.id,
+      subpoena_type: "BOTH",
+      requested_items: [],
+    });
+    const p1 = await createProduction({ subpoena_id: sub.id });
+    const p2 = await createProduction({ subpoena_id: sub.id });
+    await replaceProductionItems(p1.id, [
+      { item_type: "bank_statements", status: "received" },
+      { item_type: "fee_agreement", status: "missing" },
+    ]);
+
+    const prods = await listProductionsForSubpoenas([sub.id]);
+    expect(prods).toHaveLength(2);
+    const items = await getItemsForProductions(prods.map((p) => p.id));
+    const byProd = groupBy(items, (i) => i.production_id);
+    expect(byProd.get(p1.id)).toHaveLength(2);
+    expect(byProd.get(p2.id) ?? []).toHaveLength(0);
+  });
+
+  it("batch helpers return [] for an empty id list", async () => {
+    expect(await listProductionsForSubpoenas([])).toEqual([]);
+    expect(await getItemsForProductions([])).toEqual([]);
   });
 });
 
