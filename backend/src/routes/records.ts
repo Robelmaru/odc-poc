@@ -325,7 +325,7 @@ export default async function records(app: FastifyInstance) {
       return reply.code(404).send({ error: "Record not found or not yours" });
     const activeStaff = await getActiveUsernames();
     const validShares = share_with.filter((s: string) => activeStaff.includes(s) && s !== me);
-    await updateRecordSharing(JSON.stringify(validShares), record_id);
+    await updateRecordSharing(validShares, record_id);
     await insertAuditLog({
       staff_id: me,
       action: "share_record",

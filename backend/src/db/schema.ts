@@ -25,6 +25,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -91,6 +92,24 @@ export const timelineRecords = pgTable(
     productionId: integer("production_id"),
   },
   (t) => [index("idx_timeline_staff").on(t.staffId), index("idx_timeline_status").on(t.status)],
+);
+
+// DB-006: normalized record sharing. `record_shares` is the source of truth for
+// which staff a timeline record is shared with; `timeline_records.shared_with`
+// (TEXT) is kept as a denormalized cache for API responses. Indexed by staff_id
+// so "records shared with me" is an index lookup, not a full-table LIKE scan.
+export const recordShares = pgTable(
+  "record_shares",
+  {
+    recordId: integer("record_id")
+      .notNull()
+      .references(() => timelineRecords.id, { onDelete: "cascade" }),
+    staffId: text("staff_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.recordId, t.staffId] }),
+    index("idx_record_shares_staff").on(t.staffId),
+  ],
 );
 
 export const translationRecords = pgTable(

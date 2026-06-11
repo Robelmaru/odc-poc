@@ -1,12 +1,8 @@
 // Core data access (PostgreSQL via the pooled `pg` client in ./client.ts).
 // Schema + migrations are owned by Drizzle (src/db/schema.ts, migrations/);
 // this module is queries + startup seeding only.
-import { query, queryOne, execute } from "./client.js";
+import { query, queryOne, execute, withTransaction } from "./client.js";
 import { hashPin, isHashed } from "../auth/pin.js";
-
-// Escape LIKE metacharacters so a username containing % or _ can't act as a
-// wildcard in the shared_with match (DB-003 correctness). Used with ESCAPE '\'.
-const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
 
 // ── Startup: clean expired sessions, seed default users, hash legacy PINs ────
 // Runs once at import (top-level await). Assumes migrations have been applied
@@ -91,9 +87,10 @@ export async function getRecordsByStaff(staffId: string) {
   return query(
     `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, ai_score, length(timeline)::int as timeline_size
      FROM timeline_records
-     WHERE staff_id = ? OR shared_with LIKE '%"' || ? || '"%' ESCAPE '\\'
+     WHERE staff_id = ?
+        OR EXISTS (SELECT 1 FROM record_shares rs WHERE rs.record_id = timeline_records.id AND rs.staff_id = ?)
      ORDER BY created_at DESC`,
-    [staffId, escapeLike(staffId)],
+    [staffId, staffId],
   );
 }
 
@@ -115,8 +112,26 @@ export async function deleteRecord(id: number, staffId: string) {
   return { changes };
 }
 
-export async function updateRecordSharing(sharedWith: string, id: number) {
-  await execute(`UPDATE timeline_records SET shared_with = ? WHERE id = ?`, [sharedWith, id]);
+/**
+ * DB-006: record_shares is the source of truth; shared_with TEXT is kept as a
+ * write-through cache for API responses. Both are updated in one transaction.
+ */
+export async function updateRecordSharing(sharedWith: string[], id: number) {
+  await withTransaction(async (q) => {
+    await q(`UPDATE timeline_records SET shared_with = ? WHERE id = ?`, [
+      JSON.stringify(sharedWith),
+      id,
+    ]);
+    await q(`DELETE FROM record_shares WHERE record_id = ?`, [id]);
+    if (sharedWith.length > 0) {
+      const rows = sharedWith.map(() => "(?, ?)").join(", ");
+      const params = sharedWith.flatMap((s) => [id, s]);
+      await q(
+        `INSERT INTO record_shares (record_id, staff_id) VALUES ${rows} ON CONFLICT DO NOTHING`,
+        params,
+      );
+    }
+  });
 }
 
 export async function updateRecordName(recordName: string, id: number) {
@@ -344,8 +359,10 @@ export async function getDashboardStats(staffId: string) {
     [staffId],
   );
   const sharedCount = await queryOne<{ count: number }>(
-    `SELECT COUNT(*)::int as count FROM timeline_records WHERE shared_with LIKE '%"' || ? || '"%' ESCAPE '\\' AND staff_id != ?`,
-    [escapeLike(staffId), staffId],
+    `SELECT COUNT(*)::int as count
+     FROM record_shares rs JOIN timeline_records t ON t.id = rs.record_id
+     WHERE rs.staff_id = ? AND t.staff_id != ?`,
+    [staffId, staffId],
   );
   const recentActivity = await query(
     `SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 5`,
