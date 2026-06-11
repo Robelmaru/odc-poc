@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: odc-poc-migrate
+  annotations:
+    # Argo CD PreSync hook: runs and must complete BEFORE the app pods roll out.
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: migrate
+          # Same image+SHA as the Deployment (retagged together by the overlay).
+          # Applies backend/migrations/ via the drizzle-orm migrator (drizzle-kit is
+          # a devDependency and not in the production image).
+          image: ghcr.io/robelmaru/odc-poc:latest
+          command: ["node", "--import=tsx", "src/migrate.ts"]
+          envFrom:
+            - secretRef:
+                name: odc-poc-secrets

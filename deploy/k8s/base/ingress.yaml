@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: odc-poc
+  annotations:
+    # Served by the in-cluster Nginx Ingress Controller (behind the external load balancer).
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # OCR / multi-pass Claude requests are long-running; relax the proxy timeouts.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # Allow large production uploads (matches the app's UPLOAD_MAX_MB default).
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+spec:
+  ingressClassName: nginx
+  # The host below is a placeholder. Each overlay patches it to the real per-environment hostname.
+  tls:
+    - hosts:
+        - odc-poc.example.dcbar.org
+      secretName: odc-poc-tls # org-issued certificate stored as a K8s Secret (see ../../README.md)
+  rules:
+    - host: odc-poc.example.dcbar.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: odc-poc
+                port:
+                  number: 80

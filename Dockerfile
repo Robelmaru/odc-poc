@@ -26,6 +26,7 @@ COPY --from=builder /app/backend/node_modules ./node_modules
 COPY backend/package.json ./
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
+COPY backend/migrations ./migrations
 COPY frontend /app/frontend
 
 # Data dir (vendored tessdata) is a mounted volume at runtime; create + own it.

@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Production overlay. The production Argo CD Application points its source `path`
+# here and uses MANUAL sync — an authorized operator triggers it after the
+# staging -> main PR has its 2 promotion authorizations.
+
+namespace: odc-poc-production
+
+resources:
+  - ../../base
+
+# Image tag for this environment. The staging -> main promotion PR bumps newTag to
+# the commit SHA (retags BOTH the Deployment and the migration Job):
+#   kustomize edit set image ghcr.io/robelmaru/odc-poc=ghcr.io/robelmaru/odc-poc:<commit-sha>
+images:
+  - name: ghcr.io/robelmaru/odc-poc
+    newTag: REPLACE_WITH_COMMIT_SHA
+
+patches:
+  - target:
+      kind: Ingress
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: odc-poc.example.dcbar.org
+      - op: replace
+        path: /spec/rules/0/host
+        value: odc-poc.example.dcbar.org

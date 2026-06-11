@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging overlay. The staging Argo CD Application points its source `path` here
+# and auto-syncs on every change to the `staging` branch.
+
+namespace: odc-poc-staging
+
+resources:
+  - ../../base
+
+# Image tag for this environment. The develop -> staging promotion PR bumps newTag
+# to the commit SHA CI built (retags BOTH the Deployment and the migration Job):
+#   kustomize edit set image ghcr.io/robelmaru/odc-poc=ghcr.io/robelmaru/odc-poc:<commit-sha>
+images:
+  - name: ghcr.io/robelmaru/odc-poc
+    newTag: REPLACE_WITH_COMMIT_SHA
+
+patches:
+  - target:
+      kind: Ingress
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: odc-poc-staging.example.dcbar.org
+      - op: replace
+        path: /spec/rules/0/host
+        value: odc-poc-staging.example.dcbar.org
+  # Staging runs a single replica; production uses the base default of 2.
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1

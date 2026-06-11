@@ -1,0 +1,27 @@
+# Argo CD Application — odc-poc (staging)
+#
+# Register once with the cluster's Argo CD:
+#   kubectl apply -n argocd -f argocd/applications-staging.yaml
+#
+# STAGING auto-syncs: syncPolicy.automated is set, so every change Argo CD sees on
+# the `staging` branch's overlay is reconciled automatically.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: odc-poc-staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Robelmaru/odc-poc.git
+    targetRevision: staging
+    path: deploy/k8s/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: odc-poc-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
