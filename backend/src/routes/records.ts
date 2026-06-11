@@ -3,6 +3,7 @@ import {
   insertRecord,
   getRecordsByStaff,
   getRecordById,
+  getRecordsByIds,
   deleteRecord,
   updateRecordSharing,
   updateRecordName,
@@ -47,12 +48,58 @@ import { randomBytes } from "node:crypto";
 const tags = { tags: ["records"] };
 type Body = Record<string, unknown>;
 
+// Request-body validation fragments (TS-002). `required` matches what each handler
+// already treats as mandatory; optional/nullable fields are intentionally left out
+// of `properties` (additionalProperties stays open) so the SPA can send them with
+// any value. Integer `user_id`/`record_id` stops Number(undefined)=NaN no-ops.
+const str = { type: "string" } as const;
+const idInt = { type: "integer", minimum: 1 } as const;
+const RB = {
+  verify: {
+    type: "object",
+    required: ["staff_id", "pin"],
+    properties: { staff_id: str, pin: str },
+  },
+  createUser: { type: "object", required: ["username"], properties: { username: str } },
+  toggle: { type: "object", required: ["user_id"], properties: { user_id: idInt } },
+  resetPin: {
+    type: "object",
+    required: ["user_id", "new_pin"],
+    properties: { user_id: idInt, new_pin: str },
+  },
+  userEmail: { type: "object", required: ["user_id"], properties: { user_id: idInt } },
+  userRole: {
+    type: "object",
+    required: ["user_id", "role"],
+    properties: { user_id: idInt, role: str },
+  },
+  saveTimeline: {
+    type: "object",
+    required: ["file_names", "timeline"],
+    properties: { file_names: { type: "array" } },
+  },
+  saveTranslation: {
+    type: "object",
+    required: ["file_names", "language", "translation"],
+    properties: { file_names: { type: "array" }, language: str },
+  },
+  share: {
+    type: "object",
+    required: ["record_id", "share_with"],
+    properties: { record_id: idInt, share_with: { type: "array", items: str } },
+  },
+} as const;
+const rsch = (body: object) => ({ schema: { ...tags, body } });
+
 export default async function records(app: FastifyInstance) {
   // PIN verification (public — sets the session cookie). Rate-limited against
   // brute force: 10 attempts / 5 min / IP (SEC-014, via @fastify/rate-limit).
   app.post(
     "/verify",
-    { schema: tags, config: { rateLimit: { max: 10, timeWindow: "5 minutes" } } },
+    {
+      schema: { ...tags, body: RB.verify },
+      config: { rateLimit: { max: 10, timeWindow: "5 minutes" } },
+    },
     async (request, reply) => {
       const { staff_id, pin } = (request.body ?? {}) as { staff_id?: string; pin?: string };
       if (!staff_id || !pin)
@@ -76,7 +123,7 @@ export default async function records(app: FastifyInstance) {
     return { success: true, users: users.map((u) => ({ ...u, pin: "****" })) };
   });
 
-  app.post("/admin/users", { schema: tags }, async (request, reply) => {
+  app.post("/admin/users", rsch(RB.createUser), async (request, reply) => {
     const { username, email, pin, role } = (request.body ?? {}) as Body & {
       username?: string;
       email?: string;
@@ -105,7 +152,7 @@ export default async function records(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.post("/admin/users/toggle", { schema: tags }, async (request, reply) => {
+  app.post("/admin/users/toggle", rsch(RB.toggle), async (request, reply) => {
     const { user_id, active } = (request.body ?? {}) as { user_id?: number; active?: boolean };
     const admin = authUser(request);
     if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
@@ -118,7 +165,7 @@ export default async function records(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.post("/admin/users/reset-pin", { schema: tags }, async (request, reply) => {
+  app.post("/admin/users/reset-pin", rsch(RB.resetPin), async (request, reply) => {
     const { user_id, new_pin } = (request.body ?? {}) as { user_id?: number; new_pin?: string };
     const admin = authUser(request);
     if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
@@ -132,7 +179,7 @@ export default async function records(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.post("/admin/users/email", { schema: tags }, async (request, reply) => {
+  app.post("/admin/users/email", rsch(RB.userEmail), async (request, reply) => {
     const { user_id, email } = (request.body ?? {}) as { user_id?: number; email?: string };
     const admin = authUser(request);
     if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
@@ -145,7 +192,7 @@ export default async function records(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.post("/admin/users/role", { schema: tags }, async (request, reply) => {
+  app.post("/admin/users/role", rsch(RB.userRole), async (request, reply) => {
     const { user_id, role } = (request.body ?? {}) as { user_id?: number; role?: string };
     const admin = authUser(request);
     if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
@@ -161,7 +208,7 @@ export default async function records(app: FastifyInstance) {
   });
 
   // Save a new timeline record
-  app.post("/", { schema: tags }, async (request, reply) => {
+  app.post("/", rsch(RB.saveTimeline), async (request, reply) => {
     const me = authUser(request).username;
     const { record_name, case_number, file_names, notes, summary, ai_score, timeline } =
       (request.body ?? {}) as Body & { file_names?: string[]; record_name?: string };
@@ -186,7 +233,7 @@ export default async function records(app: FastifyInstance) {
   });
 
   // ── Translation Records (registered before /:staffId) ──────────────────────
-  app.post("/translations", { schema: tags }, async (request, reply) => {
+  app.post("/translations", rsch(RB.saveTranslation), async (request, reply) => {
     const me = authUser(request).username;
     const { record_name, file_names, language, language_name, translation } = (request.body ??
       {}) as Body & { file_names?: string[]; language?: string; record_name?: string };
@@ -265,7 +312,7 @@ export default async function records(app: FastifyInstance) {
   });
 
   // Share a record with other staff members
-  app.post("/share", { schema: tags }, async (request, reply) => {
+  app.post("/share", rsch(RB.share), async (request, reply) => {
     const me = authUser(request).username;
     const { record_id, share_with } = (request.body ?? {}) as {
       record_id?: number;
@@ -361,8 +408,11 @@ export default async function records(app: FastifyInstance) {
       [k: string]: unknown;
     }
     const records_data: Record<string, unknown>[] = [];
+    // DB-002: one batched query for all selected ids, then preserve the caller's
+    // selection order (record_ids[0] is the merge base).
+    const byId = new Map((await getRecordsByIds(record_ids)).map((r) => [r.id, r]));
     for (const id of record_ids) {
-      const row = await getRecordById(id);
+      const row = byId.get(id);
       if (!row || row.staff_id !== me) continue;
       records_data.push({
         ...row,

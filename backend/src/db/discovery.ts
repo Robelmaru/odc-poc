@@ -379,20 +379,22 @@ export async function replaceProductionItems(
 ) {
   await withTransaction(async (q) => {
     await q(`DELETE FROM production_items WHERE production_id = ?`, [productionId]);
-    for (const it of items) {
-      await q(
-        `INSERT INTO production_items (production_id, item_type, status, source_section_id, confidence, notes)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          productionId,
-          it.item_type,
-          it.status,
-          it.source_section_id ?? null,
-          it.confidence ?? null,
-          it.notes ?? null,
-        ],
-      );
-    }
+    if (items.length === 0) return;
+    // Bulk insert (DB-004): one multi-row INSERT instead of one round-trip per item.
+    const rowSql = items.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+    const params = items.flatMap((it) => [
+      productionId,
+      it.item_type,
+      it.status,
+      it.source_section_id ?? null,
+      it.confidence ?? null,
+      it.notes ?? null,
+    ]);
+    await q(
+      `INSERT INTO production_items (production_id, item_type, status, source_section_id, confidence, notes)
+       VALUES ${rowSql}`,
+      params,
+    );
   });
 }
 

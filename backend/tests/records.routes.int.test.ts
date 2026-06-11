@@ -117,3 +117,21 @@ describe("auth gate (requireAuth) on protected records routes", () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+describe("TS-002 — request-body validation on admin routes", () => {
+  it("rejects /admin/users/toggle with no user_id (400, before the handler)", async () => {
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/records/verify",
+      payload: { staff_id: USERNAME, pin: PASSWORD },
+    });
+    const token = login.cookies.find((c) => c.name === SESSION_COOKIE)!.value;
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/records/admin/users/toggle",
+      cookies: { [SESSION_COOKIE]: token },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

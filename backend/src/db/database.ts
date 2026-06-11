@@ -97,6 +97,12 @@ export async function getRecordById(id: number) {
   return queryOne<TimelineRecord>(`SELECT * FROM timeline_records WHERE id = ?`, [id]);
 }
 
+/** Batch fetch (DB-002): one query for many ids instead of N getRecordById calls. */
+export async function getRecordsByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return query<TimelineRecord>(`SELECT * FROM timeline_records WHERE id = ANY(?::int[])`, [ids]);
+}
+
 export async function deleteRecord(id: number, staffId: string) {
   const changes = await execute(`DELETE FROM timeline_records WHERE id = ? AND staff_id = ?`, [
     id,
