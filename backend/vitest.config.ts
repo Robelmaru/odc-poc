@@ -19,6 +19,7 @@ export default defineConfig({
       // failing on the not-yet-tested POC surface.
       thresholds: {
         "src/auth/pin.ts": { lines: 90, functions: 100, statements: 90, branches: 70 },
+        "src/auth/session.ts": { lines: 85, functions: 75, statements: 75, branches: 70 },
         "src/utils/duplicateDetector.ts": { lines: 70, functions: 70, statements: 70, branches: 55 },
         "src/knowledge/subpoenaChecklist.ts": { lines: 80, functions: 100, statements: 80, branches: 50 },
         "src/schemas/claudeResults.ts": { lines: 80, functions: 50, statements: 80, branches: 60 },
