@@ -4,6 +4,10 @@
 import { query, queryOne, execute } from "./client.js";
 import { hashPin, isHashed } from "../auth/pin.js";
 
+// Escape LIKE metacharacters so a username containing % or _ can't act as a
+// wildcard in the shared_with match (DB-003 correctness). Used with ESCAPE '\'.
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
+
 // ── Startup: clean expired sessions, seed default users, hash legacy PINs ────
 // Runs once at import (top-level await). Assumes migrations have been applied
 // (db:migrate / the deploy migration step).
@@ -87,9 +91,9 @@ export async function getRecordsByStaff(staffId: string) {
   return query(
     `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, ai_score, length(timeline)::int as timeline_size
      FROM timeline_records
-     WHERE staff_id = ? OR shared_with LIKE '%"' || ? || '"%'
+     WHERE staff_id = ? OR shared_with LIKE '%"' || ? || '"%' ESCAPE '\\'
      ORDER BY created_at DESC`,
-    [staffId, staffId],
+    [staffId, escapeLike(staffId)],
   );
 }
 
@@ -310,6 +314,24 @@ export async function deleteSession(token: string) {
   await execute(`DELETE FROM sessions WHERE token = ?`, [token]);
 }
 
+/**
+ * DB-005: resolve the authenticated user for a session token in a SINGLE query
+ * (the requireAuth hook runs on every request). Joins sessions→users, enforces
+ * expiry, and returns the live role/active flag (so role changes / deactivation
+ * take effect immediately) — replacing the previous getSession + getUserByUsername
+ * round-trip pair.
+ */
+export async function getSessionUser(
+  token: string,
+): Promise<{ username: string; role: string; active: number } | undefined> {
+  return queryOne<{ username: string; role: string; active: number }>(
+    `SELECT u.username, u.role, u.active
+     FROM sessions s JOIN users u ON LOWER(u.username) = LOWER(s.username)
+     WHERE s.token = ? AND s.expires_at > now()`,
+    [token],
+  );
+}
+
 // ── Dashboard Stats ──────────────────────────────────────────────────────
 
 export async function getDashboardStats(staffId: string) {
@@ -322,8 +344,8 @@ export async function getDashboardStats(staffId: string) {
     [staffId],
   );
   const sharedCount = await queryOne<{ count: number }>(
-    `SELECT COUNT(*)::int as count FROM timeline_records WHERE shared_with LIKE '%"' || ? || '"%' AND staff_id != ?`,
-    [staffId, staffId],
+    `SELECT COUNT(*)::int as count FROM timeline_records WHERE shared_with LIKE '%"' || ? || '"%' ESCAPE '\\' AND staff_id != ?`,
+    [escapeLike(staffId), staffId],
   );
   const recentActivity = await query(
     `SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 5`,

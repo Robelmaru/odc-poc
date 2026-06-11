@@ -5,7 +5,7 @@
  */
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { randomBytes } from "node:crypto";
-import { createSession, getSession, deleteSession, getUserByUsername } from "../db/database.js";
+import { createSession, getSessionUser, deleteSession } from "../db/database.js";
 
 export const SESSION_COOKIE = "odc_session";
 const SESSION_TTL_HOURS = 12;
@@ -42,11 +42,10 @@ export async function issueSession(reply: FastifyReply, user: AuthUser): Promise
 export async function getAuthUser(request: FastifyRequest): Promise<AuthUser | null> {
   const token = request.cookies[SESSION_COOKIE];
   if (!token) return null;
-  const session = await getSession(token);
-  if (!session) return null;
-  const user = await getUserByUsername(session.username);
-  if (!user || !user.active) return null;
-  return { username: user.username, role: user.role };
+  // DB-005: one JOIN instead of getSession + getUserByUsername.
+  const row = await getSessionUser(token);
+  if (!row || !row.active) return null;
+  return { username: row.username, role: row.role };
 }
 
 /** Destroy the current session (server-side) and clear the cookie. */
