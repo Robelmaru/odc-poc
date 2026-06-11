@@ -61,9 +61,11 @@ export async function clearSession(request: FastifyRequest, reply: FastifyReply)
  */
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const path = request.url.split("?")[0]!;
-  // Public: non-API paths, the login/health endpoints, and the OpenAPI docs UI.
-  if (!path.startsWith("/api/") || PUBLIC_API_PATHS.has(path) || path.startsWith("/api/docs"))
-    return;
+  // OpenAPI docs are public in dev for convenience but require a session in
+  // production (SEC-009) — they expose the full API/data-model surface.
+  const docsPublic = path.startsWith("/api/docs") && process.env.NODE_ENV !== "production";
+  // Public: non-API paths, the login/health endpoints, and (dev-only) the docs UI.
+  if (!path.startsWith("/api/") || PUBLIC_API_PATHS.has(path) || docsPublic) return;
   const user = await getAuthUser(request);
   if (!user) {
     await reply.code(401).send({ error: "Authentication required" });

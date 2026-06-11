@@ -39,9 +39,8 @@ export default async function qa(app: FastifyInstance) {
             .code(400)
             .send({ error: "Question exceeds maximum length of 2,000 characters" });
 
-        logger.info(
-          `Q&A request: "${question.substring(0, 50)}${question.length > 50 ? "..." : ""}"`,
-        );
+        // Log metadata only — questions can contain case PII (OPS-015).
+        logger.info(`Q&A request received (${question.length} characters)`);
 
         const messages: Anthropic.MessageParam[] = [];
         for (const msg of sanitizeConversationHistory(conversationHistory)) {
