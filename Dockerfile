@@ -4,12 +4,13 @@
 # source. Runs as a non-root user (OPS-006). No native modules remain after the
 # Postgres migration (pg/tesseract.js/pdf-* are pure JS), so no compiler toolchain.
 
-# ---- Builder: install production deps ----
+# ---- Builder: install production deps (pnpm) ----
 FROM node:20-slim AS builder
 WORKDIR /app/backend
-COPY backend/package.json backend/package-lock.json ./
-# --omit=dev keeps eslint/vitest/prettier out of the image; tsx is a prod dep.
-RUN npm ci --omit=dev
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+COPY backend/package.json backend/pnpm-lock.yaml backend/.npmrc ./
+# --prod keeps eslint/vitest/prettier/drizzle-kit out of the image; tsx is a prod dep.
+RUN pnpm install --prod --frozen-lockfile
 
 # ---- Runtime: slim image, only what is needed to run ----
 FROM node:20-slim AS runtime
