@@ -1,11 +1,11 @@
-import { Hono } from "hono";
+import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
 import { translatePrompt, SUPPORTED_LANGUAGES, type LanguageCode } from "../skills/Translate.js";
 import { extractTextFromPdf, chunkText } from "../utils/pdfUtils.js";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
+import { readMultipart } from "../utils/multipart.js";
 
-const translate = new Hono();
 const anthropic = new Anthropic();
 
 async function translateChunk(text: string, targetLanguage: string): Promise<string> {
@@ -16,120 +16,92 @@ async function translateChunk(text: string, targetLanguage: string): Promise<str
     messages: [{ role: "user", content: text }],
   });
   logTokenUsage("translate", response.usage);
-
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("No response from Claude");
   return textBlock.text;
 }
 
-translate.post("/", async (c) => {
-  try {
-    const contentType = c.req.header("Content-Type") || "";
-    if (!contentType.includes("multipart/form-data")) {
-      return c.json({ error: "File upload required." }, 400);
-    }
+export default async function translate(app: FastifyInstance) {
+  app.post("/", { schema: { tags: ["translate"] } }, async (request, reply) => {
+    try {
+      if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
+      const { files, fields } = await readMultipart(request);
+      const language = fields.language ?? null;
 
-    const formData = await c.req.formData();
-    const files = formData.getAll("files") as File[];
-    const language = formData.get("language") as string | null;
+      if (files.length === 0)
+        return reply.code(400).send({ error: "Please upload at least one document." });
+      if (!language || !(language in SUPPORTED_LANGUAGES))
+        return reply.code(400).send({ error: "Please select a target language." });
 
-    if (files.length === 0) {
-      return c.json({ error: "Please upload at least one document." }, 400);
-    }
+      const targetLanguage = SUPPORTED_LANGUAGES[language as LanguageCode];
+      logger.info(`Translating ${files.length} file(s) to ${targetLanguage}...`);
 
-    if (!language || !(language in SUPPORTED_LANGUAGES)) {
-      return c.json({ error: "Please select a target language." }, 400);
-    }
+      const results: { filename: string; translation: string; pages?: number }[] = [];
+      const ocrInfo: { filename: string; visionPages: number; visionClarity?: number }[] = [];
+      const sourceTexts: { filename: string; text: string }[] = [];
 
-    const targetLanguage = SUPPORTED_LANGUAGES[language as LanguageCode];
-    logger.info(`Translating ${files.length} file(s) to ${targetLanguage}...`);
+      for (const file of files) {
+        logger.info(`  Processing: ${file.filename} (${(file.size / 1024).toFixed(1)} KB)`);
+        let fullText = "";
+        let pages: number | undefined;
 
-    const results: { filename: string; translation: string; pages?: number }[] = [];
-    const ocrInfo: { filename: string; visionPages: number; visionClarity?: number }[] = [];
-    const sourceTexts: { filename: string; text: string }[] = [];
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-
-    for (const file of files) {
-      logger.info(`  Processing: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      let fullText = "";
-      let pages: number | undefined;
-
-      if (file.name.endsWith(".pdf")) {
-        const extracted = await extractTextFromPdf(buffer);
-        fullText = extracted.pages.map((p) => p.text).join("\n\n");
-        pages = extracted.totalPages;
-        if (extracted.visionPages > 0) {
-          ocrInfo.push({
-            filename: file.name,
-            visionPages: extracted.visionPages,
-            visionClarity: extracted.visionClarity,
-          });
+        if (file.filename.endsWith(".pdf")) {
+          const extracted = await extractTextFromPdf(file.buffer);
+          fullText = extracted.pages.map((p) => p.text).join("\n\n");
+          pages = extracted.totalPages;
+          if (extracted.visionPages > 0) {
+            ocrInfo.push({
+              filename: file.filename,
+              visionPages: extracted.visionPages,
+              visionClarity: extracted.visionClarity,
+            });
+          }
+          sourceTexts.push({ filename: file.filename, text: fullText.slice(0, 50000) });
+        } else if (file.filename.endsWith(".txt")) {
+          fullText = file.buffer.toString("utf8");
+          sourceTexts.push({ filename: file.filename, text: fullText.slice(0, 50000) });
+        } else {
+          logger.info(`    Skipping unsupported file type: ${file.filename}`);
+          continue;
         }
-        sourceTexts.push({ filename: file.name, text: fullText.slice(0, 50000) });
-        logger.info(
-          `    Extracted ${pages} pages, ${fullText.length.toLocaleString()} characters` +
-            (extracted.visionPages > 0
-              ? `, ${extracted.visionPages} via Vision OCR (${extracted.visionClarity}% clarity)`
-              : ""),
-        );
-      } else if (file.name.endsWith(".txt")) {
-        fullText = await file.text();
-        sourceTexts.push({ filename: file.name, text: fullText.slice(0, 50000) });
-      } else {
-        logger.info(`    Skipping unsupported file type: ${file.name}`);
-        continue;
+
+        const chunks = chunkText(fullText);
+        logger.info(`    Translating in ${chunks.length} chunk(s)...`);
+        const translatedChunks: string[] = [];
+        for (let i = 0; i < chunks.length; i++) {
+          logger.info(`    Chunk ${i + 1}/${chunks.length}...`);
+          translatedChunks.push(await translateChunk(chunks[i]!, targetLanguage!));
+        }
+        results.push({
+          filename: file.filename,
+          translation: translatedChunks.join("\n\n"),
+          pages,
+        });
       }
 
-      const chunks = chunkText(fullText);
-      logger.info(`    Translating in ${chunks.length} chunk(s)...`);
+      if (results.length === 0)
+        return reply.code(400).send({ error: "No supported files could be processed." });
 
-      const translatedChunks: string[] = [];
-      for (let i = 0; i < chunks.length; i++) {
-        logger.info(`    Chunk ${i + 1}/${chunks.length}...`);
-        const translated = await translateChunk(chunks[i]!, targetLanguage!);
-        translatedChunks.push(translated);
-      }
-
-      results.push({
-        filename: file.name,
-        translation: translatedChunks.join("\n\n"),
-        pages,
+      logger.info(`Translation complete for ${results.length} file(s).`);
+      return {
+        success: true,
+        language,
+        languageName: targetLanguage,
+        results,
+        ocrInfo: ocrInfo.length > 0 ? ocrInfo : undefined,
+        sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      };
+    } catch (error) {
+      logger.error("Translation error", {
+        error: error instanceof Error ? error.message : String(error),
       });
+      if (error instanceof Anthropic.APIError) {
+        return reply
+          .code((error.status ?? 500) as number)
+          .send({ error: `Claude API error: ${error.message}` });
+      }
+      return reply.code(500).send({ error: "Translation failed" });
     }
-
-    if (results.length === 0) {
-      return c.json({ error: "No supported files could be processed." }, 400);
-    }
-
-    logger.info(`Translation complete for ${results.length} file(s).`);
-
-    return c.json({
-      success: true,
-      language,
-      languageName: targetLanguage,
-      results,
-      ocrInfo: ocrInfo.length > 0 ? ocrInfo : undefined,
-      sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
-      usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-    });
-  } catch (error) {
-    logger.error("Translation error", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-
-    if (error instanceof Anthropic.APIError) {
-      return c.json(
-        { error: `Claude API error: ${error.message}` },
-        (error.status as 400 | 401 | 403 | 404 | 500) || 500,
-      );
-    }
-
-    return c.json({ error: "Translation failed" }, 500);
-  }
-});
-
-export default translate;
+  });
+}

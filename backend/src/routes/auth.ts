@@ -1,10 +1,8 @@
-import { Hono } from "hono";
+import type { FastifyInstance } from "fastify";
 import { ConfidentialClientApplication, type Configuration } from "@azure/msal-node";
 import { getUserByEmail, insertAuditLog } from "../db/database.js";
 import { issueSession } from "../auth/session.js";
 import { logger } from "../utils/logger.js";
-
-const auth = new Hono();
 
 // In-memory state store (for OAuth state param verification)
 const stateStore = new Map<string, { createdAt: number }>();
@@ -41,118 +39,122 @@ function getAllowedDomains(): string[] {
     .filter(Boolean);
 }
 
-// Check if Entra is configured
-auth.get("/status", (c) => {
-  const client = getMsalClient();
-  return c.json({ enabled: !!client });
-});
+const esc = (s: string): string =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 
-// Start the OAuth login flow
-auth.get("/login", async (c) => {
-  cleanupStates();
-  const client = getMsalClient();
-  if (!client) return c.json({ error: "Entra SSO not configured" }, 500);
+function renderError(title: string, message: string): string {
+  // HTML-escape interpolated values (SEC-001/SEC-009).
+  return `<!DOCTYPE html><html><head><title>${esc(title)}</title>
+<style>body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 20px;color:#333;}
+.box{background:#fef2f2;border:1px solid #ef4444;border-radius:12px;padding:24px;}
+h1{color:#991b1b;margin:0 0 12px;font-size:18px;}
+p{font-size:14px;line-height:1.6;}
+a{color:#1e368e;text-decoration:none;font-weight:600;}
+a:hover{text-decoration:underline;}</style></head>
+<body><div class="box">
+<h1>&#9888; ${esc(title)}</h1>
+<p>${esc(message)}</p>
+<p><a href="/index.html">&larr; Back to login</a></p>
+</div></body></html>`;
+}
 
-  const redirectUri = process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
-  const state = crypto.randomUUID();
-  stateStore.set(state, { createdAt: Date.now() });
-
-  const url = await client.getAuthCodeUrl({
-    scopes: ["openid", "profile", "email", "User.Read"],
-    redirectUri,
-    state,
+export default async function auth(app: FastifyInstance) {
+  // Is Entra configured?
+  app.get("/status", { schema: { tags: ["auth"] } }, async () => {
+    return { enabled: !!getMsalClient() };
   });
 
-  return c.redirect(url);
-});
+  // Start the OAuth login flow
+  app.get("/login", { schema: { tags: ["auth"] } }, async (_request, reply) => {
+    cleanupStates();
+    const client = getMsalClient();
+    if (!client) return reply.code(500).send({ error: "Entra SSO not configured" });
 
-// OAuth callback — exchange code, verify domain, match to local user
-auth.get("/callback", async (c) => {
-  const code = c.req.query("code");
-  const state = c.req.query("state");
-  const error = c.req.query("error");
-  const errorDescription = c.req.query("error_description");
+    const redirectUri = process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
+    const state = crypto.randomUUID();
+    stateStore.set(state, { createdAt: Date.now() });
 
-  if (error) {
-    return c.html(renderError("Microsoft login failed", errorDescription || error));
-  }
-  if (!code || !state) {
-    return c.html(renderError("Missing authorization code", "The login response was incomplete."));
-  }
-  if (!stateStore.has(state)) {
-    return c.html(renderError("Invalid login state", "Please try signing in again."));
-  }
-  stateStore.delete(state);
-
-  const client = getMsalClient();
-  if (!client) return c.html(renderError("SSO not configured", "Contact your administrator."));
-
-  const redirectUri = process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
-
-  try {
-    const tokenResponse = await client.acquireTokenByCode({
-      code,
+    const url = await client.getAuthCodeUrl({
       scopes: ["openid", "profile", "email", "User.Read"],
       redirectUri,
+      state,
     });
+    return reply.redirect(url);
+  });
 
-    const account = tokenResponse.account;
-    const claims = tokenResponse.idTokenClaims as
-      | { preferred_username?: string; name?: string }
-      | undefined;
-    const email = (account?.username || claims?.preferred_username || "").toLowerCase();
-    const name = account?.name || claims?.name || email;
+  // OAuth callback — exchange code, verify domain, match to local user
+  app.get("/callback", { schema: { tags: ["auth"] } }, async (request, reply) => {
+    const q = request.query as Record<string, string | undefined>;
+    const { code, state, error, error_description: errorDescription } = q;
+    const html = (s: string) => reply.type("text/html").send(s);
 
-    if (!email) {
-      return c.html(
-        renderError("No email found", "Your Microsoft account did not provide an email."),
-      );
-    }
+    if (error) return html(renderError("Microsoft login failed", errorDescription || error));
+    if (!code || !state)
+      return html(renderError("Missing authorization code", "The login response was incomplete."));
+    if (!stateStore.has(state))
+      return html(renderError("Invalid login state", "Please try signing in again."));
+    stateStore.delete(state);
 
-    // Domain check
-    const domain = email.split("@")[1];
-    const allowed = getAllowedDomains();
-    if (allowed.length > 0 && !allowed.includes(domain || "")) {
-      return c.html(
-        renderError(
-          "Access denied",
-          `Only users from ${allowed.join(", ")} can sign in. Your email is ${email}.`,
-        ),
-      );
-    }
+    const client = getMsalClient();
+    if (!client) return html(renderError("SSO not configured", "Contact your administrator."));
 
-    // Match to local user
-    const user = await getUserByEmail(email);
-    if (!user) {
-      return c.html(
-        renderError(
-          "Account not provisioned",
-          `Your email (${email}) is not registered in this system. Please contact your administrator to add your account.`,
-        ),
-      );
-    }
-    if (!user.active) {
-      return c.html(
-        renderError("Account disabled", "Your account is disabled. Contact your administrator."),
-      );
-    }
+    const redirectUri = process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
 
-    // Establish the server-side session (sets the httpOnly cookie).
-    await issueSession(c, { username: user.username, role: user.role });
+    try {
+      const tokenResponse = await client.acquireTokenByCode({
+        code,
+        scopes: ["openid", "profile", "email", "User.Read"],
+        redirectUri,
+      });
 
-    await insertAuditLog({
-      staff_id: user.username,
-      action: "sso_login",
-      details: `Signed in via Entra ID (${email})`,
-    });
+      const account = tokenResponse.account;
+      const claims = tokenResponse.idTokenClaims as
+        | { preferred_username?: string; name?: string }
+        | undefined;
+      const email = (account?.username || claims?.preferred_username || "").toLowerCase();
+      const name = account?.name || claims?.name || email;
 
-    // Redirect to the app with username + role in URL fragment (not query — keeps it client-side)
-    const params = new URLSearchParams({
-      username: user.username,
-      role: user.role,
-      name: String(name),
-    });
-    return c.html(`<!DOCTYPE html><html><head><title>Signing in...</title></head><body>
+      if (!email)
+        return html(
+          renderError("No email found", "Your Microsoft account did not provide an email."),
+        );
+
+      const domain = email.split("@")[1];
+      const allowed = getAllowedDomains();
+      if (allowed.length > 0 && !allowed.includes(domain || "")) {
+        return html(
+          renderError("Access denied", `Only users from ${allowed.join(", ")} can sign in.`),
+        );
+      }
+
+      const user = await getUserByEmail(email);
+      if (!user)
+        return html(
+          renderError(
+            "Account not provisioned",
+            `Your email (${email}) is not registered in this system. Please contact your administrator.`,
+          ),
+        );
+      if (!user.active)
+        return html(
+          renderError("Account disabled", "Your account is disabled. Contact your administrator."),
+        );
+
+      // Establish the server-side session (sets the httpOnly cookie).
+      await issueSession(reply, { username: user.username, role: user.role });
+
+      await insertAuditLog({
+        staff_id: user.username,
+        action: "sso_login",
+        details: `Signed in via Entra ID (${email})`,
+      });
+
+      return html(`<!DOCTYPE html><html><head><title>Signing in...</title></head><body>
 <script>
   sessionStorage.setItem('loggedInStaff', ${JSON.stringify(user.username)});
   sessionStorage.setItem('loggedInRole', ${JSON.stringify(user.role)});
@@ -161,27 +163,11 @@ auth.get("/callback", async (c) => {
 </script>
 <p style="font-family:sans-serif;text-align:center;margin-top:40px;">Signing you in&hellip;</p>
 </body></html>`);
-  } catch (err) {
-    logger.error("Auth callback error", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return c.html(renderError("Login failed", (err as Error).message));
-  }
-});
-
-function renderError(title: string, message: string): string {
-  return `<!DOCTYPE html><html><head><title>${title}</title>
-<style>body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 20px;color:#333;}
-.box{background:#fef2f2;border:1px solid #ef4444;border-radius:12px;padding:24px;}
-h1{color:#991b1b;margin:0 0 12px;font-size:18px;}
-p{font-size:14px;line-height:1.6;}
-a{color:#1e368e;text-decoration:none;font-weight:600;}
-a:hover{text-decoration:underline;}</style></head>
-<body><div class="box">
-<h1>&#9888; ${title}</h1>
-<p>${message}</p>
-<p><a href="/index.html">&larr; Back to login</a></p>
-</div></body></html>`;
+    } catch (err) {
+      logger.error("Auth callback error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return html(renderError("Login failed", "An unexpected error occurred. Please try again."));
+    }
+  });
 }
-
-export default auth;

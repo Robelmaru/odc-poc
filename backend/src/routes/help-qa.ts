@@ -1,9 +1,8 @@
-import { Hono } from "hono";
+import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
 
-const helpQA = new Hono();
 const anthropic = new Anthropic();
 
 const SYSTEM_PROMPT = `You are a helpful assistant for the ODC (Office of Disciplinary Counsel) Document Analysis System. Answer the user's question based on your knowledge of the application's features listed below.
@@ -139,29 +138,31 @@ GENERAL:
 - "Help ?" button opens a searchable help panel. Type to filter topics or press Enter to ask the AI for answers about any feature
 - "Forgot username or password?" link on login page directs users to contact their administrator`;
 
-helpQA.post("/", async (c) => {
-  try {
-    const { question } = await c.req.json();
-    if (!question || question.length < 3) return c.json({ error: "Question too short" }, 400);
+export default async function helpQA(app: FastifyInstance) {
+  app.post("/", { schema: { tags: ["help"] } }, async (request, reply) => {
+    try {
+      const { question } = (request.body ?? {}) as { question?: string };
+      if (!question || question.length < 3)
+        return reply.code(400).send({ error: "Question too short" });
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 512,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: question }],
-    });
-    logTokenUsage("help-qa", response.usage);
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 512,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: question }],
+      });
+      logTokenUsage("help-qa", response.usage);
 
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") return c.json({ error: "No response" }, 500);
+      const textBlock = response.content.find((b) => b.type === "text");
+      if (!textBlock || textBlock.type !== "text")
+        return reply.code(500).send({ error: "No response" });
 
-    return c.json({ success: true, answer: textBlock.text });
-  } catch (error) {
-    logger.error("Help Q&A error", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return c.json({ error: "Help request failed" }, 500);
-  }
-});
-
-export default helpQA;
+      return { success: true, answer: textBlock.text };
+    } catch (error) {
+      logger.error("Help Q&A error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return reply.code(500).send({ error: "Help request failed" });
+    }
+  });
+}

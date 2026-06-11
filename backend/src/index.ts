@@ -1,10 +1,16 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { secureHeaders } from "hono/secure-headers";
-import { bodyLimit } from "hono/body-limit";
-import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { randomUUID } from "node:crypto";
+import Fastify, { type FastifyError } from "fastify";
+import cookie from "@fastify/cookie";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
+import { fileURLToPath } from "node:url";
+import { requireAuth } from "./auth/session.js";
+import { pingDb } from "./db/database.js";
+import { logger } from "./utils/logger.js";
 import analyze from "./routes/analyze.js";
 import qa from "./routes/qa.js";
 import timeline from "./routes/timeline.js";
@@ -17,76 +23,77 @@ import aiDetect from "./routes/ai-detect.js";
 import auth from "./routes/auth.js";
 import discovery from "./routes/discovery.js";
 import session from "./routes/session.js";
-import { requireAuth, type AppEnv } from "./auth/session.js";
-import { rateLimit } from "./auth/rateLimit.js";
-import { pingDb } from "./db/database.js";
-import { logger } from "./utils/logger.js";
 
-const app = new Hono<AppEnv>();
+const uploadMaxBytes = (Number(process.env.UPLOAD_MAX_MB) || 200) * 1024 * 1024;
 
-// Security response headers — X-Content-Type-Options, X-Frame-Options, etc. (SEC-008)
-app.use("/*", secureHeaders());
+const app = Fastify({
+  // Long OCR / multi-pass Claude requests are expected — no request timeout.
+  requestTimeout: 0,
+  connectionTimeout: 0,
+  bodyLimit: uploadMaxBytes, // SEC-006: cap JSON bodies (multipart is capped separately)
+  logger: false, // we use our own structured logger
+});
 
-// CORS scoped to an explicit allowlist (SEC-008). The frontend is served
-// same-origin and needs no CORS; set CORS_ORIGINS (comma-separated) only when a
-// distinct origin must call the API. Credentials are on for the session cookie.
+// ── Plugins ─────────────────────────────────────────────────────────────────
+// Security response headers (SEC-008). CSP left off by default (SEC-005 backlog).
+await app.register(helmet, { contentSecurityPolicy: false });
+
+// CORS scoped to an allowlist (SEC-008). Same-origin frontend needs none.
 const corsOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
-app.use("/*", cors({ origin: corsOrigins, credentials: true }));
+await app.register(cors, { origin: corsOrigins.length ? corsOrigins : false, credentials: true });
 
-// Per-request access log with a correlation id (OPS-002).
-app.use("/api/*", async (c, next) => {
-  const reqId = randomUUID();
-  c.set("reqId", reqId);
-  const start = Date.now();
-  await next();
+await app.register(cookie);
+await app.register(multipart, { limits: { fileSize: uploadMaxBytes } }); // SEC-006
+await app.register(rateLimit, { global: false }); // enabled per-route (login — SEC-014)
+
+// OpenAPI (api-contracts standard): generated from route schemas, served at /api/docs.
+await app.register(swagger, {
+  openapi: {
+    info: { title: "ODC Complaint Analyzer API", version: "1.0.0" },
+  },
+});
+await app.register(swaggerUi, { routePrefix: "/api/docs" });
+
+// ── Hooks ─────────────────────────────────────────────────────────────────
+// Authentication gate for /api/* (publishes request.user). Runs before handlers.
+app.addHook("onRequest", requireAuth);
+
+// Structured per-request access log with the built-in request id (OPS-002).
+app.addHook("onResponse", async (request, reply) => {
+  const path = request.url.split("?")[0]!;
+  if (!path.startsWith("/api/")) return;
   logger.info("request", {
-    reqId,
-    method: c.req.method,
-    path: c.req.path,
-    status: c.res.status,
-    ms: Date.now() - start,
+    reqId: request.id,
+    method: request.method,
+    path,
+    status: reply.statusCode,
+    ms: Math.round(reply.elapsedTime),
   });
 });
 
-// Reject oversized uploads before buffering them into memory (SEC-006).
-const uploadMaxMb = Number(process.env.UPLOAD_MAX_MB) || 200;
-app.use(
-  "/api/*",
-  bodyLimit({
-    maxSize: uploadMaxMb * 1024 * 1024,
-    onError: (c) => c.json({ error: `Request body exceeds the ${uploadMaxMb} MB limit` }, 413),
-  }),
-);
+// Consistent JSON error shape (TS-015 / fastify error-handling rule). Surfaces
+// schema-validation failures as 400; never leaks internals on 500.
+app.setErrorHandler((err: FastifyError, request, reply) => {
+  if (err.validation) {
+    return reply.code(400).send({ error: { code: "VALIDATION", message: err.message } });
+  }
+  const status = typeof err.statusCode === "number" && err.statusCode >= 400 ? err.statusCode : 500;
+  if (status >= 500) {
+    logger.error("Unhandled route error", {
+      reqId: request.id,
+      path: request.url.split("?")[0],
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return reply.code(500).send({ error: { code: "INTERNAL", message: "Internal server error" } });
+  }
+  return reply.code(status).send({ error: { code: "REQUEST", message: err.message } });
+});
 
-// Throttle the PIN login endpoint against brute force (SEC-014): 10 attempts
-// per IP per 5 minutes.
-app.use("/api/records/verify", rateLimit({ windowMs: 5 * 60 * 1000, max: 10, name: "login" }));
-
-// Authentication gate: every /api/* route requires a valid session cookie,
-// except the public login/health paths handled inside requireAuth.
-// (Mounted before the API routes so it runs first.)
-app.use("/api/*", requireAuth);
-
-// API routes
-app.route("/api/session", session);
-app.route("/api/analyze", analyze);
-app.route("/api/qa", qa);
-app.route("/api/timeline", timeline);
-app.route("/api/timeline-qa", timelineQA);
-app.route("/api/records", records);
-app.route("/api/translate", translate);
-app.route("/api/translation-qa", translationQA);
-app.route("/api/help-qa", helpQA);
-app.route("/api/ai-detect", aiDetect);
-app.route("/api/discovery", discovery);
-app.route("/auth", auth);
-
-// Health check — probes the DB and required config so the endpoint reflects
-// real readiness, not just process liveness (OPS-008).
-app.get("/api/health", async (c) => {
+// ── Health ──────────────────────────────────────────────────────────────────
+app.get("/api/health", async (_request, reply) => {
   const checks = {
     db: "ok" as "ok" | "error",
     anthropic: process.env.ANTHROPIC_API_KEY ? "ok" : "missing",
@@ -97,24 +104,27 @@ app.get("/api/health", async (c) => {
     checks.db = "error";
   }
   const healthy = checks.db === "ok" && checks.anthropic === "ok";
-  return c.json({ status: healthy ? "ok" : "degraded", checks }, healthy ? 200 : 503);
+  return reply.code(healthy ? 200 : 503).send({ status: healthy ? "ok" : "degraded", checks });
 });
 
-// Serve frontend
-app.use("/*", serveStatic({ root: "../frontend" }));
+// ── API routes ───────────────────────────────────────────────────────────────
+await app.register(session, { prefix: "/api/session" });
+await app.register(analyze, { prefix: "/api/analyze" });
+await app.register(qa, { prefix: "/api/qa" });
+await app.register(timeline, { prefix: "/api/timeline" });
+await app.register(timelineQA, { prefix: "/api/timeline-qa" });
+await app.register(records, { prefix: "/api/records" });
+await app.register(translate, { prefix: "/api/translate" });
+await app.register(translationQA, { prefix: "/api/translation-qa" });
+await app.register(helpQA, { prefix: "/api/help-qa" });
+await app.register(aiDetect, { prefix: "/api/ai-detect" });
+await app.register(discovery, { prefix: "/api/discovery" });
+await app.register(auth, { prefix: "/auth" });
 
-// Fallback to index.html
-app.get("/", (c) => c.redirect("/index.html"));
-
-// Consistent JSON shape for any unhandled route error (finding TS-015), instead
-// of Hono's default plaintext 500. Never leak internal error detail to clients.
-app.onError((err, c) => {
-  logger.error("Unhandled route error", {
-    path: c.req.path,
-    method: c.req.method,
-    error: err instanceof Error ? err.message : String(err),
-  });
-  return c.json({ error: "Internal server error" }, 500);
+// ── Static frontend (registered last so explicit routes win) ─────────────────
+await app.register(fastifyStatic, {
+  root: fileURLToPath(new URL("../../frontend", import.meta.url)),
+  prefix: "/",
 });
 
 const port = Number(process.env.PORT) || 3000;
@@ -124,31 +134,18 @@ logger.info("ODC Complaint Analyzer (POC) starting", {
   env: process.env.NODE_ENV ?? "development",
 });
 
-const server = serve({
-  fetch: app.fetch,
-  port,
-});
+await app.listen({ port, host: "0.0.0.0" });
 
-// Allow long-running requests (large OCR / multi-pass comparisons) — Node's
-// default 5-minute requestTimeout would otherwise drop them as "Failed to fetch".
-const httpServer = server as unknown as {
-  requestTimeout?: number;
-  headersTimeout?: number;
-  timeout?: number;
-};
-httpServer.requestTimeout = 0; // no limit on time to receive a request
-httpServer.headersTimeout = 0;
-httpServer.timeout = 0; // no socket inactivity timeout
-
-// Graceful shutdown (OPS-007): on SIGTERM/SIGINT stop accepting new connections
-// and let in-flight requests (long OCR / multi-pass Claude jobs) finish before
-// exiting, with a hard cap so a stuck connection can't block forever.
+// Graceful shutdown (OPS-007): drain in-flight requests before exit.
 function shutdown(signal: string) {
   logger.info("Shutdown signal received; draining in-flight requests", { signal });
-  server.close(() => {
-    logger.info("HTTP server closed; exiting");
-    process.exit(0);
-  });
+  app
+    .close()
+    .then(() => {
+      logger.info("HTTP server closed; exiting");
+      process.exit(0);
+    })
+    .catch(() => process.exit(1));
   setTimeout(() => {
     logger.warn("Drain timeout reached; forcing exit");
     process.exit(0);
@@ -156,3 +153,8 @@ function shutdown(signal: string) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Surface otherwise-silent crashes (OPS-015).
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled rejection", { reason: String(reason) });
+});
