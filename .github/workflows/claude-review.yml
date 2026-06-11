@@ -26,9 +26,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run Claude Code review
+      # The action takes a `prompt` (NOT `commands`); project slash commands in
+      # .claude/commands/ are invoked from the prompt. One step per command.
+      - name: Standards review
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # The slash commands in .claude/commands/ run as part of the review.
-          commands: "/standards-review,/security-review"
+          prompt: "/standards-review"
+
+      - name: Security review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/security-review"
