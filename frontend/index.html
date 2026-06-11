@@ -4526,6 +4526,13 @@ All conclusions require human review and professional judgment.
 
     function displayTimeline(t, usage, ocrResults, duplicates) {
       const results = document.getElementById('timelineResults');
+      // Persist duplicates onto the timeline so internal re-renders (annotation,
+      // drag/drop, date edit, …) and saved-record round-trips keep the panel.
+      if (duplicates !== undefined) {
+        t.duplicates = duplicates;
+      } else if (t && t.duplicates) {
+        duplicates = t.duplicates;
+      }
       lastTimeline = t;
       document.getElementById('timelineExportButtons').style.display = 'flex';
       // Show the Q&A panel now that we have a timeline
