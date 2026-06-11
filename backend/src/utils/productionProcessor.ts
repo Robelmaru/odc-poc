@@ -58,7 +58,7 @@ function parseJson<T>(raw: string): T {
 export async function reconcileProductionContent(opts: {
   productionId: number;
   staffId: string;
-  sections: any[];
+  sections: unknown[];
   text: string;
 }): Promise<{ status: string; result: ProductionComplianceResult }> {
   const production = await getProduction(opts.productionId);
@@ -225,7 +225,7 @@ async function runPipeline(
     case_number: caseRow?.docket_number ?? null,
     file_names: JSON.stringify([filename]),
     notes: `Production ${productionId} (subpoena ${subpoena.id})`,
-    summary: (timelineResult as any).summary ?? null,
+    summary: (timelineResult as { summary?: string }).summary ?? null,
     timeline: JSON.stringify(timelineResult),
   });
   const recordId = Number(rec.lastInsertRowid);
@@ -240,7 +240,7 @@ async function runPipeline(
   const { status, result } = await reconcileProductionContent({
     productionId,
     staffId,
-    sections: (timelineResult as any).sections || [],
+    sections: (timelineResult as { sections?: unknown[] }).sections || [],
     text: sourceText,
   });
 

@@ -117,7 +117,20 @@ async function callGPTZero(text: string, filename: string) {
     throw new Error(`GPTZero API error ${response.status}: ${errText.slice(0, 200)}`);
   }
 
-  const data: any = await response.json();
+  const data = (await response.json()) as {
+    documents?: Array<{
+      class_probabilities?: Record<string, number>;
+      completely_generated_prob?: number;
+      confidence_category?: string;
+      predicted_class?: string;
+      sentences?: Array<{
+        sentence?: string;
+        generated_prob?: number;
+        completely_generated_prob?: number;
+        highlight_sentence_for_ai?: boolean;
+      }>;
+    }>;
+  };
   const doc = data.documents?.[0];
   if (!doc) throw new Error("No document in GPTZero response");
 
@@ -127,7 +140,7 @@ async function callGPTZero(text: string, filename: string) {
   const mixedProb = classProbs.mixed ?? 0;
   const overallScore = Math.round(aiProb * 100);
 
-  const sentences = (doc.sentences || []).map((s: any) => ({
+  const sentences = (doc.sentences || []).map((s) => ({
     text: s.sentence || "",
     generatedProb: s.generated_prob ?? s.completely_generated_prob ?? 0,
     highlight: s.highlight_sentence_for_ai === true || (s.generated_prob ?? 0) > 0.5,
@@ -234,7 +247,11 @@ async function detectRoute(request: FastifyRequest, reply: FastifyReply) {
     const [result1, result2] = await Promise.all([runDetection(), runDetection()]);
 
     // Average the scores — take the HIGHER of the two overall scores (err on side of detection)
-    const result: any = { ...result1 };
+    const result: {
+      overallScore: number;
+      categories: Record<string, number>;
+      [k: string]: unknown;
+    } = { ...result1 };
     result.overallScore = Math.max(result1.overallScore || 0, result2.overallScore || 0);
     if (result1.categories && result2.categories) {
       for (const key of Object.keys(result1.categories)) {

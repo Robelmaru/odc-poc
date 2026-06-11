@@ -7,7 +7,7 @@ declare module "pdf-poppler" {
     page?: number;
   }
   export function convert(file: string, opts: ConvertOptions): Promise<string>;
-  export function info(file: string): Promise<any>;
-  export function imgdata(file: string): Promise<any>;
+  export function info(file: string): Promise<unknown>;
+  export function imgdata(file: string): Promise<unknown>;
   export const path: string;
 }

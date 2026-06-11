@@ -292,13 +292,15 @@ export async function finalCleanup(tl: DocumentTimelineResult): Promise<Document
 // avoids the expensive pairwise-merge + cleanup passes entirely. Returns a
 // DocumentTimelineResult-shaped object with only `sections` populated.
 
+type Section = { startPage?: number; [k: string]: unknown };
+
 async function extractSectionsChunk(
   filename: string,
   chunkText: string,
   chunkLabel: string,
   ruleContext: boolean,
   retryCount = 0,
-): Promise<any[]> {
+): Promise<Section[]> {
   const MAX_RETRIES = 1;
   const system = ruleContext ? dcRulesKnowledge + "\n\n" + sectionIndexPrompt : sectionIndexPrompt;
   const response = await anthropic.messages.create({
@@ -325,9 +327,9 @@ async function extractSectionsChunk(
   const block = response.content.find((b) => b.type === "text");
   if (!block || block.type !== "text") return [];
   try {
-    const parsed = parseTimelineJson(block.text) as any;
+    const parsed = parseTimelineJson(block.text) as unknown as { sections?: Section[] };
     return Array.isArray(parsed.sections) ? parsed.sections : [];
-  } catch (err) {
+  } catch {
     if (retryCount < MAX_RETRIES) {
       return extractSectionsChunk(filename, chunkText, chunkLabel, ruleContext, retryCount + 1);
     }
@@ -360,6 +362,6 @@ export async function extractSectionsOnly(
 
   return {
     ...EMPTY_TIMELINE,
-    sections: sections as any,
+    sections: sections as unknown as DocumentTimelineResult["sections"],
   };
 }

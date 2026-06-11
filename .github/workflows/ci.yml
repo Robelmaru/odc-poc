@@ -3,7 +3,10 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [develop, staging, main]
+    # Match this repo's actual branch names (development / Staging / main). The
+    # `develop`/`staging` aliases are kept in case the branches are later renamed
+    # to the standard casing. PRs always run regardless of branch.
+    branches: [development, develop, Staging, staging, main]
 
 defaults:
   run:

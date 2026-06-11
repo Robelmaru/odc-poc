@@ -350,7 +350,16 @@ export default async function records(app: FastifyInstance) {
     if (!record_ids || record_ids.length < 2)
       return reply.code(400).send({ error: "Select at least 2 records to merge" });
 
-    const records_data: Record<string, any>[] = [];
+    interface MergedTimeline {
+      documents?: Array<{ filename: string }>;
+      timeline?: Array<{ date: string; event: string }>;
+      keyDates?: Array<{ date: string; label: string }>;
+      conflicts?: Array<{ description: string }>;
+      notes?: string[];
+      timelineSpan?: { earliest: string; latest: string; totalDuration: string };
+      [k: string]: unknown;
+    }
+    const records_data: Record<string, unknown>[] = [];
     for (const id of record_ids) {
       const row = await getRecordById(id);
       if (!row || row.staff_id !== me) continue;
@@ -364,13 +373,11 @@ export default async function records(app: FastifyInstance) {
       return reply.code(400).send({ error: "Could not load selected records" });
 
     // Merge timelines: combine all events, fuzzy dedup (isSimilar), sort by date
-    const mergedTimeline = records_data[0]!.timeline;
+    const mergedTimeline = records_data[0]!.timeline as MergedTimeline;
     for (let i = 1; i < records_data.length; i++) {
-      const other = records_data[i]!.timeline;
+      const other = records_data[i]!.timeline as MergedTimeline;
       if (other.documents) {
-        const existingFilenames = new Set(
-          (mergedTimeline.documents || []).map((d: any) => d.filename),
-        );
+        const existingFilenames = new Set((mergedTimeline.documents || []).map((d) => d.filename));
         for (const doc of other.documents) {
           if (!existingFilenames.has(doc.filename)) {
             mergedTimeline.documents = mergedTimeline.documents || [];
@@ -381,7 +388,7 @@ export default async function records(app: FastifyInstance) {
       if (other.timeline) {
         for (const evt of other.timeline) {
           const isDupe = (mergedTimeline.timeline || []).some(
-            (existing: any) => existing.date === evt.date && isSimilar(existing.event, evt.event),
+            (existing) => existing.date === evt.date && isSimilar(existing.event, evt.event),
           );
           if (!isDupe) {
             mergedTimeline.timeline = mergedTimeline.timeline || [];
@@ -392,7 +399,7 @@ export default async function records(app: FastifyInstance) {
       if (other.keyDates) {
         for (const kd of other.keyDates) {
           const isDupe = (mergedTimeline.keyDates || []).some(
-            (existing: any) => existing.date === kd.date && isSimilar(existing.label, kd.label),
+            (existing) => existing.date === kd.date && isSimilar(existing.label, kd.label),
           );
           if (!isDupe) {
             mergedTimeline.keyDates = mergedTimeline.keyDates || [];
@@ -402,7 +409,7 @@ export default async function records(app: FastifyInstance) {
       }
       if (other.conflicts) {
         for (const conflict of other.conflicts) {
-          const isDupe = (mergedTimeline.conflicts || []).some((existing: any) =>
+          const isDupe = (mergedTimeline.conflicts || []).some((existing) =>
             isSimilar(existing.description, conflict.description),
           );
           if (!isDupe) {
@@ -413,9 +420,7 @@ export default async function records(app: FastifyInstance) {
       }
       if (other.notes) {
         for (const n of other.notes) {
-          const isDupe = (mergedTimeline.notes || []).some((existing: any) =>
-            isSimilar(existing, n),
-          );
+          const isDupe = (mergedTimeline.notes || []).some((existing) => isSimilar(existing, n));
           if (!isDupe) {
             mergedTimeline.notes = mergedTimeline.notes || [];
             mergedTimeline.notes.push(n);
@@ -425,12 +430,12 @@ export default async function records(app: FastifyInstance) {
     }
 
     if (mergedTimeline.timeline) {
-      mergedTimeline.timeline.sort((a: any, b: any) => a.date.localeCompare(b.date));
+      mergedTimeline.timeline.sort((a, b) => a.date.localeCompare(b.date));
     }
     if (mergedTimeline.timeline && mergedTimeline.timeline.length > 0) {
       mergedTimeline.timelineSpan = {
-        earliest: mergedTimeline.timeline[0].date,
-        latest: mergedTimeline.timeline[mergedTimeline.timeline.length - 1].date,
+        earliest: mergedTimeline.timeline[0]!.date,
+        latest: mergedTimeline.timeline[mergedTimeline.timeline.length - 1]!.date,
         totalDuration: "",
       };
     }
