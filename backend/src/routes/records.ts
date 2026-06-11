@@ -42,6 +42,7 @@ import { issueSession, authUser } from "../auth/session.js";
 import { verifyPin } from "../auth/pin.js";
 import { safeJsonParse } from "../utils/json.js";
 import { isSimilar } from "../utils/textSimilarity.js";
+import { randomBytes } from "node:crypto";
 
 const tags = { tags: ["records"] };
 type Body = Record<string, unknown>;
@@ -90,7 +91,7 @@ export default async function records(app: FastifyInstance) {
       return reply.code(400).send({ error: "Username already exists" });
     if (email && (await getUserByEmail(email)))
       return reply.code(400).send({ error: "A user with that email already exists" });
-    const userPin = pin || Math.random().toString(36).slice(2, 10);
+    const userPin = pin || randomBytes(6).toString("hex");
     await createUser(username, userPin, role || "staff");
     if (email) {
       const newUser = await getUserByUsername(username);
@@ -463,6 +464,7 @@ export default async function records(app: FastifyInstance) {
 
   // ── Status & Tags ────────────────────────────────────────────────────────
   app.post("/status", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
     const { record_id, record_type, status } = (request.body ?? {}) as {
       record_id?: number;
       record_type?: string;
@@ -471,8 +473,19 @@ export default async function records(app: FastifyInstance) {
     const validStatuses = ["draft", "in_review", "complete", "flagged"];
     if (!status || !validStatuses.includes(status))
       return reply.code(400).send({ error: "Invalid status" });
-    if (record_type === "translation") await updateTranslationStatus(Number(record_id), status);
-    else await updateRecordStatus(Number(record_id), status);
+    const id = Number(record_id);
+    if (!Number.isInteger(id) || id <= 0)
+      return reply.code(400).send({ error: "Valid record_id required" });
+    // Ownership gate (SEC-002): only the record's owner may change its status.
+    if (record_type === "translation") {
+      const row = await getTranslationById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateTranslationStatus(id, status);
+    } else {
+      const row = await getRecordById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateRecordStatus(id, status);
+    }
     return { success: true };
   });
 
@@ -487,9 +500,20 @@ export default async function records(app: FastifyInstance) {
       tags?: unknown;
     };
     if (!Array.isArray(t)) return reply.code(400).send({ error: "Tags must be an array" });
-    if (record_type === "translation")
-      await updateTranslationTags(Number(record_id), JSON.stringify(t));
-    else await updateRecordTags(Number(record_id), JSON.stringify(t));
+    const me = authUser(request).username;
+    const id = Number(record_id);
+    if (!Number.isInteger(id) || id <= 0)
+      return reply.code(400).send({ error: "Valid record_id required" });
+    // Ownership gate (SEC-002): only the record's owner may change its tags.
+    if (record_type === "translation") {
+      const row = await getTranslationById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateTranslationTags(id, JSON.stringify(t));
+    } else {
+      const row = await getRecordById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateRecordTags(id, JSON.stringify(t));
+    }
     return { success: true };
   });
 
