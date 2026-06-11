@@ -42,6 +42,76 @@ import { readMultipart } from "../utils/multipart.js";
 const tags = { tags: ["discovery"] };
 const paramId = (request: { params: unknown }) => Number((request.params as { id: string }).id);
 
+// Request-validation fragments (TS-002/ARCH-005). Fastify (ajv) coerces and rejects
+// bad input with a 400 before the handler runs — this is what stops a non-numeric
+// `:id` or a missing required field from reaching a DB query as NaN/undefined.
+// `required` is limited to fields the handlers already treat as mandatory, and
+// additionalProperties is left open so the SPA can send extra fields without a 400.
+const str = { type: "string" } as const;
+const int = { type: "integer" } as const;
+const num = { type: "number" } as const;
+const idParams = {
+  type: "object",
+  properties: { id: { type: "integer", minimum: 1 } },
+  required: ["id"],
+} as const;
+const B = {
+  respondent: {
+    type: "object",
+    required: ["name"],
+    properties: { name: str, bar_number: str, firm: str, email: str, phone: str },
+  },
+  case: {
+    type: "object",
+    properties: {
+      year: int,
+      respondent_id: int,
+      complainant_name: str,
+      client_name: str,
+      matter_caption: str,
+      analysis_record_id: int,
+    },
+  },
+  phase: { type: "object", required: ["phase"], properties: { phase: str } },
+  status: { type: "object", required: ["status"], properties: { status: str } },
+  subpoena: {
+    type: "object",
+    properties: {
+      subpoena_type: str,
+      issuance_date: str,
+      response_deadline: str,
+      requested_items: { type: "array" },
+    },
+  },
+  extend: {
+    type: "object",
+    required: ["extended_deadline"],
+    properties: { extended_deadline: str, reason: str },
+  },
+  production: {
+    type: "object",
+    properties: { received_date: str, version_number: int, notes: str },
+  },
+  intake: {
+    type: "object",
+    properties: {
+      total_pages: num,
+      total_chars: num,
+      timeline_record_id: int,
+      redaction_status: str,
+    },
+  },
+  reconcile: {
+    type: "object",
+    properties: { sections: { type: "array" }, text: str, timeline_record_id: int },
+  },
+} as const;
+// `withId` adds integer-:id param validation; `body` adds a request-body schema.
+const withId = (body?: object) => ({
+  schema: { ...tags, params: idParams, ...(body ? { body } : {}) },
+});
+const noId = (body: object) => ({ schema: { ...tags, body } });
+
 export default async function discovery(app: FastifyInstance) {
   // ── Checklist (UI seed) ─────────────────────────────────────────────────────
   app.get("/checklist", { schema: tags }, async () => ({
@@ -50,7 +120,7 @@ export default async function discovery(app: FastifyInstance) {
   }));
 
   // ── Respondent attorneys ────────────────────────────────────────────────────
-  app.post("/respondents", { schema: tags }, async (request, reply) => {
+  app.post("/respondents", noId(B.respondent), async (request, reply) => {
     const me = authUser(request).username;
     const { name, bar_number, firm, email, phone } = (request.body ?? {}) as Record<string, string>;
     if (!name) return reply.code(400).send({ error: "name is required" });
@@ -69,7 +139,7 @@ export default async function discovery(app: FastifyInstance) {
   }));
 
   // ── Cases ────────────────────────────────────────────────────────────────────
-  app.post("/cases", { schema: tags }, async (request) => {
+  app.post("/cases", noId(B.case), async (request) => {
     const me = authUser(request).username;
     const body = (request.body ?? {}) as Record<string, unknown>;
     const r = await createCase({
@@ -91,7 +161,7 @@ export default async function discovery(app: FastifyInstance) {
 
   app.get("/cases", { schema: tags }, async () => ({ success: true, cases: await listCases() }));
 
-  app.get("/cases/:id", { schema: tags }, async (request, reply) => {
+  app.get("/cases/:id", withId(), async (request, reply) => {
     const id = paramId(request);
     const caseRow = await getCase(id);
     if (!caseRow) return reply.code(404).send({ error: "Case not found" });
@@ -114,7 +184,7 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true, case: caseRow, subpoenas };
   });
 
-  app.post("/cases/:id/phase", { schema: tags }, async (request, reply) => {
+  app.post("/cases/:id/phase", withId(B.phase), async (request, reply) => {
     const id = paramId(request);
     const me = authUser(request).username;
     const { phase } = (request.body ?? {}) as { phase?: string };
@@ -125,7 +195,7 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.post("/cases/:id/status", { schema: tags }, async (request, reply) => {
+  app.post("/cases/:id/status", withId(B.status), async (request, reply) => {
     const id = paramId(request);
     const me = authUser(request).username;
     const { status } = (request.body ?? {}) as { status?: string };
@@ -140,14 +210,20 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.delete("/cases/:id", { schema: tags }, async (request, reply) => {
+  app.delete("/cases/:id", withId(), async (request, reply) => {
     const id = paramId(request);
-    const me = authUser(request).username;
+    const me = authUser(request);
     const caseRow = await getCase(id);
     if (!caseRow) return reply.code(404).send({ error: "Case not found" });
+    // SEC-001: cases are a shared workspace, but only the creator or an admin may
+    // delete one (deletion cascades to all subpoenas/productions/items).
+    if (caseRow.created_by !== me.username && me.role !== "admin")
+      return reply
+        .code(403)
+        .send({ error: "Only the case creator or an admin can delete this case" });
     const result = await deleteCase(id);
     await insertAuditLog({
-      staff_id: me,
+      staff_id: me.username,
       action: "delete_case",
       details: `Deleted ${caseRow.docket_number} (ID ${id}) and all subpoenas/productions`,
     });
@@ -155,7 +231,7 @@ export default async function discovery(app: FastifyInstance) {
   });
 
   // ── Subpoenas ─────────────────────────────────────────────────────────────
-  app.post("/cases/:id/subpoenas", { schema: tags }, async (request, reply) => {
+  app.post("/cases/:id/subpoenas", withId(B.subpoena), async (request, reply) => {
     const caseId = paramId(request);
     const me = authUser(request).username;
     const body = (request.body ?? {}) as Record<string, unknown>;
@@ -195,7 +271,7 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true, id: r.id, requested_items };
   });
 
-  app.get("/subpoenas/:id", { schema: tags }, async (request, reply) => {
+  app.get("/subpoenas/:id", withId(), async (request, reply) => {
     const id = paramId(request);
     const s = await getSubpoena(id);
     if (!s) return reply.code(404).send({ error: "Subpoena not found" });
@@ -211,7 +287,7 @@ export default async function discovery(app: FastifyInstance) {
     };
   });
 
-  app.post("/subpoenas/:id/status", { schema: tags }, async (request, reply) => {
+  app.post("/subpoenas/:id/status", withId(B.status), async (request, reply) => {
     const id = paramId(request);
     const me = authUser(request).username;
     const { status } = (request.body ?? {}) as { status?: string };
@@ -226,7 +302,7 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true };
   });
 
-  app.post("/subpoenas/:id/extend", { schema: tags }, async (request, reply) => {
+  app.post("/subpoenas/:id/extend", withId(B.extend), async (request, reply) => {
     const id = paramId(request);
     const me = authUser(request).username;
     const { extended_deadline, reason } = (request.body ?? {}) as {
@@ -245,7 +321,7 @@ export default async function discovery(app: FastifyInstance) {
   });
 
   // ── Productions ─────────────────────────────────────────────────────────────
-  app.post("/subpoenas/:id/productions", { schema: tags }, async (request, reply) => {
+  app.post("/subpoenas/:id/productions", withId(B.production), async (request, reply) => {
     const subpoenaId = paramId(request);
     const me = authUser(request).username;
     const { received_date, version_number, notes } = (request.body ?? {}) as Record<
@@ -268,27 +344,35 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true, id: r.id };
   });
 
-  app.get("/productions/:id", { schema: tags }, async (request, reply) => {
+  app.get("/productions/:id", withId(), async (request, reply) => {
     const id = paramId(request);
     const p = await getProduction(id);
     if (!p) return reply.code(404).send({ error: "Production not found" });
     return { success: true, production: { ...p, items: await getProductionItems(id) } };
   });
 
-  app.delete("/productions/:id", { schema: tags }, async (request, reply) => {
+  app.delete("/productions/:id", withId(), async (request, reply) => {
     const id = paramId(request);
-    const me = authUser(request).username;
-    if (!(await getProduction(id))) return reply.code(404).send({ error: "Production not found" });
+    const me = authUser(request);
+    const production = await getProduction(id);
+    if (!production) return reply.code(404).send({ error: "Production not found" });
+    // SEC-001: only the owning case's creator (or an admin) may delete a production.
+    const subpoena = await getSubpoena(production.subpoena_id);
+    const owner = subpoena ? (await getCase(subpoena.case_id))?.created_by : null;
+    if (me.role !== "admin" && owner !== me.username)
+      return reply
+        .code(403)
+        .send({ error: "Only the case creator or an admin can delete this production" });
     const result = await deleteProduction(id);
     await insertAuditLog({
-      staff_id: me,
+      staff_id: me.username,
       action: "delete_production",
       details: `Deleted production ${id}`,
     });
     return { success: true, changes: result.changes };
   });
 
-  app.post("/productions/:id/intake", { schema: tags }, async (request, reply) => {
+  app.post("/productions/:id/intake", withId(B.intake), async (request, reply) => {
     const id = paramId(request);
     const { total_pages, total_chars, timeline_record_id, redaction_status } = (request.body ??
       {}) as Record<string, unknown>;
@@ -313,7 +397,7 @@ export default async function discovery(app: FastifyInstance) {
     };
   });
 
-  app.post("/productions/:id/reconcile", { schema: tags }, async (request, reply) => {
+  app.post("/productions/:id/reconcile", withId(B.reconcile), async (request, reply) => {
     const id = paramId(request);
     const me = authUser(request).username;
     const body = (request.body ?? {}) as Record<string, unknown>;
@@ -361,7 +445,7 @@ export default async function discovery(app: FastifyInstance) {
     }
   });
 
-  app.post("/productions/:id/process", { schema: tags }, async (request, reply) => {
+  app.post("/productions/:id/process", withId(), async (request, reply) => {
     const id = paramId(request);
     if (!request.isMultipart())
       return reply.code(400).send({ error: "multipart/form-data file upload required" });
@@ -389,7 +473,7 @@ export default async function discovery(app: FastifyInstance) {
     return { success: true, jobId, status: "queued" };
   });
 
-  app.get("/productions/:id/job", { schema: tags }, async (request) => {
+  app.get("/productions/:id/job", withId(), async (request) => {
     const job = await getLatestProductionJob(paramId(request));
     return { success: true, job: job ?? null };
   });

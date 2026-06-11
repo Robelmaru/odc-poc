@@ -8,6 +8,10 @@ export default defineConfig({
     env: {
       DATABASE_URL:
         process.env.TEST_DATABASE_URL ?? "postgres://postgres:changeme@localhost:5432/odc_poc_test",
+      // Dummy key so modules that construct the Anthropic SDK client at import time
+      // (e.g. productionProcessor via the discovery plugin) load without a real key.
+      // No Claude calls are made in the test suite.
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "test-key-not-used",
     },
     coverage: {
       provider: "v8",
@@ -20,8 +24,18 @@ export default defineConfig({
       thresholds: {
         "src/auth/pin.ts": { lines: 90, functions: 100, statements: 90, branches: 70 },
         "src/auth/session.ts": { lines: 85, functions: 75, statements: 75, branches: 70 },
-        "src/utils/duplicateDetector.ts": { lines: 70, functions: 70, statements: 70, branches: 55 },
-        "src/knowledge/subpoenaChecklist.ts": { lines: 80, functions: 100, statements: 80, branches: 50 },
+        "src/utils/duplicateDetector.ts": {
+          lines: 70,
+          functions: 70,
+          statements: 70,
+          branches: 55,
+        },
+        "src/knowledge/subpoenaChecklist.ts": {
+          lines: 80,
+          functions: 100,
+          statements: 80,
+          branches: 50,
+        },
         "src/schemas/claudeResults.ts": { lines: 80, functions: 50, statements: 80, branches: 60 },
         "src/utils/textSimilarity.ts": { lines: 90, functions: 100, statements: 90, branches: 75 },
       },
