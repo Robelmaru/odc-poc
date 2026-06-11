@@ -3,9 +3,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
-    // Integration tests open the DB modules against an in-memory SQLite database
-    // so they never touch real case data (TEST-007).
-    env: { DATABASE_PATH: ":memory:" },
+    // Integration tests run against a dedicated Postgres test database (migrated
+    // beforehand). Never point this at a real/dev database (TEST-007).
+    env: {
+      DATABASE_URL:
+        process.env.TEST_DATABASE_URL ?? "postgres://postgres:changeme@localhost:5432/odc_poc_test",
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

@@ -48,7 +48,7 @@ discovery.post("/respondents", async (c) => {
   const me = c.get("user").username;
   const { name, bar_number, firm, email, phone } = await c.req.json();
   if (!name) return c.json({ error: "name is required" }, 400);
-  const r = createRespondent({ name, bar_number, firm, email, phone });
+  const r = await createRespondent({ name, bar_number, firm, email, phone });
   await insertAuditLog({
     staff_id: me,
     action: "create_respondent",
@@ -57,7 +57,9 @@ discovery.post("/respondents", async (c) => {
   return c.json({ success: true, id: r.id });
 });
 
-discovery.get("/respondents", (c) => c.json({ success: true, respondents: listRespondents() }));
+discovery.get("/respondents", async (c) =>
+  c.json({ success: true, respondents: await listRespondents() }),
+);
 
 // ── Cases ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +68,7 @@ discovery.post("/cases", async (c) => {
   const body = await c.req.json();
   const { respondent_id, complainant_name, client_name, matter_caption, analysis_record_id } = body;
   const year = Number(body.year) || new Date().getFullYear();
-  const r = createCase({
+  const r = await createCase({
     year,
     respondent_id: respondent_id ?? null,
     complainant_name: complainant_name ?? null,
@@ -83,20 +85,22 @@ discovery.post("/cases", async (c) => {
   return c.json({ success: true, id: r.id, docket_number: r.docket_number });
 });
 
-discovery.get("/cases", (c) => c.json({ success: true, cases: listCases() }));
+discovery.get("/cases", async (c) => c.json({ success: true, cases: await listCases() }));
 
-discovery.get("/cases/:id", (c) => {
+discovery.get("/cases/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const caseRow = getCase(id);
+  const caseRow = await getCase(id);
   if (!caseRow) return c.json({ error: "Case not found" }, 404);
-  const subpoenas = listSubpoenasByCase(id).map((s) => ({
-    ...s,
-    requested_items: safeJsonParse(s.requested_items, []),
-    productions: listProductionsBySubpoena(s.id).map((p) => ({
-      ...p,
-      items: getProductionItems(p.id),
-    })),
-  }));
+  const subpoenaRows = await listSubpoenasByCase(id);
+  const subpoenas = await Promise.all(
+    subpoenaRows.map(async (s) => {
+      const prodRows = await listProductionsBySubpoena(s.id);
+      const productions = await Promise.all(
+        prodRows.map(async (p) => ({ ...p, items: await getProductionItems(p.id) })),
+      );
+      return { ...s, requested_items: safeJsonParse(s.requested_items, []), productions };
+    }),
+  );
   return c.json({ success: true, case: caseRow, subpoenas });
 });
 
@@ -104,8 +108,8 @@ discovery.post("/cases/:id/phase", async (c) => {
   const id = Number(c.req.param("id"));
   const me = c.get("user").username;
   const { phase } = await c.req.json();
-  if (!getCase(id)) return c.json({ error: "Case not found" }, 404);
-  if (!updateCasePhase(id, phase)) return c.json({ error: "Invalid phase" }, 400);
+  if (!(await getCase(id))) return c.json({ error: "Case not found" }, 404);
+  if (!(await updateCasePhase(id, phase))) return c.json({ error: "Invalid phase" }, 400);
   await insertAuditLog({ staff_id: me, action: "case_phase", details: `Case ${id} -> ${phase}` });
   return c.json({ success: true });
 });
@@ -114,8 +118,8 @@ discovery.post("/cases/:id/status", async (c) => {
   const id = Number(c.req.param("id"));
   const me = c.get("user").username;
   const { status } = await c.req.json();
-  if (!getCase(id)) return c.json({ error: "Case not found" }, 404);
-  if (!updateCaseStatus(id, status)) return c.json({ error: "Invalid status" }, 400);
+  if (!(await getCase(id))) return c.json({ error: "Case not found" }, 404);
+  if (!(await updateCaseStatus(id, status))) return c.json({ error: "Invalid status" }, 400);
   await insertAuditLog({ staff_id: me, action: "case_status", details: `Case ${id} -> ${status}` });
   return c.json({ success: true });
 });
@@ -124,9 +128,9 @@ discovery.post("/cases/:id/status", async (c) => {
 discovery.delete("/cases/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const me = c.get("user").username;
-  const caseRow = getCase(id);
+  const caseRow = await getCase(id);
   if (!caseRow) return c.json({ error: "Case not found" }, 404);
-  const result = deleteCase(id);
+  const result = await deleteCase(id);
   await insertAuditLog({
     staff_id: me,
     action: "delete_case",
@@ -142,7 +146,7 @@ discovery.post("/cases/:id/subpoenas", async (c) => {
   const me = c.get("user").username;
   const body = await c.req.json();
   const { issuance_date, response_deadline } = body;
-  if (!getCase(caseId)) return c.json({ error: "Case not found" }, 404);
+  if (!(await getCase(caseId))) return c.json({ error: "Case not found" }, 404);
 
   const subpoena_type: string = body.subpoena_type || "BOTH";
   // Seed requested_items from the standard checklist based on subpoena type,
@@ -164,7 +168,7 @@ discovery.post("/cases/:id/subpoenas", async (c) => {
     requested_items = defaultRequestedItems();
   }
 
-  const r = createSubpoena({
+  const r = await createSubpoena({
     case_id: caseId,
     subpoena_type,
     issuance_date: issuance_date ?? null,
@@ -180,17 +184,18 @@ discovery.post("/cases/:id/subpoenas", async (c) => {
   return c.json({ success: true, id: r.id, requested_items });
 });
 
-discovery.get("/subpoenas/:id", (c) => {
+discovery.get("/subpoenas/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const s = getSubpoena(id);
+  const s = await getSubpoena(id);
   if (!s) return c.json({ error: "Subpoena not found" }, 404);
+  const prodRows = await listProductionsBySubpoena(id);
+  const productions = await Promise.all(
+    prodRows.map(async (p) => ({ ...p, items: await getProductionItems(p.id) })),
+  );
   return c.json({
     success: true,
     subpoena: { ...s, requested_items: safeJsonParse(s.requested_items, []) },
-    productions: listProductionsBySubpoena(id).map((p) => ({
-      ...p,
-      items: getProductionItems(p.id),
-    })),
+    productions,
   });
 });
 
@@ -198,8 +203,8 @@ discovery.post("/subpoenas/:id/status", async (c) => {
   const id = Number(c.req.param("id"));
   const me = c.get("user").username;
   const { status } = await c.req.json();
-  if (!getSubpoena(id)) return c.json({ error: "Subpoena not found" }, 404);
-  if (!updateSubpoenaStatus(id, status)) return c.json({ error: "Invalid status" }, 400);
+  if (!(await getSubpoena(id))) return c.json({ error: "Subpoena not found" }, 404);
+  if (!(await updateSubpoenaStatus(id, status))) return c.json({ error: "Invalid status" }, 400);
   await insertAuditLog({
     staff_id: me,
     action: "subpoena_status",
@@ -212,9 +217,9 @@ discovery.post("/subpoenas/:id/extend", async (c) => {
   const id = Number(c.req.param("id"));
   const me = c.get("user").username;
   const { extended_deadline, reason } = await c.req.json();
-  if (!getSubpoena(id)) return c.json({ error: "Subpoena not found" }, 404);
+  if (!(await getSubpoena(id))) return c.json({ error: "Subpoena not found" }, 404);
   if (!extended_deadline) return c.json({ error: "extended_deadline is required" }, 400);
-  extendSubpoenaDeadline(id, extended_deadline);
+  await extendSubpoenaDeadline(id, extended_deadline);
   await insertAuditLog({
     staff_id: me,
     action: "subpoena_extend",
@@ -230,8 +235,13 @@ discovery.post("/subpoenas/:id/productions", async (c) => {
   const me = c.get("user").username;
   const body = await c.req.json();
   const { received_date, version_number, notes } = body;
-  if (!getSubpoena(subpoenaId)) return c.json({ error: "Subpoena not found" }, 404);
-  const r = createProduction({ subpoena_id: subpoenaId, received_date, version_number, notes });
+  if (!(await getSubpoena(subpoenaId))) return c.json({ error: "Subpoena not found" }, 404);
+  const r = await createProduction({
+    subpoena_id: subpoenaId,
+    received_date,
+    version_number,
+    notes,
+  });
   await insertAuditLog({
     staff_id: me,
     action: "create_production",
@@ -240,19 +250,19 @@ discovery.post("/subpoenas/:id/productions", async (c) => {
   return c.json({ success: true, id: r.id });
 });
 
-discovery.get("/productions/:id", (c) => {
+discovery.get("/productions/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const p = getProduction(id);
+  const p = await getProduction(id);
   if (!p) return c.json({ error: "Production not found" }, 404);
-  return c.json({ success: true, production: { ...p, items: getProductionItems(id) } });
+  return c.json({ success: true, production: { ...p, items: await getProductionItems(id) } });
 });
 
 // Delete a single production (and its items/jobs). staff_id via query.
 discovery.delete("/productions/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const me = c.get("user").username;
-  if (!getProduction(id)) return c.json({ error: "Production not found" }, 404);
-  const result = deleteProduction(id);
+  if (!(await getProduction(id))) return c.json({ error: "Production not found" }, 404);
+  const result = await deleteProduction(id);
   await insertAuditLog({
     staff_id: me,
     action: "delete_production",
@@ -270,13 +280,13 @@ discovery.post("/productions/:id/intake", async (c) => {
   const id = Number(c.req.param("id"));
   const body = await c.req.json();
   const { total_pages, total_chars, timeline_record_id, redaction_status } = body;
-  if (!getProduction(id)) return c.json({ error: "Production not found" }, 404);
+  if (!(await getProduction(id))) return c.json({ error: "Production not found" }, 404);
 
   const pages = Number(total_pages) || 0;
   const chars = Number(total_chars) || 0;
   const charsPerPage = pages > 0 ? chars / pages : 0;
   const isImageOnly = pages > 0 && charsPerPage < 50; // < ~50 chars/page ⇒ scanned/image
-  updateProductionIntake(id, {
+  await updateProductionIntake(id, {
     page_count: pages || null,
     text_chars_per_page: pages > 0 ? Number(charsPerPage.toFixed(1)) : null,
     is_image_only: isImageOnly,
@@ -303,9 +313,9 @@ discovery.post("/productions/:id/reconcile", async (c) => {
   const me = c.get("user").username;
   const body = await c.req.json();
 
-  const production = getProduction(id);
+  const production = await getProduction(id);
   if (!production) return c.json({ error: "Production not found" }, 404);
-  const subpoena = getSubpoena(production.subpoena_id);
+  const subpoena = await getSubpoena(production.subpoena_id);
   if (!subpoena) return c.json({ error: "Subpoena not found" }, 404);
 
   // Gather produced sections + text sample.
@@ -363,7 +373,7 @@ discovery.post("/productions/:id/process", async (c) => {
   }
   const me = c.get("user").username;
   const form = await c.req.formData();
-  const production = getProduction(id);
+  const production = await getProduction(id);
   if (!production) return c.json({ error: "Production not found" }, 404);
 
   const file = form.get("file");
@@ -373,7 +383,7 @@ discovery.post("/productions/:id/process", async (c) => {
   }
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const { jobId } = startProductionProcessing({
+  const { jobId } = await startProductionProcessing({
     productionId: id,
     staffId: me,
     buffer,
@@ -388,19 +398,19 @@ discovery.post("/productions/:id/process", async (c) => {
 });
 
 /** Poll the latest processing job for a production. */
-discovery.get("/productions/:id/job", (c) => {
+discovery.get("/productions/:id/job", async (c) => {
   const id = Number(c.req.param("id"));
-  const job = getLatestProductionJob(id);
+  const job = await getLatestProductionJob(id);
   if (!job) return c.json({ success: true, job: null });
   return c.json({ success: true, job });
 });
 
 // ── Discovery dashboard ─────────────────────────────────────────────────────
 
-discovery.get("/dashboard", (c) => {
+discovery.get("/dashboard", async (c) => {
   const today = c.req.query("today") || new Date().toISOString().slice(0, 10);
-  const overdue = getOverdueSubpoenas(today);
-  const cases = listCases();
+  const overdue = await getOverdueSubpoenas(today);
+  const cases = await listCases();
   const byPhase: Record<string, number> = {};
   for (const cs of cases) byPhase[cs.phase] = (byPhase[cs.phase] || 0) + 1;
   return c.json({

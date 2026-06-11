@@ -1,5 +1,5 @@
 {
-  "id": "01be06fe-09f8-4f6e-997b-6ae6b046dd07",
+  "id": "b050c9f4-89b4-4f1d-abc1-4973c93d8219",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -231,10 +231,10 @@
         },
         "read": {
           "name": "read",
-          "type": "boolean",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": false
+          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -517,7 +517,7 @@
         },
         "is_image_only": {
           "name": "is_image_only",
-          "type": "boolean",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -537,7 +537,7 @@
         },
         "rule115_flags": {
           "name": "rule115_flags",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -811,10 +811,10 @@
         },
         "requested_items": {
           "name": "requested_items",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "'[]'"
         },
         "created_by": {
           "name": "created_by",
@@ -912,14 +912,14 @@
         },
         "shared_with": {
           "name": "shared_with",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
+          "notNull": false,
+          "default": "'[]'"
         },
         "file_names": {
           "name": "file_names",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -944,10 +944,10 @@
         },
         "tags": {
           "name": "tags",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
+          "notNull": false,
+          "default": "'[]'"
         },
         "ai_score": {
           "name": "ai_score",
@@ -957,7 +957,7 @@
         },
         "timeline": {
           "name": "timeline",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -1044,7 +1044,7 @@
         },
         "file_names": {
           "name": "file_names",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -1069,14 +1069,14 @@
         },
         "tags": {
           "name": "tags",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
+          "notNull": false,
+          "default": "'[]'"
         },
         "translation": {
           "name": "translation",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         }
@@ -1142,10 +1142,10 @@
         },
         "active": {
           "name": "active",
-          "type": "boolean",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": true
+          "default": 1
         },
         "created_at": {
           "name": "created_at",

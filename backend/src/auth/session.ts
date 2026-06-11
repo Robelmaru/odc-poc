@@ -33,9 +33,9 @@ export type AppEnv = { Variables: { user: AuthUser; reqId: string } };
 const PUBLIC_API_PATHS = new Set<string>(["/api/health", "/api/records/verify"]);
 
 /** Create a session and set the httpOnly cookie on the response. */
-export function issueSession(c: Context, user: AuthUser): void {
+export async function issueSession(c: Context, user: AuthUser): Promise<void> {
   const token = randomBytes(32).toString("hex");
-  createSession(token, user.username, user.role, SESSION_TTL_HOURS);
+  await createSession(token, user.username, user.role, SESSION_TTL_HOURS);
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "Lax",
@@ -50,20 +50,20 @@ export function issueSession(c: Context, user: AuthUser): void {
  * that the underlying account still exists and is active, so disabling a user
  * invalidates their session on the next request.
  */
-export function getAuthUser(c: Context): AuthUser | null {
+export async function getAuthUser(c: Context): Promise<AuthUser | null> {
   const token = getCookie(c, SESSION_COOKIE);
   if (!token) return null;
-  const session = getSession(token);
+  const session = await getSession(token);
   if (!session) return null;
-  const user = getUserByUsername(session.username);
+  const user = await getUserByUsername(session.username);
   if (!user || !user.active) return null;
   return { username: user.username, role: user.role };
 }
 
 /** Destroy the current session (server-side) and clear the cookie. */
-export function clearSession(c: Context): void {
+export async function clearSession(c: Context): Promise<void> {
   const token = getCookie(c, SESSION_COOKIE);
-  if (token) deleteSession(token);
+  if (token) await deleteSession(token);
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
 }
 
@@ -73,7 +73,7 @@ export function clearSession(c: Context): void {
  */
 export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (PUBLIC_API_PATHS.has(c.req.path)) return next();
-  const user = getAuthUser(c);
+  const user = await getAuthUser(c);
   if (!user) return c.json({ error: "Authentication required" }, 401);
   c.set("user", user);
   return next();

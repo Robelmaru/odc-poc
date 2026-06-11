@@ -122,7 +122,7 @@ auth.get("/callback", async (c) => {
     }
 
     // Match to local user
-    const user = getUserByEmail(email);
+    const user = await getUserByEmail(email);
     if (!user) {
       return c.html(
         renderError(
@@ -138,7 +138,7 @@ auth.get("/callback", async (c) => {
     }
 
     // Establish the server-side session (sets the httpOnly cookie).
-    issueSession(c, { username: user.username, role: user.role });
+    await issueSession(c, { username: user.username, role: user.role });
 
     await insertAuditLog({
       staff_id: user.username,

@@ -1,15 +1,11 @@
 # syntax=docker/dockerfile:1
-# Multi-stage build (OPS-005). Build tools live only in the builder; the runtime
-# image carries just Node, the production node_modules (incl. the tsx runtime),
-# poppler-utils, and the app source. Runs as a non-root user (OPS-006).
+# Multi-stage build (OPS-005). The runtime image carries just Node, the
+# production node_modules (incl. the tsx runtime), poppler-utils, and the app
+# source. Runs as a non-root user (OPS-006). No native modules remain after the
+# Postgres migration (pg/tesseract.js/pdf-* are pure JS), so no compiler toolchain.
 
-# ---- Builder: install production deps + compile the better-sqlite3 native addon ----
+# ---- Builder: install production deps ----
 FROM node:20-slim AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 # --omit=dev keeps eslint/vitest/prettier out of the image; tsx is a prod dep.
@@ -32,7 +28,8 @@ COPY backend/tsconfig.json ./
 COPY backend/src ./src
 COPY frontend /app/frontend
 
-# Data dir (SQLite + tessdata) is a mounted volume at runtime; create + own it.
+# Data dir (vendored tessdata) is a mounted volume at runtime; create + own it.
+# The database is PostgreSQL on a dedicated server (DATABASE_URL), not a local file.
 RUN mkdir -p /app/backend/data && chown -R odc:odc /app
 USER odc
 

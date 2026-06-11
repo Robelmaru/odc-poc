@@ -8,6 +8,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { logTokenUsage } from "./usage.js";
+import { safeJsonParse } from "./json.js";
 import { extractTextFromPdf, chunkByPages } from "./pdfUtils.js";
 import { extractSectionsOnly } from "./timelinePipeline.js";
 import { type DocumentTimelineResult } from "../skills/DocumentTimeline.js";
@@ -60,15 +61,17 @@ export async function reconcileProductionContent(opts: {
   sections: any[];
   text: string;
 }): Promise<{ status: string; result: ProductionComplianceResult }> {
-  const production = getProduction(opts.productionId);
+  const production = await getProduction(opts.productionId);
   if (!production) throw new Error("Production not found");
-  const subpoena = getSubpoena(production.subpoena_id);
+  const subpoena = await getSubpoena(production.subpoena_id);
   if (!subpoena) throw new Error("Subpoena not found");
 
-  const requestedItems = JSON.parse(subpoena.requested_items) as {
-    item_type: string;
-    description: string;
-  }[];
+  // safeJsonParse so a corrupted requested_items row degrades to "nothing demanded"
+  // rather than crashing the reconcile job (DB-011).
+  const requestedItems = safeJsonParse<{ item_type: string; description: string }[]>(
+    subpoena.requested_items,
+    [],
+  );
 
   const userContent =
     "REQUESTED ITEMS (the subpoena's demand):\n" +
@@ -97,7 +100,7 @@ export async function reconcileProductionContent(opts: {
   ) as unknown as ProductionComplianceResult;
 
   const items = Array.isArray(result.items) ? result.items : [];
-  replaceProductionItems(
+  await replaceProductionItems(
     opts.productionId,
     items.map((i) => ({
       item_type: i.item_type,
@@ -108,16 +111,16 @@ export async function reconcileProductionContent(opts: {
     })),
   );
   const rollup = rollupProductionStatus(items);
-  updateProductionStatus(opts.productionId, rollup);
-  setProductionReconcileMeta(opts.productionId, {
+  await updateProductionStatus(opts.productionId, rollup);
+  await setProductionReconcileMeta(opts.productionId, {
     rule115_flags: Array.isArray(result.rule115Flags) ? result.rule115Flags : [],
     follow_up: result.recommendedFollowUp || "",
   });
 
   if (rollup === "complete") {
-    updateSubpoenaStatus(subpoena.id, "fully_received");
+    await updateSubpoenaStatus(subpoena.id, "fully_received");
   } else if (items.length > 0) {
-    updateSubpoenaStatus(subpoena.id, "partially_received");
+    await updateSubpoenaStatus(subpoena.id, "partially_received");
   }
 
   const missing = items.filter((i) => i.status === "missing" || i.status === "defective");
@@ -145,16 +148,16 @@ export async function reconcileProductionContent(opts: {
  * Returns the job id immediately to the caller; the work runs to completion as a
  * floating promise. Poll production_jobs (GET /productions/:id/job) for progress.
  */
-export function startProductionProcessing(opts: {
+export async function startProductionProcessing(opts: {
   productionId: number;
   staffId: string;
   buffer: Buffer;
   filename: string;
-}): { jobId: number } {
-  const job = createProductionJob(opts.productionId);
+}): Promise<{ jobId: number }> {
+  const job = await createProductionJob(opts.productionId);
   // Fire-and-forget; the Node event loop keeps it alive while the server runs.
-  void runPipeline(job.id, opts).catch((err) => {
-    updateProductionJob(job.id, {
+  void runPipeline(job.id, opts).catch(async (err) => {
+    await updateProductionJob(job.id, {
       status: "failed",
       error: (err as Error).message?.slice(0, 500) || "Unknown error",
       message: "Processing failed",
@@ -168,16 +171,16 @@ async function runPipeline(
   opts: { productionId: number; staffId: string; buffer: Buffer; filename: string },
 ): Promise<void> {
   const { productionId, staffId, buffer, filename } = opts;
-  const production = getProduction(productionId);
+  const production = await getProduction(productionId);
   if (!production) throw new Error("Production not found");
-  const subpoena = getSubpoena(production.subpoena_id);
+  const subpoena = await getSubpoena(production.subpoena_id);
   if (!subpoena) throw new Error("Subpoena not found");
-  const caseRow = getCase(subpoena.case_id);
+  const caseRow = await getCase(subpoena.case_id);
 
   // 1) Extract text (Vision OCR for scanned pages happens inside extractTextFromPdf).
-  updateProductionJob(jobId, { status: "extracting", message: "Extracting text…" });
+  await updateProductionJob(jobId, { status: "extracting", message: "Extracting text…" });
   const extraction = await extractTextFromPdf(buffer, async (msg) => {
-    updateProductionJob(jobId, { message: msg });
+    await updateProductionJob(jobId, { message: msg });
   });
 
   const totalPages = extraction.totalPages || extraction.pages.length || 0;
@@ -185,7 +188,7 @@ async function runPipeline(
   // is_image_only reflects how the document actually arrived: a majority of pages
   // had no usable text layer and required OCR (local Tesseract and/or Vision).
   const imageOnly = totalPages > 0 && extraction.ocrPages / totalPages > 0.5;
-  updateProductionIntake(productionId, {
+  await updateProductionIntake(productionId, {
     page_count: totalPages,
     text_chars_per_page: Number(charsPerPage.toFixed(1)),
     is_image_only: imageOnly,
@@ -195,7 +198,7 @@ async function runPipeline(
   // 2) Build the sub-document INDEX only (section-index-only pass — no timeline
   //    extraction or merge tree). Reconciliation only needs the section index, so
   //    this is far faster/cheaper than the full DocumentTimeline pipeline.
-  updateProductionJob(jobId, {
+  await updateProductionJob(jobId, {
     status: "sectioning",
     message: `Indexing ${totalPages} page(s) into sub-documents…`,
   });
@@ -226,11 +229,11 @@ async function runPipeline(
     timeline: JSON.stringify(timelineResult),
   });
   const recordId = Number(rec.lastInsertRowid);
-  updateProductionIntake(productionId, { timeline_record_id: recordId });
-  if (caseRow) linkTimelineRecordToCase(recordId, caseRow.id, productionId);
+  await updateProductionIntake(productionId, { timeline_record_id: recordId });
+  if (caseRow) await linkTimelineRecordToCase(recordId, caseRow.id, productionId);
 
   // 4) Reconcile against the subpoena's requested items.
-  updateProductionJob(jobId, {
+  await updateProductionJob(jobId, {
     status: "reconciling",
     message: "Reconciling produced documents against the subpoena…",
   });
@@ -244,7 +247,7 @@ async function runPipeline(
   const missing = (result.items || []).filter(
     (i) => i.status === "missing" || i.status === "defective",
   ).length;
-  updateProductionJob(jobId, {
+  await updateProductionJob(jobId, {
     status: "done",
     message: `Done — status "${status}", ${missing} item(s) missing/defective of ${
       (result.items || []).length

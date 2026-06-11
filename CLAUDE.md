@@ -13,7 +13,7 @@ and serves a single-page frontend.
 - **Runtime**: Node.js 20 LTS (executed with `tsx`, no build/emit step).
 - **Framework**: Hono (`hono` + `@hono/node-server`). *(Platform standard is Fastify — see deviations.)*
 - **Language**: TypeScript 5, strict mode **on** (`backend/tsconfig.json`).
-- **Database**: SQLite via `better-sqlite3`, file at `backend/data/odc-poc.db`. *(Platform standard is PostgreSQL + pgvector — see deviations. `pg` and `DATABASE_*` env vars are staged for that migration.)*
+- **Database**: **PostgreSQL + pgvector** via a pooled `pg` client (`backend/src/db/client.ts`), connection from `DATABASE_URL`. **Drizzle** owns the schema (`backend/src/db/schema.ts`) and migrations (`backend/migrations/`); queries are parameterized raw SQL through the pool. *(Migrated from SQLite — now matches the platform standard.)*
 - **AI**: Anthropic SDK (`@anthropic-ai/sdk`) called directly (allowed by platform standard for direct SDK use). GPTZero used for AI-text detection with a Claude fallback.
 - **Auth**: Microsoft Entra ID (Azure AD) SSO via `@azure/msal-node`, plus a legacy staff-PIN fallback.
 - **OCR/PDF**: `tesseract.js` (OCR), `pdf-parse` + `pdf-poppler` (PDF text/image extraction).
@@ -35,8 +35,8 @@ and serves a single-page frontend.
 
 ## Architectural conventions
 
-- All DB access goes through modules in `backend/src/db/`. Routes should not open the SQLite handle directly.
-- All SQL uses `better-sqlite3` prepared statements with **bound parameters** — never string-concatenate user input into SQL.
+- All DB access goes through modules in `backend/src/db/` (`database.ts`, `discovery.ts`); the pooled client lives in `db/client.ts`. Routes never query the pool directly.
+- All SQL uses **bound parameters** (the `?`→`$n` helper in `db/client.ts`) — never string-concatenate user input into SQL.
 - Long-running requests (OCR, multi-pass Claude comparisons) are expected; HTTP timeouts are disabled in `index.ts` on purpose.
 - Use the structured logger in `backend/src/utils/logger.ts`; do not add `console.log` to committed code (the startup banner is the one allowed exception).
 
@@ -45,7 +45,7 @@ and serves a single-page frontend.
 These diverge from the DC Bar platform standard **on purpose** because this is a POC. They are tracked for a future migration, not bugs to fix in passing:
 
 - **Hono instead of Fastify.** No JSON-schema route validation / auto OpenAPI yet.
-- **SQLite instead of PostgreSQL + pgvector** — *migration in progress.* The Drizzle target schema (`backend/src/db/schema.ts`) and generated migrations (`backend/migrations/`) exist; the runtime still uses `better-sqlite3` until the async driver cutover lands (needs a Postgres instance to validate).
+- ~~SQLite instead of PostgreSQL~~ — **DONE.** Migrated to PostgreSQL + pgvector with Drizzle migrations. JSON-bearing columns are still `text` (app does `JSON.stringify`/`safeJsonParse`) and 0/1 flag columns are still `integer` — a faithful engine migration; moving those to `jsonb`/`boolean` and a `shared_with` junction table (DB-006) is a tracked follow-up.
 - **npm instead of pnpm**, dependencies use `^` ranges rather than exact pins, Node not pinned via Volta.
 - **No `deploy/k8s/` Kustomize tree and no `argocd/` Applications.** Deployment is local `docker compose` only.
 - **No test suite yet** (Vitest is wired but empty).

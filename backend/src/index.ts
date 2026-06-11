@@ -86,13 +86,13 @@ app.route("/auth", auth);
 
 // Health check — probes the DB and required config so the endpoint reflects
 // real readiness, not just process liveness (OPS-008).
-app.get("/api/health", (c) => {
+app.get("/api/health", async (c) => {
   const checks = {
     db: "ok" as "ok" | "error",
     anthropic: process.env.ANTHROPIC_API_KEY ? "ok" : "missing",
   };
   try {
-    pingDb();
+    await pingDb();
   } catch {
     checks.db = "error";
   }

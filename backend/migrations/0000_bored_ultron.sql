@@ -36,7 +36,7 @@ CREATE TABLE "notifications" (
 	"staff_id" text NOT NULL,
 	"message" text NOT NULL,
 	"link" text,
-	"read" boolean DEFAULT false NOT NULL,
+	"read" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -71,10 +71,10 @@ CREATE TABLE "productions" (
 	"timeline_record_id" integer,
 	"page_count" integer,
 	"text_chars_per_page" real,
-	"is_image_only" boolean,
+	"is_image_only" integer,
 	"ocr_status" text DEFAULT 'not_needed',
 	"redaction_status" text DEFAULT 'unknown',
-	"rule115_flags" jsonb,
+	"rule115_flags" text,
 	"follow_up" text,
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -112,7 +112,7 @@ CREATE TABLE "subpoenas" (
 	"response_deadline" text,
 	"extended_deadline" text,
 	"status" text DEFAULT 'issued' NOT NULL,
-	"requested_items" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"requested_items" text DEFAULT '[]' NOT NULL,
 	"created_by" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -124,14 +124,14 @@ CREATE TABLE "timeline_records" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"record_name" text,
 	"case_number" text,
-	"shared_with" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"file_names" jsonb NOT NULL,
+	"shared_with" text DEFAULT '[]',
+	"file_names" text NOT NULL,
 	"notes" text,
 	"summary" text,
 	"status" text DEFAULT 'draft',
-	"tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"tags" text DEFAULT '[]',
 	"ai_score" integer,
-	"timeline" jsonb NOT NULL,
+	"timeline" text NOT NULL,
 	"case_id" integer,
 	"production_id" integer
 );
@@ -141,12 +141,12 @@ CREATE TABLE "translation_records" (
 	"staff_id" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"record_name" text,
-	"file_names" jsonb NOT NULL,
+	"file_names" text NOT NULL,
 	"language" text NOT NULL,
 	"language_name" text NOT NULL,
 	"status" text DEFAULT 'draft',
-	"tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"translation" jsonb NOT NULL
+	"tags" text DEFAULT '[]',
+	"translation" text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "users" (
@@ -155,7 +155,7 @@ CREATE TABLE "users" (
 	"email" text,
 	"pin" text NOT NULL,
 	"role" text DEFAULT 'staff' NOT NULL,
-	"active" boolean DEFAULT true NOT NULL,
+	"active" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_username_unique" UNIQUE("username")
 );

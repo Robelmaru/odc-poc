@@ -4,9 +4,11 @@ services:
     ports:
       - "3001:3000"
     environment:
-      # Secrets are read from the environment / local .env — never hardcoded here.
+      # Secrets/config are read from the environment / local .env — never hardcoded.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DATABASE_PATH=/app/backend/data/odc-poc.db
+      # PostgreSQL runs on a dedicated server (not in compose, per the standard).
+      # Point this at it; staging/prod append ?sslmode=require.
+      - DATABASE_URL=${DATABASE_URL}
       - PIN_CATERINA=${PIN_CATERINA}
       - PIN_ABESHA=${PIN_ABESHA}
       - PIN_ROBEL=${PIN_ROBEL}

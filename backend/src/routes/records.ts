@@ -37,14 +37,15 @@ import {
   updateUserPin,
   updateUserEmail,
   updateUserRole,
-  default as db,
+  updateTranslationRecordName,
+  updateTimelineContent,
 } from "../db/database.js";
 import { issueSession, type AppEnv } from "../auth/session.js";
 import { verifyPin } from "../auth/pin.js";
 import { safeJsonParse } from "../utils/json.js";
 import { isSimilar } from "../utils/textSimilarity.js";
 
-function getValidStaff(): string[] {
+async function getValidStaff(): Promise<string[]> {
   return getActiveUsernames();
 }
 
@@ -55,7 +56,7 @@ records.post("/verify", async (c) => {
   const { staff_id, pin } = await c.req.json();
   if (!staff_id || !pin) return c.json({ error: "Username and password required" }, 400);
 
-  const user = getUserByUsername(staff_id);
+  const user = await getUserByUsername(staff_id);
   if (!user) return c.json({ error: "Invalid username or password" }, 401);
   if (!user.active)
     return c.json({ error: "Account is disabled. Contact your administrator." }, 403);
@@ -63,7 +64,7 @@ records.post("/verify", async (c) => {
     return c.json({ success: false, error: "Invalid username or password" }, 401);
 
   // Establish a server-side session (sets the httpOnly cookie).
-  issueSession(c, { username: user.username, role: user.role });
+  await issueSession(c, { username: user.username, role: user.role });
   return c.json({ success: true, role: user.role });
 });
 
@@ -72,7 +73,7 @@ records.post("/verify", async (c) => {
 records.get("/admin/users", async (c) => {
   const admin = c.get("user");
   if (admin.role !== "admin") return c.json({ error: "Admin access required" }, 403);
-  const users = getAllUsers();
+  const users = await getAllUsers();
   return c.json({ success: true, users: users.map((u) => ({ ...u, pin: "****" })) });
 });
 
@@ -82,19 +83,19 @@ records.post("/admin/users", async (c) => {
   if (admin.role !== "admin") return c.json({ error: "Admin access required" }, 403);
   if (!username) return c.json({ error: "Username required" }, 400);
   if (!email && !pin) return c.json({ error: "Email (for SSO) or PIN required" }, 400);
-  const existing = getUserByUsername(username);
+  const existing = await getUserByUsername(username);
   if (existing) return c.json({ error: "Username already exists" }, 400);
   if (email) {
-    const existingByEmail = getUserByEmail(email);
+    const existingByEmail = await getUserByEmail(email);
     if (existingByEmail) return c.json({ error: "A user with that email already exists" }, 400);
   }
   // Use a random placeholder PIN if not provided (since SSO is the primary method)
   const userPin = pin || Math.random().toString(36).slice(2, 10);
-  createUser(username, userPin, role || "staff");
+  await createUser(username, userPin, role || "staff");
   // Set email if provided
   if (email) {
-    const newUser = getUserByUsername(username);
-    if (newUser) updateUserEmail(newUser.id, email);
+    const newUser = await getUserByUsername(username);
+    if (newUser) await updateUserEmail(newUser.id, email);
   }
   await insertAuditLog({
     staff_id: admin.username,
@@ -108,7 +109,7 @@ records.post("/admin/users/toggle", async (c) => {
   const { user_id, active } = await c.req.json();
   const admin = c.get("user");
   if (admin.role !== "admin") return c.json({ error: "Admin access required" }, 403);
-  updateUserActive(Number(user_id), active);
+  await updateUserActive(Number(user_id), active);
   await insertAuditLog({
     staff_id: admin.username,
     action: active ? "enable_user" : "disable_user",
@@ -122,7 +123,7 @@ records.post("/admin/users/reset-pin", async (c) => {
   const admin = c.get("user");
   if (admin.role !== "admin") return c.json({ error: "Admin access required" }, 403);
   if (!new_pin) return c.json({ error: "New PIN required" }, 400);
-  updateUserPin(Number(user_id), new_pin);
+  await updateUserPin(Number(user_id), new_pin);
   await insertAuditLog({
     staff_id: admin.username,
     action: "reset_pin",
@@ -135,7 +136,7 @@ records.post("/admin/users/email", async (c) => {
   const { user_id, email } = await c.req.json();
   const admin = c.get("user");
   if (admin.role !== "admin") return c.json({ error: "Admin access required" }, 403);
-  updateUserEmail(Number(user_id), email || null);
+  await updateUserEmail(Number(user_id), email || null);
   await insertAuditLog({
     staff_id: admin.username,
     action: "set_email",
@@ -149,7 +150,7 @@ records.post("/admin/users/role", async (c) => {
   const admin = c.get("user");
   if (admin.role !== "admin") return c.json({ error: "Admin access required" }, 403);
   if (!["staff", "admin"].includes(role)) return c.json({ error: "Invalid role" }, 400);
-  updateUserRole(Number(user_id), role);
+  await updateUserRole(Number(user_id), role);
   await insertAuditLog({
     staff_id: admin.username,
     action: "change_role",
@@ -243,10 +244,7 @@ records.post("/translations/rename", async (c) => {
     return c.json({ error: "record_id and record_name required" }, 400);
   const row = await getTranslationById(record_id);
   if (!row || row.staff_id !== me) return c.json({ error: "Record not found or not yours" }, 404);
-  db.prepare(`UPDATE translation_records SET record_name = ? WHERE id = ?`).run(
-    record_name,
-    record_id,
-  );
+  await updateTranslationRecordName(record_id, record_name);
   return c.json({ success: true });
 });
 
@@ -274,7 +272,8 @@ records.post("/share", async (c) => {
   if (!row || row.staff_id !== me) return c.json({ error: "Record not found or not yours" }, 404);
 
   // share_with should be an array of staff names
-  const validShares = share_with.filter((s: string) => getValidStaff().includes(s) && s !== me);
+  const activeStaff = await getValidStaff();
+  const validShares = share_with.filter((s: string) => activeStaff.includes(s) && s !== me);
   await updateRecordSharing(JSON.stringify(validShares), record_id);
   await insertAuditLog({
     staff_id: me,
@@ -303,10 +302,7 @@ records.post("/update-timeline", async (c) => {
   const row = await getRecordById(record_id);
   if (!row || row.staff_id !== me) return c.json({ error: "Record not found or not yours" }, 404);
 
-  db.prepare(`UPDATE timeline_records SET timeline = ? WHERE id = ?`).run(
-    JSON.stringify(timeline),
-    record_id,
-  );
+  await updateTimelineContent(record_id, JSON.stringify(timeline));
   return c.json({ success: true });
 });
 

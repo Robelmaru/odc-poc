@@ -18,7 +18,6 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/pdf-parse": "^1.1.5",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
@@ -35,7 +34,6 @@
     "@azure/msal-node": "^5.2.2",
     "@hono/node-server": "1.19.14",
     "@types/pg": "^8.20.0",
-    "better-sqlite3": "^12.8.0",
     "drizzle-orm": "0.45.2",
     "hono": "4.12.25",
     "pdf-parse": "^2.4.5",
