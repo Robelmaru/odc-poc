@@ -22,19 +22,38 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
+      # Skip-guard: secrets can't be used in a job-level `if`, so probe for the key
+      # in a step and gate the rest on it. When ANTHROPIC_API_KEY is not configured
+      # the review steps are skipped and the job still succeeds (no failure email),
+      # then activates automatically once the secret is added at the repo/org level.
+      - name: Check for ANTHROPIC_API_KEY
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY is not set on this repository — skipping Claude review. Add it under Settings → Secrets and variables → Actions to enable."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.key.outputs.enabled == 'true'
         with:
           fetch-depth: 0
 
       # The action takes a `prompt` (NOT `commands`); project slash commands in
       # .claude/commands/ are invoked from the prompt. One step per command.
       - name: Standards review
+        if: steps.key.outputs.enabled == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "/standards-review"
 
       - name: Security review
+        if: steps.key.outputs.enabled == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
