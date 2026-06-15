@@ -1,9 +1,8 @@
-apiVersion: kustomize.config.k8s.io/v1beta1 
+apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # Staging overlay. The staging Argo CD Application points its source `path` here
 # and auto-syncs on every change to the `staging` branch.
-
 namespace: odc-poc-staging
 
 resources:
@@ -28,7 +27,11 @@ patches:
       - op: replace
         path: /spec/rules/0/host
         value: odc-document-analyzer-staging.dcbar.org
-  # Staging runs a single replica; production uses the base default of 2.
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: odc-poc-tls
+
+# Staging runs a single replica; production uses the base default of 2.
   - target:
       kind: Deployment
       name: odc-poc
