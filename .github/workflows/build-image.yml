@@ -8,6 +8,12 @@ name: Build and push image
 on:
   push:
     branches: [staging, main]
+    # Image Updater's write-back commit only touches deploy manifests; don't
+    # rebuild on manifest/docs-only commits (also breaks the write-back→build loop).
+    paths-ignore:
+      - 'deploy/**'
+      - 'argocd/**'
+      - '**.md'
 
 jobs:
   build-image:
@@ -31,11 +37,26 @@ jobs:
         id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
+      # Always push the immutable commit-SHA tag (prod promotes by SHA).
+      # On the staging branch, ALSO move the mutable :staging tag that
+      # Argo CD Image Updater tracks via the digest strategy.
+      - name: Compute image tags
+        id: tags
+        run: |
+          {
+            echo "list<<TAGS"
+            echo "${{ steps.img.outputs.name }}:${{ github.sha }}"
+            if [ "${{ github.ref_name }}" = "staging" ]; then
+              echo "${{ steps.img.outputs.name }}:staging"
+            fi
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
       # The root Dockerfile is multi-stage and expects the repo root as context
       # (it copies backend/ and frontend/).
-      - name: Build and push (immutable commit-SHA tag)
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.img.outputs.name }}:${{ github.sha }}
+          tags: ${{ steps.tags.outputs.list }}

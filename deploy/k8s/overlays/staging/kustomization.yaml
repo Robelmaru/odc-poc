@@ -9,12 +9,13 @@ namespace: odc-poc-staging
 resources:
   - ../../base
 
-# Image tag for this environment. The develop -> staging promotion PR bumps newTag
-# to the commit SHA CI built (retags BOTH the Deployment and the migration Job):
-#   kustomize edit set image ghcr.io/dc-bar-web/odc-poc=ghcr.io/dc-bar-web/odc-poc:<commit-sha>
+# Staging tracks the mutable :staging tag. Argo CD Image Updater pins the live
+# digest on top of it (git write-back, configured in argocd/applications-staging.yaml),
+# so this file stays the source of truth.
+# (Production still bumps newTag to a commit SHA via the promotion PR.)
 images:
   - name: ghcr.io/dc-bar-web/odc-poc
-    newTag: REPLACE_WITH_COMMIT_SHA
+    newTag: staging
 
 patches:
   - target:

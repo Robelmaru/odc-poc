@@ -10,6 +10,17 @@ kind: Application
 metadata:
   name: odc-poc-staging
   namespace: argocd
+  annotations:
+    # --- Argo CD Image Updater (STAGING ONLY) ---
+    # Track the digest behind the mutable :staging tag CI pushes on each merge
+    # to the staging branch, and commit the pinned digest back to git.
+    # Production deliberately omits this (manual SHA-promotion gate).
+    argocd-image-updater.argoproj.io/image-list: app=ghcr.io/dc-bar-web/odc-poc:staging
+    argocd-image-updater.argoproj.io/app.update-strategy: digest
+    argocd-image-updater.argoproj.io/app.pull-secret: pullsecret:argocd/ghcr-pull
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    argocd-image-updater.argoproj.io/git-branch: staging
 spec:
   project: default
   source:
