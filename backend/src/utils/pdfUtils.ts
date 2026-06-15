@@ -1,10 +1,11 @@
 import { PDFParse } from "pdf-parse";
-import * as pdfPoppler from "pdf-poppler";
 import Anthropic from "@anthropic-ai/sdk";
 import { createWorker } from "tesseract.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { logger } from "./logger.js";
 import { logTokenUsage } from "./usage.js";
 
@@ -15,6 +16,10 @@ const SPARSE_TEXT_THRESHOLD = 50; // pages with fewer chars than this are likely
 const VISION_CONCURRENCY = Math.min(12, Math.max(1, Number(process.env.OCR_CONCURRENCY) || 6));
 
 const anthropic = new Anthropic();
+
+// PDF pages are rendered to images via poppler-utils' pdftoppm, invoked directly
+// (it ships in the runtime image and on CI runners; no native node dependency).
+const execFileAsync = promisify(execFile);
 
 export interface PageText {
   pageNum: number;
@@ -83,7 +88,7 @@ export async function extractTextFromPdf(
     }
     logger.debug("    Found " + sparsePages.length + " sparse pages, running OCR...");
 
-    // Write PDF to temp file for pdf-poppler
+    // Write PDF to a temp file for pdftoppm
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "odc-pdf-"));
     const tmpPdf = path.join(tmpDir, "input.pdf");
     fs.writeFileSync(tmpPdf, buffer);
@@ -174,18 +179,24 @@ CLARITY: [number]
       const tasks = sparsePages.map((page) => async () => {
         try {
           const imgPrefix = "page-" + page.pageNum;
-          await pdfPoppler.convert(tmpPdf, {
-            format: "jpeg",
-            scale: 1500,
-            out_dir: tmpDir,
-            out_prefix: imgPrefix,
-            page: page.pageNum,
-          });
-          const files = fs
-            .readdirSync(tmpDir)
-            .filter((f) => f.startsWith(imgPrefix) && f.endsWith(".jpg"));
-          if (files.length === 0) return;
-          const actualPath = path.join(tmpDir, files[0]!);
+          const outRoot = path.join(tmpDir, imgPrefix);
+          // Render the page to JPEG with poppler-utils' pdftoppm. `-singlefile`
+          // yields exactly <outRoot>.jpg; `-scale-to 1500` bounds the long side to
+          // 1500px (matching the previous pdf-poppler `scale`).
+          await execFileAsync("pdftoppm", [
+            "-jpeg",
+            "-scale-to",
+            "1500",
+            "-f",
+            String(page.pageNum),
+            "-l",
+            String(page.pageNum),
+            "-singlefile",
+            tmpPdf,
+            outRoot,
+          ]);
+          const actualPath = outRoot + ".jpg";
+          if (!fs.existsSync(actualPath)) return;
 
           let text = "";
           let score = 0;

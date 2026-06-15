@@ -14,7 +14,7 @@ RUN pnpm install --prod --frozen-lockfile
 
 # ---- Runtime: slim image, only what is needed to run ----
 FROM node:20-slim AS runtime
-# poppler-utils is needed at runtime by pdf-poppler (PDF -> image for OCR).
+# poppler-utils provides pdftoppm, invoked directly to render PDF pages to images for OCR.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/* \
