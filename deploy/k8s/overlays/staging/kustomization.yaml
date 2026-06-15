@@ -24,10 +24,10 @@ patches:
     patch: |
       - op: replace
         path: /spec/tls/0/hosts/0
-        value: odc-poc-staging.example.dcbar.org
+        value: odc-document-analyzer-staging.dcbar.org
       - op: replace
         path: /spec/rules/0/host
-        value: odc-poc-staging.example.dcbar.org
+        value: odc-document-analyzer-staging.dcbar.org
   # Staging runs a single replica; production uses the base default of 2.
   - target:
       kind: Deployment
