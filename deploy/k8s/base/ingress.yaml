@@ -18,7 +18,7 @@ spec:
         - odc-poc.example.dcbar.org
       secretName: odc-poc-tls # org-issued certificate stored as a K8s Secret (see ../../README.md)
   rules:
-    - host: odc-poc.example.dcbar.org
+    - host: odc-document-analyzer-staging.dcbar.org
       http:
         paths:
           - path: /
