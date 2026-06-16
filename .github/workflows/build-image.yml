@@ -47,7 +47,7 @@ jobs:
             echo "list<<TAGS"
             echo "${{ steps.img.outputs.name }}:${{ github.sha }}"
             if [ "${{ github.ref_name }}" = "staging" ]; then
-              echo "${{ steps.img.outputs.name }}:staging"
+              echo "${{ steps.img.outputs.name }}:staging-newest-build"
             fi
             echo "TAGS"
           } >> "$GITHUB_OUTPUT"
