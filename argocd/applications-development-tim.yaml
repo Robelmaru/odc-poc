@@ -3,22 +3,16 @@
 # Register once with the cluster's Argo CD:
 #   kubectl apply -n argocd -f argocd/applications-development-tim.yaml
 #
-# Auto-syncs from the `Development-Tim` branch's overlay, mirroring staging.
+# Auto-syncs from the `Development-Tim` branch's overlay, mirroring staging. Image
+# bumps come from CI: .github/workflows/build-image.yml writes the just-built commit
+# SHA into the overlay's newTag on every push and commits it back, and this app
+# reconciles it. We do NOT use Argo CD Image Updater — it isn't installed in the
+# cluster; the CI write-back replaces it.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: odc-poc-dev-tim
   namespace: argocd
-  annotations:
-    # --- Argo CD Image Updater ---
-    # Track the digest behind the mutable :development-tim tag CI pushes on each
-    # push to the Development-Tim branch, and commit the pinned digest back to git.
-    argocd-image-updater.argoproj.io/image-list: app=ghcr.io/dc-bar-web/odc-poc:development-tim
-    argocd-image-updater.argoproj.io/app.update-strategy: digest
-    argocd-image-updater.argoproj.io/app.pull-secret: pullsecret:argocd/ghcr-pull
-    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
-    argocd-image-updater.argoproj.io/write-back-target: kustomization
-    argocd-image-updater.argoproj.io/git-branch: Development-Tim
 spec:
   project: default
   source:

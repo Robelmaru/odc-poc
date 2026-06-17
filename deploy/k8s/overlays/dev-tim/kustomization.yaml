@@ -8,12 +8,12 @@ namespace: odc-poc-dev-tim
 resources:
   - ../../base
 
-# STOPGAP: pinned to the CI-built commit SHA. By design this should read
-# `newTag: development-tim` and Argo CD Image Updater would write the live digest
-# back here on each build (configured in argocd/applications-development-tim.yaml).
-# That write-back has never run, so the rendered manifest never changed and Argo
-# never rolled out new images. Pinning the SHA gives Argo a real diff to sync.
-# Revert to `newTag: development-tim` once Image Updater is confirmed working.
+# CI-managed image tag. .github/workflows/build-image.yml rewrites newTag to the
+# just-built commit SHA on every push to Development-Tim and commits it back here;
+# Argo CD then reconciles this overlay onto the cluster. This file is the source of
+# truth for what is deployed to dev-tim — do not hand-edit newTag, CI overwrites it.
+# (The write-back touches only deploy/**, which build-image.yml path-ignores, so it
+# cannot trigger another build.)
 images:
   - name: ghcr.io/dc-bar-web/odc-poc
     newTag: 99b53c8267c64620c8b02f4732d1ec01dac4186d
