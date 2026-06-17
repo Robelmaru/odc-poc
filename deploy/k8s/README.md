@@ -1,4 +1,4 @@
-# Kubernetes manifests — odc-poc
+# Kubernetes manifests — odc-poc 
 
 **Kustomize** manifests for staging and production. **Argo CD** reconciles the
 cluster to a rendered overlay (GitOps). `docker compose` (repo root) is for local
