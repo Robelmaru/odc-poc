@@ -1,0 +1,36 @@
+# Argo CD Application — odc-poc (Development-Tim)
+#
+# Register once with the cluster's Argo CD:
+#   kubectl apply -n argocd -f argocd/applications-development-tim.yaml
+#
+# Auto-syncs from the `Development-Tim` branch's overlay, mirroring staging.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: odc-poc-dev-tim
+  namespace: argocd
+  annotations:
+    # --- Argo CD Image Updater ---
+    # Track the digest behind the mutable :development-tim tag CI pushes on each
+    # push to the Development-Tim branch, and commit the pinned digest back to git.
+    argocd-image-updater.argoproj.io/image-list: app=ghcr.io/dc-bar-web/odc-poc:development-tim
+    argocd-image-updater.argoproj.io/app.update-strategy: digest
+    argocd-image-updater.argoproj.io/app.pull-secret: pullsecret:argocd/ghcr-pull
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    argocd-image-updater.argoproj.io/git-branch: Development-Tim
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/DC-Bar-web/odc-poc.git
+    targetRevision: Development-Tim
+    path: deploy/k8s/overlays/dev-tim
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: odc-poc-dev-tim
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

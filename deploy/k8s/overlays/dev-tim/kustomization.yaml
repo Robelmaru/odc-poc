@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Tim's development overlay. The odc-poc-dev-tim Argo CD Application points its
+# source `path` here and auto-syncs on every change to the `Development-Tim` branch.
+namespace: odc-poc-dev-tim
+
+resources:
+  - ../../base
+
+# Tracks the mutable :development-tim tag. Argo CD Image Updater pins the live
+# digest on top of it (git write-back, configured in
+# argocd/applications-development-tim.yaml), so this file stays the source of truth.
+images:
+  - name: ghcr.io/dc-bar-web/odc-poc
+    newTag: development-tim
+
+patches:
+  - target:
+      kind: Ingress
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: odc-document-analyzer-dev-tim.dcbar.org
+      - op: replace
+        path: /spec/rules/0/host
+        value: odc-document-analyzer-dev-tim.dcbar.org
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: odc-poc-tls
+
+  # Single replica for a dev environment.
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1

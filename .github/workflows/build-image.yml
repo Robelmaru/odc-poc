@@ -7,7 +7,7 @@ name: Build and push image
 
 on:
   push:
-    branches: [staging, main]
+    branches: [staging, main, Development-Tim]
     # Image Updater's write-back commit only touches deploy manifests; don't
     # rebuild on manifest/docs-only commits (also breaks the write-back→build loop).
     paths-ignore:
@@ -48,6 +48,10 @@ jobs:
             echo "${{ steps.img.outputs.name }}:${{ github.sha }}"
             if [ "${{ github.ref_name }}" = "staging" ]; then
               echo "${{ steps.img.outputs.name }}:staging"
+            fi
+            # Tim's dev environment tracks the mutable :development-tim tag.
+            if [ "${{ github.ref_name }}" = "Development-Tim" ]; then
+              echo "${{ steps.img.outputs.name }}:development-tim"
             fi
             echo "TAGS"
           } >> "$GITHUB_OUTPUT"
