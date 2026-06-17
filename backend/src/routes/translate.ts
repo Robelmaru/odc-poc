@@ -10,7 +10,7 @@ const anthropic = new Anthropic();
 
 async function detectLanguage(text: string): Promise<string> {
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 50,
     system: detectLanguagePrompt(),
     messages: [{ role: "user", content: text.slice(0, 4000) }],
@@ -23,7 +23,7 @@ async function detectLanguage(text: string): Promise<string> {
 
 async function translateChunk(text: string): Promise<string> {
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 8192,
     system: translatePrompt(),
     messages: [{ role: "user", content: text }],

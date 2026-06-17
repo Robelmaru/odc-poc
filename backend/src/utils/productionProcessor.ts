@@ -85,7 +85,7 @@ export async function reconcileProductionContent(opts: {
     "\n\nReconcile each requested item. Remember: demand/request language is NOT a produced artifact. Return only JSON.";
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 8192,
     system: productionCompliancePrompt,
     messages: [{ role: "user", content: userContent }],

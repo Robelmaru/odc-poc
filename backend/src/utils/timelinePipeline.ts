@@ -111,7 +111,7 @@ export async function extractChunk(
   parts.push({ type: "text", text: instruction });
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 16384,
     system: timelineSystemPrompt(ruleContext),
     messages: [{ role: "user", content: parts }],
@@ -168,7 +168,7 @@ export async function mergeTwoTimelines(
   const payload = JSON.stringify([a, b]);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 16384,
     system: timelineMergePrompt,
     messages: [
@@ -185,7 +185,7 @@ export async function mergeTwoTimelines(
   if (response.stop_reason === "max_tokens") {
     logger.debug("    Warning: merge truncated, retrying concise...");
     const retry = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 16384,
       system: timelineMergePrompt,
       messages: [
@@ -255,7 +255,7 @@ export async function finalCleanup(tl: DocumentTimelineResult): Promise<Document
 
     const payload = JSON.stringify(tl);
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 16384,
       system:
         "You are a legal document analyst. Clean up this merged timeline: remove exact duplicates, ensure strict chronological order, verify date formats are YYYY-MM-DD, and write a concise overall summary. Also clean up the 'sections' array (the Table of Contents of sub-documents inside each PDF): sort by filename and startPage ascending, merge adjacent fragments of the same logical sub-document (same filename, same sectionType, abutting page ranges, matching title/parties), and remove exact duplicate entries. Do NOT merge genuinely distinct sub-documents that happen to be adjacent. Output only valid JSON in the same DocumentTimelineResult format (including the 'sections' field). No markdown code fences.",
@@ -304,7 +304,7 @@ async function extractSectionsChunk(
   const MAX_RETRIES = 1;
   const system = ruleContext ? dcRulesKnowledge + "\n\n" + sectionIndexPrompt : sectionIndexPrompt;
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 8192,
     system,
     messages: [

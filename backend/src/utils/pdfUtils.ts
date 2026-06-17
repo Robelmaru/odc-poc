@@ -152,7 +152,7 @@ export async function extractTextFromPdf(
     // Claude Vision OCR for a single rendered page (fallback / forced engine).
     const visionOcr = async (base64: string): Promise<{ text: string; clarity: number } | null> => {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 4096,
         messages: [
           {

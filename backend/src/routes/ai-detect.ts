@@ -215,7 +215,7 @@ async function detectRoute(request: FastifyRequest, reply: FastifyReply) {
     // Run detection twice and average for consistency
     const runDetection = async () => {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         temperature: 0,
         system: DETECTION_PROMPT,

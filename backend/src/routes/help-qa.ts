@@ -146,7 +146,7 @@ export default async function helpQA(app: FastifyInstance) {
         return reply.code(400).send({ error: "Question too short" });
 
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 512,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: question }],
