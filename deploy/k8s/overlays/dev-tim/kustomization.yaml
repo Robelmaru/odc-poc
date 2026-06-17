@@ -8,12 +8,15 @@ namespace: odc-poc-dev-tim
 resources:
   - ../../base
 
-# Tracks the mutable :development-tim tag. Argo CD Image Updater pins the live
-# digest on top of it (git write-back, configured in
-# argocd/applications-development-tim.yaml), so this file stays the source of truth.
+# STOPGAP: pinned to the CI-built commit SHA. By design this should read
+# `newTag: development-tim` and Argo CD Image Updater would write the live digest
+# back here on each build (configured in argocd/applications-development-tim.yaml).
+# That write-back has never run, so the rendered manifest never changed and Argo
+# never rolled out new images. Pinning the SHA gives Argo a real diff to sync.
+# Revert to `newTag: development-tim` once Image Updater is confirmed working.
 images:
   - name: ghcr.io/dc-bar-web/odc-poc
-    newTag: development-tim
+    newTag: 99b53c8267c64620c8b02f4732d1ec01dac4186d
 
 patches:
   - target:
@@ -30,7 +33,12 @@ patches:
         path: /spec/tls/0/secretName
         value: odc-poc-tls
 
-  # Single replica for a dev environment.
+  # Single replica for a dev environment; always re-pull the image.
+  # imagePullPolicy: Always is belt-and-suspenders: while the image is pinned to an
+  # immutable SHA tag (or a digest via Image Updater) the reference already forces a
+  # fresh pull, so this only matters if the overlay ever tracks the mutable
+  # :development-tim tag again. Scoped to this overlay so SHA-pinned staging/prod keep
+  # the default IfNotPresent (no extra registry pull on every pod start).
   - target:
       kind: Deployment
       name: odc-poc
@@ -38,3 +46,6 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
