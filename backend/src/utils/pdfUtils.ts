@@ -11,6 +11,10 @@ import { logTokenUsage } from "./usage.js";
 
 const PAGES_PER_CHUNK = 60;
 const SPARSE_TEXT_THRESHOLD = 50; // pages with fewer chars than this are likely scanned/handwritten
+// Fail-fast guard: documents beyond this many pages are rejected before the
+// (expensive, memory-heavy) OCR pass rather than risking an out-of-memory crash
+// mid-run. Tunable via MAX_PDF_PAGES; set to 0 to disable the cap entirely.
+const HARD_PAGE_LIMIT = Math.max(0, Number(process.env.MAX_PDF_PAGES) || 5000);
 // OCR fan-out. Configurable so large scanned productions can be sped up without a
 // code change; bounded to keep clear of Anthropic rate limits.
 const VISION_CONCURRENCY = Math.min(12, Math.max(1, Number(process.env.OCR_CONCURRENCY) || 6));
@@ -49,8 +53,25 @@ export async function extractTextFromPdf(
   onProgress?: (msg: string) => Promise<void>,
   maxPages?: number,
 ): Promise<PdfExtraction> {
-  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+  // View the incoming buffer's memory directly rather than copying it — large
+  // scanned PDFs can be hundreds of MB and a copy would double peak memory.
+  const parser = new PDFParse({
+    data: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
+  });
   const result = await parser.getText();
+
+  // Reject documents too large to OCR in one pass up front (before the heavy
+  // OCR/render work), with actionable guidance. Sampling callers (maxPages set)
+  // only process a slice, so they are exempt.
+  if (!maxPages && HARD_PAGE_LIMIT > 0 && result.total > HARD_PAGE_LIMIT) {
+    throw new Error(
+      "This PDF has " +
+        result.total.toLocaleString() +
+        " pages, which exceeds the " +
+        HARD_PAGE_LIMIT.toLocaleString() +
+        "-page limit for a single upload. Split it into smaller PDFs (the timeline merges multiple uploads into one result), or raise MAX_PDF_PAGES if the server has enough memory.",
+    );
+  }
 
   const allPages: PageText[] = [];
   const rawPages = (result as any).pages || [];

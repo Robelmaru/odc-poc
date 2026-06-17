@@ -29,6 +29,17 @@ spec:
           env:
             - name: NODE_ENV
               value: production
+            # Large scanned productions: accept up to 1 GB uploads and process
+            # PDFs up to 5000 pages (mirrors the app defaults; keep the ingress
+            # proxy-body-size in sync). See backend/.env.example.
+            - name: UPLOAD_MAX_MB
+              value: "1024"
+            - name: MAX_PDF_PAGES
+              value: "5000"
+            # Give V8 heap headroom for multi-thousand-page extractions while
+            # leaving room under the container limit for the off-heap file buffer.
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=3072"
           readinessProbe:
             httpGet:
               path: /api/health
@@ -41,10 +52,12 @@ spec:
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 15
+          # Sized for large scanned PDFs: the whole upload (up to ~1 GB) is
+          # buffered in memory and OCR is CPU-heavy. Tune from observed usage.
           resources:
             requests:
-              cpu: "100m"
-              memory: "256Mi"
+              cpu: "250m"
+              memory: "1Gi"
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: "2"
+              memory: "4Gi"

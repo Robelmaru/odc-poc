@@ -24,7 +24,7 @@ import auth from "./routes/auth.js";
 import discovery from "./routes/discovery.js";
 import session from "./routes/session.js";
 
-const uploadMaxBytes = (Number(process.env.UPLOAD_MAX_MB) || 200) * 1024 * 1024;
+const uploadMaxBytes = (Number(process.env.UPLOAD_MAX_MB) || 1024) * 1024 * 1024;
 
 const app = Fastify({
   // Long OCR / multi-pass Claude requests are expected — no request timeout.
@@ -132,6 +132,8 @@ const port = Number(process.env.PORT) || 3000;
 logger.info("ODC Complaint Analyzer (POC) starting", {
   url: `http://localhost:${port}`,
   env: process.env.NODE_ENV ?? "development",
+  uploadMaxMb: Math.round(uploadMaxBytes / (1024 * 1024)),
+  maxPdfPages: Math.max(0, Number(process.env.MAX_PDF_PAGES) || 5000),
 });
 
 await app.listen({ port, host: "0.0.0.0" });

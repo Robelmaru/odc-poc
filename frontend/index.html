@@ -360,6 +360,25 @@
       flex: 1;
     }
 
+    /* Compact, wrapping action row for the Document Insight tab so the
+       longer "Rule XI Comparison" label doesn't push "Clear" off the line */
+    .button-row.compact {
+      flex-wrap: wrap;
+    }
+    .button-row.compact .btn {
+      font-size: 12px;
+      padding: 8px 14px;
+    }
+    .button-row.compact .btn-primary {
+      flex: 0 1 auto;
+    }
+    /* "Clear" stretches to fill the rest of the row (thin + long) */
+    .button-row.compact .btn-clear-wide {
+      flex: 1;
+      padding-top: 5px;
+      padding-bottom: 5px;
+    }
+
     /* Results Header */
     .results-header {
       display: flex;
@@ -1898,12 +1917,12 @@
           <span>&#9878; Use Rule XI context — analyze through the DC Rules / Rule XI disciplinary lens (weighs significance toward potential rule violations). The result saves &amp; exports like any timeline.</span>
         </label>
 
-        <div class="button-row">
+        <div class="button-row compact">
           <button class="btn btn-primary" id="timelineBtn" onclick="extractTimeline()">
             Extract Timeline
           </button>
           <button class="btn btn-secondary" id="ruleXiCompareBtn" onclick="compareRuleXI()" title="Analyze the first uploaded file twice — with and without DC Rules / Rule XI context — and compare side by side">&#9878; Rule XI Comparison</button>
-          <button class="btn btn-secondary" onclick="clearTimeline()">Clear</button>
+          <button class="btn btn-secondary btn-clear-wide" onclick="clearTimeline()">Clear</button>
         </div>
         <div style="font-size:12px;color:var(--color-text-muted);margin-top:6px;">Rule XI Comparison runs the analysis with and without the disciplinary-rules context so you can see how it changes the result. Use a modestly sized file.</div>
         <div class="error" id="timelineError"></div>
@@ -2030,15 +2049,9 @@
           <h2 class="panel-title">Translate Document</h2>
         </div>
 
-        <!-- Language Selector -->
-        <div style="margin-bottom: 20px;">
-          <label for="translateLangSelect" style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">Target Language</label>
-          <select id="translateLangSelect" name="translateLang" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
-            <option value="">— Select a language —</option>
-            <option value="en">🇺🇸 English</option>
-            <option value="es">🇪🇸 Spanish</option>
-            <option value="pt-BR">🇧🇷 Brazilian Portuguese</option>
-          </select>
+        <!-- Source language is auto-detected; documents are always translated into English -->
+        <div style="margin-bottom: 20px; padding: 10px 14px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 6px; font-size: 13px; color: var(--color-text-secondary);">
+          &#127760; The source language is detected automatically and the document is translated into <strong>English</strong>.
         </div>
 
         <!-- File Upload -->
@@ -2084,7 +2097,7 @@
 
         <div class="placeholder" id="translatePlaceholder">
           <div class="placeholder-icon">&#127760;</div>
-          <p class="placeholder-text">Select a language and upload documents to translate</p>
+          <p class="placeholder-text">Upload documents to translate into English</p>
         </div>
       </div>
     </div>
@@ -2710,7 +2723,7 @@
           body: JSON.stringify({ admin_id: loggedInStaff, username: username, email: email, role: role })
         });
         var data = await r.json();
-        if (!data.success) { errEl.textContent = data.error || 'Failed'; errEl.style.display = 'block'; return; }
+        if (!data.success) { errEl.textContent = apiErr(data, 'Failed'); errEl.style.display = 'block'; return; }
         document.getElementById('addUserModal').remove();
         loadAdminUsers();
       } catch (e) { errEl.textContent = 'Failed to add user.'; errEl.style.display = 'block'; }
@@ -2725,7 +2738,7 @@
         body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, email: newEmail })
       });
       var data = await r.json();
-      if (!data.success) { alert('Failed: ' + (data.error || 'Unknown error')); return; }
+      if (!data.success) { alert('Failed: ' + (apiErr(data, 'Unknown error'))); return; }
       loadAdminUsers();
     }
 
@@ -2945,7 +2958,7 @@
           body: JSON.stringify({ question: query })
         });
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || 'Failed');
+        if (!response.ok || !data.success) throw new Error(apiErr(data, 'Failed'));
 
         container.innerHTML = '<div style="margin-bottom:24px;">'
           + '<div style="font-size:12px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">AI Answer</div>'
@@ -3122,7 +3135,7 @@
       try {
         const r = await fetch('/api/discovery/cases/' + id + '?staff_id=' + encodeURIComponent(loggedInStaff || ''), { method: 'DELETE' });
         const d = await r.json().catch(() => ({}));
-        if (!d.success) throw new Error(d.error || ('HTTP ' + r.status));
+        if (!d.success) throw new Error(apiErr(d, 'HTTP ' + r.status));
         if (discoveryCurrentCaseId === id) closeCaseDetail();
         loadDiscovery();
       } catch (e) { alert('Failed to delete docket: ' + e.message); }
@@ -3133,7 +3146,7 @@
       try {
         const r = await fetch('/api/discovery/productions/' + id + '?staff_id=' + encodeURIComponent(loggedInStaff || ''), { method: 'DELETE' });
         const d = await r.json().catch(() => ({}));
-        if (!d.success) throw new Error(d.error || ('HTTP ' + r.status));
+        if (!d.success) throw new Error(apiErr(d, 'HTTP ' + r.status));
         if (discoveryCurrentCaseId) openCase(discoveryCurrentCaseId);
       } catch (e) { alert('Failed to delete production: ' + e.message); }
     }
@@ -3289,7 +3302,7 @@
         });
         const prod = await createResp.json().catch(() => ({}));
         if (!prod.id) {
-          throw new Error((prod.error || 'could not create production')
+          throw new Error((apiErr(prod, 'could not create production'))
             + ' [HTTP ' + createResp.status + ', signed in as "' + loggedInStaff + '", subpoena ' + subpoenaId + ']');
         }
         // 2) upload + process
@@ -3298,7 +3311,7 @@
         fd.append('file', file);
         const procResp = await fetch('/api/discovery/productions/' + prod.id + '/process', { method: 'POST', body: fd });
         const started = await procResp.json().catch(() => ({}));
-        if (!started.success) throw new Error((started.error || 'processing did not start') + ' [HTTP ' + procResp.status + ']');
+        if (!started.success) throw new Error((apiErr(started, 'processing did not start')) + ' [HTTP ' + procResp.status + ']');
         openCase(discoveryCurrentCaseId);
         pollProductionJob(prod.id);
       } catch (e) { alert('Upload/processing failed: ' + e.message); }
@@ -3376,7 +3389,7 @@
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Request failed');
+          throw new Error(apiErr(data, 'Request failed'));
         }
 
         // Add to conversation history
@@ -3644,6 +3657,20 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    // Extract a human-readable message from an API error response. The standard
+    // shape is { error: { code, message } }, but some routes send { error: "..." }
+    // or { message: "..." }. Always returns a string so nothing renders as
+    // "[object Object]".
+    function apiErr(data, fallback) {
+      var fb = fallback || 'Request failed';
+      if (!data || typeof data !== 'object') return fb;
+      var e = data.error;
+      if (e && typeof e === 'object') e = e.message;
+      var msg = e || data.message;
+      if (msg && typeof msg !== 'string') msg = JSON.stringify(msg);
+      return msg || fb;
     }
 
     function renderTimelineSource(source) {
@@ -4047,7 +4074,7 @@ All conclusions require human review and professional judgment.
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Analysis failed');
+          throw new Error(apiErr(data, 'Analysis failed'));
         }
 
         displayResults(data.analysis, data.usage);
@@ -4446,6 +4473,36 @@ All conclusions require human review and professional judgment.
           body: formData
         });
 
+        // The streaming endpoint replies with text/event-stream on success.
+        // If something failed before the stream started (e.g. upload too large,
+        // session expired, server error) Fastify returns a plain JSON/text
+        // error instead — surface that real message rather than a generic one.
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok || !contentType.includes('text/event-stream')) {
+          let serverMessage = '';
+          try {
+            if (contentType.includes('application/json')) {
+              const errData = await response.json();
+              // The API error shape is { error: { code, message } }, but some
+              // routes send { error: "..." } or { message: "..." } — unwrap any.
+              const e = errData && errData.error;
+              serverMessage =
+                (e && typeof e === 'object' ? e.message : e) || errData.message || '';
+            } else {
+              serverMessage = (await response.text()).trim();
+            }
+          } catch (_) { /* fall through to status-based message */ }
+          if (serverMessage && typeof serverMessage !== 'string') {
+            serverMessage = JSON.stringify(serverMessage);
+          }
+          if (!serverMessage) {
+            serverMessage = response.status === 413
+              ? 'The document is too large to upload. Try a smaller file or split it.'
+              : 'Server error (HTTP ' + response.status + ').';
+          }
+          throw new Error(serverMessage);
+        }
+
         // Parse SSE stream
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -4505,7 +4562,7 @@ All conclusions require human review and professional judgment.
           }
         }
 
-        if (!resultData) throw new Error('No result received from server');
+        if (!resultData) throw new Error('The server closed the connection before finishing. This can happen on very large or image-heavy PDFs (the OCR pass runs out of memory). Try a smaller file or fewer pages.');
 
         lastSourceTexts = resultData.sourceTexts || [];
         displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults, resultData.duplicates);
@@ -5143,7 +5200,7 @@ All conclusions require human review and professional judgment.
           if (data.success) {
             resultsHtml += renderAiDetectResult(data);
           } else {
-            resultsHtml += '<div style="padding:14px 18px;background:var(--color-danger-bg);border:1px solid var(--color-danger);border-radius:8px;margin-bottom:10px;font-size:13px;"><strong>' + escapeHtml(file.name) + '</strong>: ' + escapeHtml(data.error || 'Analysis failed') + '</div>';
+            resultsHtml += '<div style="padding:14px 18px;background:var(--color-danger-bg);border:1px solid var(--color-danger);border-radius:8px;margin-bottom:10px;font-size:13px;"><strong>' + escapeHtml(file.name) + '</strong>: ' + escapeHtml(apiErr(data, 'Analysis failed')) + '</div>';
           }
         }
         results.innerHTML = resultsHtml || '<p style="color:var(--color-text-muted);padding:24px;text-align:center;">No results.</p>';
@@ -5588,7 +5645,7 @@ th{background:#f0f2f8;font-weight:bold;}
         fd.append('file', fileObj);
         const resp = await fetch('/api/timeline/compare', { method: 'POST', body: fd });
         const data = await resp.json();
-        if (!data.success) throw new Error(data.error || 'Comparison failed');
+        if (!data.success) throw new Error(apiErr(data, 'Comparison failed'));
         renderRuleXICompare(data);
       } catch (err) {
         showTimelineError(err.message);
@@ -5697,7 +5754,7 @@ th{background:#f0f2f8;font-weight:bold;}
         const data = await response.json();
 
         if (!response.ok || !data.success) {
-          errorEl.textContent = data.error || 'Invalid username or password.';
+          errorEl.textContent = apiErr(data, 'Invalid username or password.');
           errorEl.style.display = 'block';
           document.getElementById('loginPassword').value = '';
           document.getElementById('loginPassword').focus();
@@ -5820,7 +5877,7 @@ th{background:#f0f2f8;font-weight:bold;}
           });
 
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Save failed');
+          if (!response.ok) throw new Error(apiErr(data, 'Save failed'));
 
           showSaveStatus('&#10003; Saved successfully to your records.', true);
           loadMyRecords();
@@ -6130,7 +6187,7 @@ th{background:#f0f2f8;font-weight:bold;}
             body: JSON.stringify({ staff_id: staffId, record_ids: ids, record_name: recordName })
           });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error);
+          if (!response.ok) throw new Error(apiErr(data));
 
           displayTimeline(data.timeline, null);
           showSaveStatus('&#10003; Merged and saved successfully!', true);
@@ -6151,7 +6208,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/${staffId}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
 
         myRecordsData = data.records;
         renderMyRecords();
@@ -6206,7 +6263,7 @@ th{background:#f0f2f8;font-weight:bold;}
             body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_name: newName })
           });
           const d1 = await r1.json();
-          if (!d1.success) { alert('Rename failed: ' + (d1.error || 'Unknown error')); return; }
+          if (!d1.success) { alert('Rename failed: ' + (apiErr(d1, 'Unknown error'))); return; }
 
           // Update case number
           await fetch('/api/records/case', {
@@ -6267,7 +6324,7 @@ th{background:#f0f2f8;font-weight:bold;}
           body: JSON.stringify({ staff_id: staffId, record_id: id, share_with: shareWith })
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         loadMyRecords();
       } catch (err) { alert('Share failed: ' + err.message); }
     }
@@ -6279,7 +6336,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/${staffId}/${id}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
 
         loadedRecordId = id;
         displayTimeline(data.record.timeline, null);
@@ -6296,7 +6353,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/${staffId}/${id}`, { method: 'DELETE' });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         loadMyRecords();
       } catch (err) {
         alert('Failed to delete record: ' + err.message);
@@ -6339,7 +6396,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/audit/${staffId}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         auditLogData = data.logs || [];
         if (!auditLogData.length) {
           container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No activity yet.</p></div>';
@@ -6385,7 +6442,7 @@ th{background:#f0f2f8;font-weight:bold;}
         });
 
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Request failed');
+        if (!response.ok) throw new Error(apiErr(data, 'Request failed'));
 
         timelineQAHistory.push({ role: 'user', content: question });
         timelineQAHistory.push({ role: 'assistant', content: data.answer });
@@ -6527,7 +6584,7 @@ th{background:#f0f2f8;font-weight:bold;}
             })
           });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Save failed');
+          if (!response.ok) throw new Error(apiErr(data, 'Save failed'));
           showTranslateSaveStatus('&#10003; Saved as "' + escapeHtml(recordName) + '"', true);
           loadTranslateRecords();
           loadTranslateAuditLog();
@@ -6561,7 +6618,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/translations/' + staffId);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
 
         transRecordsData = data.records || [];
         renderTranslateRecords();
@@ -6664,7 +6721,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/translations/' + staffId + '/' + id);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         const r = data.record;
         lastTranslation = { language: r.language, languageName: r.language_name, results: r.translation };
         displayTranslation(lastTranslation);
@@ -6727,7 +6784,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/translations/' + loggedInStaff + '/' + id, { method: 'DELETE' });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         loadTranslateRecords();
         loadTranslateAuditLog();
       } catch (err) { alert('Failed to delete: ' + err.message); }
@@ -6762,7 +6819,7 @@ th{background:#f0f2f8;font-weight:bold;}
           })
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Request failed');
+        if (!response.ok) throw new Error(apiErr(data, 'Request failed'));
 
         translationQAHistory.push({ role: 'user', content: question });
         translationQAHistory.push({ role: 'assistant', content: data.answer });
@@ -6823,7 +6880,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/audit/' + staffId);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         // Filter to translation-related actions only
         translateAuditLogData = (data.logs || []).filter(l =>
           l.action === 'save_translation' || l.action === 'delete_translation'
@@ -6922,7 +6979,6 @@ th{background:#f0f2f8;font-weight:bold;}
     }
 
     async function runTranslation() {
-      const language = document.getElementById('translateLangSelect').value;
       const btn = document.getElementById('translateBtn');
       const loading = document.getElementById('translateLoading');
       const results = document.getElementById('translateResults');
@@ -6930,7 +6986,6 @@ th{background:#f0f2f8;font-weight:bold;}
       const placeholder = document.getElementById('translatePlaceholder');
 
       if (!loggedInStaff) { showTranslateError('Please sign in first.'); return; }
-      if (!language) { showTranslateError('Please select a target language.'); return; }
       if (translateUploadedFiles.length === 0) { showTranslateError('Please upload at least one document.'); return; }
 
       error.classList.remove('active');
@@ -6941,12 +6996,11 @@ th{background:#f0f2f8;font-weight:bold;}
 
       try {
         const formData = new FormData();
-        formData.append('language', language);
         translateUploadedFiles.forEach(f => formData.append('files', f));
 
         const response = await fetch('/api/translate', { method: 'POST', body: formData });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Translation failed');
+        if (!response.ok) throw new Error(apiErr(data, 'Translation failed'));
 
         lastTranslation = data;
         lastTranslateSourceTexts = data.sourceTexts || [];
@@ -6966,8 +7020,12 @@ th{background:#f0f2f8;font-weight:bold;}
 
     function displayTranslation(data) {
       const results = document.getElementById('translateResults');
+      const detected = data.results
+        .map(function(r) { return r.detectedLanguage; })
+        .filter(function(v, i, a) { return v && a.indexOf(v) === i; });
+      const detectedLabel = detected.length === 1 ? ' (from ' + detected[0] + ')' : '';
       document.getElementById('translateResultTitle').textContent =
-        'Translation \u2014 ' + data.languageName;
+        'Translation \u2014 ' + data.languageName + detectedLabel;
       document.getElementById('translateExportButtons').style.display = 'flex';
 
       let html = '';
@@ -7001,6 +7059,7 @@ th{background:#f0f2f8;font-weight:bold;}
         if (data.results.length > 1) {
           html += '<div style="font-weight:700; font-size:14px; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--color-border-light);">'
             + escapeHtml(r.filename) + (r.pages ? ' \u2014 ' + r.pages + ' pages' : '')
+            + (r.detectedLanguage ? ' \u2014 from ' + escapeHtml(r.detectedLanguage) : '')
             + '</div>';
         }
         html += '<div style="margin-bottom:32px;">' + escapeHtml(r.translation) + '</div>';
@@ -7132,7 +7191,6 @@ th{background:#f0f2f8;font-weight:bold;}
       document.getElementById('translateExportButtons').style.display = 'none';
       document.getElementById('translatePlaceholder').style.display = 'block';
       document.getElementById('translateResultTitle').textContent = 'Translation';
-      document.getElementById('translateLangSelect').value = '';
     }
   </script>
 </body>

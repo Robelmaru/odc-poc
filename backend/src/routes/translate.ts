@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
-import { translatePrompt, SUPPORTED_LANGUAGES, type LanguageCode } from "../skills/Translate.js";
+import { translatePrompt, detectLanguagePrompt, TARGET_LANGUAGE } from "../skills/Translate.js";
 import { extractTextFromPdf, chunkText } from "../utils/pdfUtils.js";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
@@ -8,11 +8,24 @@ import { readMultipart } from "../utils/multipart.js";
 
 const anthropic = new Anthropic();
 
-async function translateChunk(text: string, targetLanguage: string): Promise<string> {
+async function detectLanguage(text: string): Promise<string> {
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 50,
+    system: detectLanguagePrompt(),
+    messages: [{ role: "user", content: text.slice(0, 4000) }],
+  });
+  logTokenUsage("translate-detect", response.usage);
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") return "Unknown";
+  return textBlock.text.trim() || "Unknown";
+}
+
+async function translateChunk(text: string): Promise<string> {
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 8192,
-    system: translatePrompt(targetLanguage),
+    system: translatePrompt(),
     messages: [{ role: "user", content: text }],
   });
   logTokenUsage("translate", response.usage);
@@ -25,18 +38,19 @@ export default async function translate(app: FastifyInstance) {
   app.post("/", { schema: { tags: ["translate"] } }, async (request, reply) => {
     try {
       if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
-      const { files, fields } = await readMultipart(request);
-      const language = fields.language ?? null;
+      const { files } = await readMultipart(request);
 
       if (files.length === 0)
         return reply.code(400).send({ error: "Please upload at least one document." });
-      if (!language || !(language in SUPPORTED_LANGUAGES))
-        return reply.code(400).send({ error: "Please select a target language." });
 
-      const targetLanguage = SUPPORTED_LANGUAGES[language as LanguageCode];
-      logger.info(`Translating ${files.length} file(s) to ${targetLanguage}...`);
+      logger.info(`Translating ${files.length} file(s) to ${TARGET_LANGUAGE}...`);
 
-      const results: { filename: string; translation: string; pages?: number }[] = [];
+      const results: {
+        filename: string;
+        translation: string;
+        pages?: number;
+        detectedLanguage: string;
+      }[] = [];
       const ocrInfo: { filename: string; visionPages: number; visionClarity?: number }[] = [];
       const sourceTexts: { filename: string; text: string }[] = [];
 
@@ -65,17 +79,29 @@ export default async function translate(app: FastifyInstance) {
           continue;
         }
 
-        const chunks = chunkText(fullText);
-        logger.info(`    Translating in ${chunks.length} chunk(s)...`);
-        const translatedChunks: string[] = [];
-        for (let i = 0; i < chunks.length; i++) {
-          logger.info(`    Chunk ${i + 1}/${chunks.length}...`);
-          translatedChunks.push(await translateChunk(chunks[i]!, targetLanguage!));
+        const detectedLanguage = await detectLanguage(fullText);
+        logger.info(`    Detected source language: ${detectedLanguage}`);
+
+        let translation: string;
+        if (detectedLanguage.toLowerCase() === TARGET_LANGUAGE.toLowerCase()) {
+          logger.info(`    Already in ${TARGET_LANGUAGE} — skipping translation.`);
+          translation = fullText;
+        } else {
+          const chunks = chunkText(fullText);
+          logger.info(`    Translating in ${chunks.length} chunk(s)...`);
+          const translatedChunks: string[] = [];
+          for (let i = 0; i < chunks.length; i++) {
+            logger.info(`    Chunk ${i + 1}/${chunks.length}...`);
+            translatedChunks.push(await translateChunk(chunks[i]!));
+          }
+          translation = translatedChunks.join("\n\n");
         }
+
         results.push({
           filename: file.filename,
-          translation: translatedChunks.join("\n\n"),
+          translation,
           pages,
+          detectedLanguage,
         });
       }
 
@@ -85,8 +111,8 @@ export default async function translate(app: FastifyInstance) {
       logger.info(`Translation complete for ${results.length} file(s).`);
       return {
         success: true,
-        language,
-        languageName: targetLanguage,
+        language: "en",
+        languageName: TARGET_LANGUAGE,
         results,
         ocrInfo: ocrInfo.length > 0 ? ocrInfo : undefined,
         sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
