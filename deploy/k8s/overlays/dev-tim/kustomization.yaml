@@ -49,3 +49,37 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Always
+
+  # Big-document headroom (dev-tim only). Large PDFs (e.g. a ~500 MB scanned
+  # binder) are buffered whole in memory and parsed by pdf-parse, whose working
+  # set is several times the file size — this OOM-kills the base 4Gi pod and the
+  # browser sees "Failed to fetch". Locally the same upload succeeds only because
+  # a dev machine has far more RAM and no V8 heap cap. Match that here: raise the
+  # memory limit and the --max-old-space-size heap so the deployed pod can process
+  # documents of the size staff actually upload. (Strategic-merge, keyed on the
+  # container/env names, so it survives env-list reordering. Scoped to dev-tim;
+  # staging/prod keep the base 4Gi until sized deliberately. Requires a node with
+  # this much RAM free — if the pod stays Pending, the cluster lacks capacity.)
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: odc-poc
+      spec:
+        template:
+          spec:
+            containers:
+              - name: app
+                resources:
+                  requests:
+                    memory: "2Gi"
+                  limits:
+                    memory: "12Gi"
+                env:
+                  # 8 GB JS heap, leaving ~4 GB under the 12Gi limit for the
+                  # off-heap upload buffer + pdf.js typed arrays.
+                  - name: NODE_OPTIONS
+                    value: "--max-old-space-size=8192"
