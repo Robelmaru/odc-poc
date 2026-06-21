@@ -23,7 +23,11 @@ declare module "fastify" {
 
 // /api/* paths reachable without a session. Everything else under /api/* is gated.
 // (The Entra SSO routes live under /auth and are not covered by the gate.)
-const PUBLIC_API_PATHS = new Set<string>(["/api/health", "/api/records/verify"]);
+const PUBLIC_API_PATHS = new Set<string>([
+  "/api/health",
+  "/api/health/live",
+  "/api/records/verify",
+]);
 
 /** Create a session and set the httpOnly cookie on the reply. */
 export async function issueSession(reply: FastifyReply, user: AuthUser): Promise<void> {

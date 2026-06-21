@@ -93,6 +93,17 @@ app.setErrorHandler((err: FastifyError, request, reply) => {
 });
 
 // ── Health ──────────────────────────────────────────────────────────────────
+// Liveness: "is the process up?" — no DB ping, no dependencies. The kubelet
+// liveness probe targets this so a slow DB or a long CPU-bound request (OCR /
+// multi-pass Claude) never gets the pod restarted out from under an in-flight
+// upload. Restart the pod only when the process itself is wedged.
+app.get("/api/health/live", async (_request, reply) => {
+  return reply.code(200).send({ status: "ok" });
+});
+
+// Readiness/full health: "can this pod serve traffic?" — pings the DB and
+// reports dependency status. The readiness probe targets this, so a pod with a
+// broken DB is pulled from the Service (not killed).
 app.get("/api/health", async (_request, reply) => {
   const checks = {
     db: "ok" as "ok" | "error",

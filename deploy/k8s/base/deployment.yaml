@@ -40,18 +40,29 @@ spec:
             # leaving room under the container limit for the off-heap file buffer.
             - name: NODE_OPTIONS
               value: "--max-old-space-size=3072"
+          # Readiness: full health incl. DB ping. A pod that can't reach the DB is
+          # pulled from the Service (not killed), so traffic only goes to pods that
+          # can actually serve it.
           readinessProbe:
             httpGet:
               path: /api/health
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
+          # Liveness: process-only check (no DB, no dependencies), deliberately
+          # tolerant. A large scanned PDF (CPU-bound OCR) or a multi-pass Claude
+          # request can keep the single-threaded event loop busy and a transient DB
+          # blip is not a reason to restart — so this targets the dependency-free
+          # /api/health/live and allows ~120s (6 × 20s) of missed probes before a
+          # restart, preventing the kubelet from killing the pod mid-upload.
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /api/health/live
               port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 15
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           # Sized for large scanned PDFs: the whole upload (up to ~1 GB) is
           # buffered in memory and OCR is CPU-heavy. Tune from observed usage.
           resources:
