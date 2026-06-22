@@ -14,9 +14,13 @@ node_modules/
 *.db-shm
 *.db-wal
 
-# Local data dir (SQLite DBs + vendored Tesseract data) and sample case files —
-# hold real case data / large vendored binaries; never commit
-backend/data/
+# Local data dir (SQLite DBs + sample case files) — hold real case data; never
+# commit. EXCEPTION: the vendored Tesseract OCR model must ship in the deployed
+# image (scanned PDFs crash the OCR worker without it), so it is tracked.
+backend/data/*
+!backend/data/tessdata/
+backend/data/tessdata/*
+!backend/data/tessdata/eng.traineddata.gz
 Sample Cases/
 
 # Test coverage output

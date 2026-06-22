@@ -126,9 +126,15 @@ export async function extractTextFromPdf(
 
     // Local Tesseract worker pool using the bundled model (no network at runtime).
     let tessPool: any[] = [];
-    if (ocrEngine !== "vision") {
+    const tessdata = path.resolve(process.cwd(), "data", "tessdata");
+    const tessModel = path.join(tessdata, "eng.traineddata.gz");
+    // Guard: if the language model is absent, do NOT spawn Tesseract workers — the
+    // worker loads the model asynchronously and an ENOENT escapes as an uncaught
+    // worker 'error' that crashes the whole process. Fall back to Vision instead.
+    if (ocrEngine !== "vision" && !fs.existsSync(tessModel)) {
+      logger.debug("    Local OCR model missing (" + tessModel + ") — using Vision OCR.");
+    } else if (ocrEngine !== "vision") {
       try {
-        const tessdata = path.resolve(process.cwd(), "data", "tessdata");
         tessPool = await Promise.all(
           Array.from({ length: poolSize }, () =>
             createWorker("eng", 1, {

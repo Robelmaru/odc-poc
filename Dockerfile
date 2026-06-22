@@ -30,7 +30,11 @@ COPY backend/src ./src
 COPY backend/migrations ./migrations
 COPY frontend /app/frontend
 
-# Data dir (vendored tessdata) is a mounted volume at runtime; create + own it.
+# Vendored Tesseract OCR language model — required to OCR scanned PDFs. Without it
+# the OCR worker throws ENOENT asynchronously and crashes the process, so it must
+# be baked into the image (it is NOT a runtime-mounted volume).
+COPY backend/data/tessdata /app/backend/data/tessdata
+
 # The database is PostgreSQL on a dedicated server (DATABASE_URL), not a local file.
 RUN mkdir -p /app/backend/data && chown -R odc:odc /app
 USER odc
