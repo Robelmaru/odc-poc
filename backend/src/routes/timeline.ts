@@ -33,52 +33,25 @@ export default async function timeline(app: FastifyInstance) {
   // ── SSE streaming extraction ──────────────────────────────────────────────
   app.post("/", { schema: { tags: ["timeline"] } }, async (request, reply) => {
     if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
+    const { files, fields } = await readMultipart(request);
+    const additionalContext = fields.additionalContext ?? null;
+    const ruleContext = fields.ruleContext === "true";
+    if (files.length === 0) return reply.code(400).send({ error: "No files uploaded." });
 
-    // Open the SSE response and flush headers + a keepalive BEFORE buffering the
-    // (potentially very large) upload. A big production can take well over a minute
-    // just to transfer; if we wait until the whole body is read to send the first
-    // byte, an upstream proxy / load balancer times out the connection and the
-    // browser sees "Failed to fetch" / ERR_CONNECTION_TIMED_OUT. Flushing early
-    // (paired with `proxy-request-buffering: off` on the ingress) makes the LB see a
-    // response immediately and keeps the connection alive while the file uploads.
-    // X-Accel-Buffering disables nginx response buffering for the SSE stream.
+    // Take over the raw response for Server-Sent Events.
     reply.hijack();
     const res = reply.raw;
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
     });
-    res.write(": connected\n\n");
     let eventId = 0;
     const send = (type: string, data: unknown) => {
       res.write(`id: ${eventId++}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    // Heartbeat during the upload/buffering window so idle-timeout proxies don't
-    // drop the connection while a large file is still being received (no SSE data
-    // flows until readMultipart resolves).
-    const heartbeat = setInterval(() => {
-      try {
-        res.write(": keepalive\n\n");
-      } catch {
-        /* ignore */
-      }
-    }, 15000);
-
     try {
-      send("progress", { step: "upload", message: "Receiving upload..." });
-      const { files, fields } = await readMultipart(request);
-      clearInterval(heartbeat);
-      const additionalContext = fields.additionalContext ?? null;
-      const ruleContext = fields.ruleContext === "true";
-      if (files.length === 0) {
-        send("error", { message: "No files uploaded." });
-        res.end();
-        return;
-      }
-
       send("progress", {
         step: "start",
         message: "Processing " + files.length + " document(s)...",
@@ -261,7 +234,6 @@ export default async function timeline(app: FastifyInstance) {
             : "Timeline extraction failed";
       send("error", { message });
     } finally {
-      clearInterval(heartbeat);
       res.end();
     }
   });
