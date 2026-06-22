@@ -32,6 +32,18 @@ patches:
       - op: replace
         path: /spec/tls/0/secretName
         value: odc-poc-tls
+      # Stream large uploads straight to the pod instead of buffering the whole
+      # request body in nginx first — lets the timeline route flush its SSE
+      # response immediately so the upstream LB sees a first byte right away and
+      # doesn't time out the connection mid-upload (ERR_CONNECTION_TIMED_OUT).
+      # proxy-buffering off keeps the SSE event stream flowing unbuffered too.
+      # (dev-tim only for now; promote to base if it resolves large uploads.)
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1proxy-request-buffering
+        value: "off"
+      - op: add
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1proxy-buffering
+        value: "off"
 
   # Single replica for a dev environment; always re-pull the image.
   # imagePullPolicy: Always is belt-and-suspenders: while the image is pinned to an
