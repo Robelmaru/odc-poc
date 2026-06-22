@@ -198,7 +198,16 @@ function shutdown(signal: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// Surface otherwise-silent crashes (OPS-015).
+// Surface otherwise-silent crashes (OPS-015). Log full stacks to stdout so the
+// reason is visible in pod logs (kubectl logs --previous) after a restart.
 process.on("unhandledRejection", (reason) => {
-  logger.error("Unhandled rejection", { reason: String(reason) });
+  logger.error("Unhandled rejection", {
+    reason: reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+  });
+});
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught exception — exiting", {
+    error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+  });
+  process.exit(1);
 });

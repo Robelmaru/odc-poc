@@ -73,7 +73,7 @@ patches:
                   requests:
                     memory: "2Gi"
                   limits:
-                    memory: "8Gi"
+                    memory: "12Gi"
                 env:
                   - name: NODE_OPTIONS
-                    value: "--max-old-space-size=6144"
+                    value: "--max-old-space-size=8192"

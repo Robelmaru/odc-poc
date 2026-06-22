@@ -162,6 +162,11 @@ async function runTimelineExtraction(
       continue;
     }
 
+    // Text is now extracted into `chunks`; the raw file buffer (which can be
+    // hundreds of MB) is no longer needed. Release it before the analysis phase
+    // so it isn't held in memory through all the Claude calls.
+    file.buffer = Buffer.alloc(0);
+
     let completedChunks = 0;
     const totalChunks = chunks.length;
     const extractionTasks = chunks.map(
