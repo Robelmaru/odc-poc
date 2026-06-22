@@ -49,3 +49,31 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Always
+
+  # Processing headroom (dev-tim only). With chunked upload, the pod now actually
+  # assembles + parses large productions (a full ~500 MB PDF) in one /process
+  # request — pdf-parse holds the file plus its parse structures. The base 4Gi is
+  # tight for that; bump to 8Gi (verified to schedule — a 12Gi pod ran here) and
+  # give the V8 heap 6 GB, leaving ~2 GB off-heap for the file buffer + pdf.js.
+  # Strategic-merge keyed on container/env name. staging/prod keep base 4Gi.
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: odc-poc
+      spec:
+        template:
+          spec:
+            containers:
+              - name: app
+                resources:
+                  requests:
+                    memory: "2Gi"
+                  limits:
+                    memory: "8Gi"
+                env:
+                  - name: NODE_OPTIONS
+                    value: "--max-old-space-size=6144"

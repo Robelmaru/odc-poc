@@ -4456,21 +4456,65 @@ All conclusions require human review and professional judgment.
       progressFill.style.width = '0%';
 
       try {
-        const formData = new FormData();
-        timelineUploadedFiles.forEach((f) => {
-          formData.append('files', f.file);
-        });
-        if (additionalContext) {
-          formData.append('additionalContext', additionalContext);
-        }
-        const ruleXiEl = document.getElementById('timelineRuleXi');
-        if (ruleXiEl && ruleXiEl.checked) {
-          formData.append('ruleContext', 'true');
+        // Upload each file in small chunks so no single request is large enough
+        // to hit the load balancer's request timeout (big productions can take
+        // minutes to transfer). Chunks are appended server-side into one temp
+        // file, then /process reads the assembled file and streams results.
+        const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB per chunk
+        const uploads = [];
+        let totalBytes = 0;
+        timelineUploadedFiles.forEach((f) => { totalBytes += f.file.size; });
+        let sentBytes = 0;
+        progressText.textContent = 'Uploading documents...';
+        progressBar.style.display = 'block';
+        progressFill.style.width = '0%';
+
+        for (const f of timelineUploadedFiles) {
+          const file = f.file;
+          const uploadId = (window.crypto && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+          const numChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+          for (let i = 0; i < numChunks; i++) {
+            const blob = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
+            const fd = new FormData();
+            fd.append('uploadId', uploadId);
+            fd.append('filename', file.name);
+            fd.append('index', String(i));
+            fd.append('chunk', blob, 'chunk');
+            const up = await fetch('/api/timeline/upload', { method: 'POST', body: fd });
+            if (!up.ok) {
+              let msg = 'Upload failed (HTTP ' + up.status + ').';
+              try {
+                const j = await up.json();
+                msg = (j && j.error && (j.error.message || j.error)) || msg;
+              } catch (_) { /* keep default */ }
+              throw new Error(msg);
+            }
+            sentBytes += blob.size;
+            const pct = totalBytes ? Math.round((sentBytes / totalBytes) * 100) : 100;
+            progressFill.style.width = pct + '%';
+            progressDetail.textContent = 'Uploading ' + file.name + ' (' + pct + '%)';
+            if (progressCount) progressCount.textContent = pct + '% uploaded';
+          }
+          uploads.push({ uploadId: uploadId, filename: file.name });
         }
 
-        const response = await fetch('/api/timeline', {
+        // All bytes uploaded — now run analysis over the assembled files.
+        progressText.textContent = 'Extracting timeline...';
+        progressDetail.textContent = 'Starting analysis...';
+        progressBar.style.display = 'none';
+        progressFill.style.width = '0%';
+
+        const ruleXiEl = document.getElementById('timelineRuleXi');
+        const response = await fetch('/api/timeline/process', {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uploads: uploads,
+            additionalContext: additionalContext || undefined,
+            ruleContext: !!(ruleXiEl && ruleXiEl.checked)
+          })
         });
 
         // The streaming endpoint replies with text/event-stream on success.
