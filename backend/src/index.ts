@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { requireAuth } from "./auth/session.js";
 import { pingDb } from "./db/database.js";
 import { logger } from "./utils/logger.js";
+import { ensureCrashTable, recordCrash, recentCrashes } from "./utils/crashLog.js";
 import analyze from "./routes/analyze.js";
 import qa from "./routes/qa.js";
 import timeline from "./routes/timeline.js";
@@ -130,6 +131,12 @@ app.get("/api/health/live", async (_request, reply) => {
   return reply.code(200).send({ status: "ok" });
 });
 
+// Recent crashes (uncaught exceptions / unhandled rejections), persisted across
+// the restart that follows. Lets us diagnose a process crash without pod logs.
+app.get("/api/health/crashes", async (_request, reply) => {
+  return reply.code(200).send({ crashes: await recentCrashes(20) });
+});
+
 // Readiness/full health: "can this pod serve traffic?" — pings the DB and
 // reports dependency status. The readiness probe targets this, so a pod with a
 // broken DB is pulled from the Service (not killed).
@@ -178,6 +185,11 @@ logger.info("ODC Complaint Analyzer (POC) starting", {
   maxPdfPages: Math.max(0, Number(process.env.MAX_PDF_PAGES) || 5000),
 });
 
+// Best-effort: ensure the crash_log table exists so crash self-reporting works.
+await ensureCrashTable().catch((e) =>
+  logger.warn("Could not ensure crash_log table", { error: String(e) }),
+);
+
 await app.listen({ port, host: "0.0.0.0" });
 
 // Graceful shutdown (OPS-007): drain in-flight requests before exit.
@@ -198,16 +210,19 @@ function shutdown(signal: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-// Surface otherwise-silent crashes (OPS-015). Log full stacks to stdout so the
-// reason is visible in pod logs (kubectl logs --previous) after a restart.
+// Surface otherwise-silent crashes (OPS-015). Log full stacks to stdout AND
+// persist to the DB (crash_log) so the reason survives the restart and can be
+// read from /api/health/crashes without pod-log access.
 process.on("unhandledRejection", (reason) => {
   logger.error("Unhandled rejection", {
     reason: reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
   });
+  void recordCrash("unhandledRejection", reason);
 });
 process.on("uncaughtException", (err) => {
   logger.error("Uncaught exception — exiting", {
     error: err instanceof Error ? (err.stack ?? err.message) : String(err),
   });
-  process.exit(1);
+  // Persist the crash, then exit (state is undefined after an uncaught throw).
+  recordCrash("uncaughtException", err).finally(() => process.exit(1));
 });

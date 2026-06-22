@@ -13,6 +13,7 @@ import { findDuplicateBlocks, type FilePages } from "../utils/duplicateDetector.
 import { logger } from "../utils/logger.js";
 import { readMultipart, type UploadedFile } from "../utils/multipart.js";
 import { appendChunk, readUpload, cleanupUpload, sweepOldUploads } from "../utils/uploadStore.js";
+import { setPhase } from "../utils/crashLog.js";
 import { randomUUID } from "node:crypto";
 
 type SendFn = (type: string, data: unknown) => void;
@@ -92,6 +93,7 @@ async function runTimelineExtraction(
 
     let chunks: { label: string; text: string }[] = [];
 
+    setPhase("extract-text:" + file.filename);
     if (file.filename.endsWith(".pdf")) {
       const extraction = await extractTextFromPdf(file.buffer, async (msg) => {
         send("progress", { step: "vision_ocr", message: msg });
@@ -167,6 +169,7 @@ async function runTimelineExtraction(
     // so it isn't held in memory through all the Claude calls.
     file.buffer = Buffer.alloc(0);
 
+    setPhase("analyze-chunks:" + file.filename + " (" + chunks.length + " chunks)");
     let completedChunks = 0;
     const totalChunks = chunks.length;
     const extractionTasks = chunks.map(
@@ -215,9 +218,11 @@ async function runTimelineExtraction(
     finalTimeline = allPartials[0]!;
   }
 
+  setPhase("cleanup");
   send("progress", { step: "cleanup", message: "Final cleanup and deduplication..." });
   const cleanedTimeline = await finalCleanup(finalTimeline);
 
+  setPhase("duplicates");
   send("progress", { step: "duplicates", message: "Scanning for duplicate content blocks..." });
   const duplicates = findDuplicateBlocks(filePages);
   logger.info(
@@ -386,6 +391,7 @@ export default async function timeline(app: FastifyInstance) {
       void (async () => {
         try {
           void sweepOldUploads();
+          setPhase("read-uploads");
           const files: UploadedFile[] = [];
           for (const u of body.uploads) {
             const buffer = await readUpload(u.uploadId, u.filename);

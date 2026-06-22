@@ -26,6 +26,7 @@ declare module "fastify" {
 const PUBLIC_API_PATHS = new Set<string>([
   "/api/health",
   "/api/health/live",
+  "/api/health/crashes",
   "/api/records/verify",
 ]);
 
