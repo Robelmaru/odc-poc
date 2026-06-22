@@ -4597,6 +4597,7 @@ All conclusions require human review and professional judgment.
         // Poll until the job finishes. Transient poll failures are tolerated.
         let cursor = 0;
         let pollFails = 0;
+        let notFound = 0;
         for (;;) {
           await new Promise((r) => setTimeout(r, 2000));
           let poll;
@@ -4606,12 +4607,20 @@ All conclusions require human review and professional judgment.
             if (++pollFails > 30) throw new Error('Lost connection while processing the document. Please try again.');
             continue;
           }
-          if (poll.status === 404) throw new Error('The processing job expired. Please try again.');
+          if (poll.status === 404) {
+            // Tolerate transient 404s: during a deploy/rollout there can briefly be
+            // two pods, and a poll may hit the one that isn't running this job. Keep
+            // polling (~30s) — once the other pod finishes draining, every poll hits
+            // the pod that owns the job. Only give up if it stays missing.
+            if (++notFound > 15) throw new Error('The processing job was lost (the server may have restarted mid-job). Please try again.');
+            continue;
+          }
           if (!poll.ok) {
             if (++pollFails > 30) throw new Error('Processing status error (HTTP ' + poll.status + ').');
             continue;
           }
           pollFails = 0;
+          notFound = 0;
           const upd = await poll.json();
           cursor = upd.nextCursor;
           for (const ev of (upd.events || [])) handleEvent(ev);
