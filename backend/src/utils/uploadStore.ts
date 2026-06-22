@@ -31,22 +31,41 @@ function filePathFor(uploadId: string, filename: string): string {
 }
 
 /**
- * Append (or, for chunk index 0, create/truncate) a chunk to the upload's temp
- * file. Index 0 starts fresh so a retried upload with the same id is clean.
- * Returns the file's size so far. Chunks must be sent in order.
+ * Write a chunk at its absolute byte `offset` in the upload's temp file. Using a
+ * positional write (not append) makes retries idempotent: a re-sent chunk
+ * overwrites the same bytes rather than duplicating them — appends would corrupt
+ * the file whenever a chunk's response was lost and the client retried. Returns
+ * the file's current size.
  */
-export async function appendChunk(
+export async function writeChunkAt(
   uploadId: string,
   filename: string,
   buffer: Buffer,
-  index: number,
+  offset: number,
 ): Promise<number> {
   const p = filePathFor(uploadId, filename);
   await fsp.mkdir(path.dirname(p), { recursive: true });
-  if (index <= 0) await fsp.writeFile(p, buffer);
-  else await fsp.appendFile(p, buffer);
+  // "a" creates the file if absent without truncating; then "r+" allows a
+  // positional write. (No single flag does create-if-absent + no-truncate + seek.)
+  const created = await fsp.open(p, "a");
+  await created.close();
+  const fh = await fsp.open(p, "r+");
+  try {
+    await fh.write(buffer, 0, buffer.length, offset);
+  } finally {
+    await fh.close();
+  }
   const st = await fsp.stat(p);
   return st.size;
+}
+
+/** Current size on disk of an upload (0 if absent). */
+export async function uploadSize(uploadId: string, filename: string): Promise<number> {
+  try {
+    return (await fsp.stat(filePathFor(uploadId, filename))).size;
+  } catch {
+    return 0;
+  }
 }
 
 /** Read a fully-assembled upload into a buffer for processing. */

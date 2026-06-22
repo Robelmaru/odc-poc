@@ -12,7 +12,13 @@ import {
 import { findDuplicateBlocks, type FilePages } from "../utils/duplicateDetector.js";
 import { logger } from "../utils/logger.js";
 import { readMultipart, type UploadedFile } from "../utils/multipart.js";
-import { appendChunk, readUpload, cleanupUpload, sweepOldUploads } from "../utils/uploadStore.js";
+import {
+  writeChunkAt,
+  readUpload,
+  uploadSize,
+  cleanupUpload,
+  sweepOldUploads,
+} from "../utils/uploadStore.js";
 import { setPhase } from "../utils/crashLog.js";
 import { randomUUID } from "node:crypto";
 
@@ -327,13 +333,18 @@ export default async function timeline(app: FastifyInstance) {
     const { files, fields } = await readMultipart(request);
     const uploadId = fields.uploadId;
     const filename = fields.filename;
-    const index = Number(fields.index ?? "0");
+    const offset = Number(fields.offset ?? "0");
     const chunk = files[0];
     if (!uploadId || !filename)
       return reply.code(400).send({ error: "uploadId and filename are required." });
     if (!chunk) return reply.code(400).send({ error: "A 'chunk' file part is required." });
     try {
-      const size = await appendChunk(uploadId, filename, chunk.buffer, Number.isFinite(index) ? index : 0);
+      const size = await writeChunkAt(
+        uploadId,
+        filename,
+        chunk.buffer,
+        Number.isFinite(offset) && offset >= 0 ? offset : 0,
+      );
       return { ok: true, size };
     } catch (e) {
       return reply.code(400).send({ error: e instanceof Error ? e.message : "Upload failed." });
@@ -362,6 +373,7 @@ export default async function timeline(app: FastifyInstance) {
                 properties: {
                   uploadId: { type: "string", maxLength: 128 },
                   filename: { type: "string", maxLength: 256 },
+                  size: { type: "integer", minimum: 0 },
                 },
               },
             },
@@ -373,7 +385,7 @@ export default async function timeline(app: FastifyInstance) {
     },
     async (request, reply) => {
       const body = request.body as {
-        uploads: { uploadId: string; filename: string }[];
+        uploads: { uploadId: string; filename: string; size?: number }[];
         additionalContext?: string;
         ruleContext?: boolean;
       };
@@ -394,6 +406,23 @@ export default async function timeline(app: FastifyInstance) {
           setPhase("read-uploads");
           const files: UploadedFile[] = [];
           for (const u of body.uploads) {
+            // Integrity check: a chunk may have been lost, so verify the assembled
+            // file is the expected size before parsing (a short/garbled file makes
+            // pdf-parse throw a cryptic "Invalid Root reference").
+            if (typeof u.size === "number") {
+              const actual = await uploadSize(u.uploadId, u.filename);
+              if (actual !== u.size) {
+                throw new Error(
+                  'Upload of "' +
+                    u.filename +
+                    '" is incomplete (' +
+                    actual +
+                    " of " +
+                    u.size +
+                    " bytes). Please re-upload the file.",
+                );
+              }
+            }
             const buffer = await readUpload(u.uploadId, u.filename);
             files.push({ field: "files", filename: u.filename, buffer, size: buffer.length });
           }

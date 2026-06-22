@@ -4491,7 +4491,9 @@ All conclusions require human review and professional judgment.
                 const fd = new FormData();
                 fd.append('uploadId', uploadId);
                 fd.append('filename', file.name);
-                fd.append('index', String(i));
+                // Absolute byte offset of this chunk — the server writes at this
+                // position so a retried chunk overwrites (not duplicates) its bytes.
+                fd.append('offset', String(i * CHUNK_SIZE));
                 fd.append('chunk', blob, 'chunk');
                 const up = await fetch('/api/timeline/upload', { method: 'POST', body: fd });
                 if (up.ok) break;
@@ -4525,7 +4527,7 @@ All conclusions require human review and professional judgment.
             progressDetail.textContent = 'Uploading ' + file.name + ' (' + pct + '%)';
             if (progressCount) progressCount.textContent = pct + '% uploaded';
           }
-          uploads.push({ uploadId: uploadId, filename: file.name });
+          uploads.push({ uploadId: uploadId, filename: file.name, size: file.size });
         }
 
         // All bytes uploaded — now run analysis over the assembled files.
