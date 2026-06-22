@@ -13,8 +13,33 @@ import { findDuplicateBlocks, type FilePages } from "../utils/duplicateDetector.
 import { logger } from "../utils/logger.js";
 import { readMultipart, type UploadedFile } from "../utils/multipart.js";
 import { appendChunk, readUpload, cleanupUpload, sweepOldUploads } from "../utils/uploadStore.js";
+import { randomUUID } from "node:crypto";
 
 type SendFn = (type: string, data: unknown) => void;
+
+// ── Background processing jobs ────────────────────────────────────────────────
+// Large documents are processed as a background job the client polls, rather
+// than over a long-lived SSE/HTTP/2 response — a streamed response through the
+// external load balancer gets reset on big jobs (ERR_HTTP2_PROTOCOL_ERROR). The
+// same shape of progress events is buffered per job and drained by the poller.
+// In-memory is fine here: dev-tim/staging run a single replica.
+interface JobEvent {
+  type: string;
+  data: unknown;
+}
+interface Job {
+  status: "running" | "complete" | "error";
+  events: JobEvent[];
+  createdAt: number;
+}
+const jobs = new Map<string, Job>();
+
+function sweepJobs(): void {
+  const cutoff = Date.now() - 30 * 60 * 1000; // drop jobs older than 30 min
+  for (const [id, job] of jobs) {
+    if (job.createdAt < cutoff) jobs.delete(id);
+  }
+}
 
 async function sectionDocument(
   filename: string,
@@ -343,29 +368,73 @@ export default async function timeline(app: FastifyInstance) {
         ruleContext?: boolean;
       };
 
-      const { send, end } = openSse(reply);
-      try {
-        void sweepOldUploads();
-        const files: UploadedFile[] = [];
-        for (const u of body.uploads) {
-          const buffer = await readUpload(u.uploadId, u.filename);
-          files.push({ field: "files", filename: u.filename, buffer, size: buffer.length });
+      const jobId = randomUUID();
+      const job: Job = { status: "running", events: [], createdAt: Date.now() };
+      jobs.set(jobId, job);
+      sweepJobs();
+      const send: SendFn = (type, data) => {
+        job.events.push({ type, data });
+      };
+
+      // Run in the background; the HTTP response returns the job id immediately so
+      // there is no long-lived connection to drop. The client polls /process/:id.
+      void (async () => {
+        try {
+          void sweepOldUploads();
+          const files: UploadedFile[] = [];
+          for (const u of body.uploads) {
+            const buffer = await readUpload(u.uploadId, u.filename);
+            files.push({ field: "files", filename: u.filename, buffer, size: buffer.length });
+          }
+          await runTimelineExtraction(
+            files,
+            body.additionalContext ?? null,
+            body.ruleContext === true,
+            send,
+          );
+          job.status = "complete";
+        } catch (error) {
+          logger.error("Timeline extraction error", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          send("error", { message: errorMessage(error) });
+          job.status = "error";
+        } finally {
+          for (const u of body.uploads) await cleanupUpload(u.uploadId);
         }
-        await runTimelineExtraction(
-          files,
-          body.additionalContext ?? null,
-          body.ruleContext === true,
-          send,
-        );
-      } catch (error) {
-        logger.error("Timeline extraction error", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        send("error", { message: errorMessage(error) });
-      } finally {
-        for (const u of body.uploads) await cleanupUpload(u.uploadId);
-        end();
-      }
+      })();
+
+      return reply.send({ jobId });
+    },
+  );
+
+  // ── Poll a processing job: buffered events since `cursor`, plus status ───────
+  app.get(
+    "/process/:jobId",
+    {
+      schema: {
+        tags: ["timeline"],
+        params: {
+          type: "object",
+          required: ["jobId"],
+          properties: { jobId: { type: "string", maxLength: 64 } },
+        },
+        querystring: {
+          type: "object",
+          properties: { cursor: { type: "integer", minimum: 0 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { jobId } = request.params as { jobId: string };
+      const cursor = Number((request.query as { cursor?: number }).cursor ?? 0) || 0;
+      const job = jobs.get(jobId);
+      if (!job) return reply.code(404).send({ error: "Unknown or expired job." });
+      return {
+        status: job.status,
+        nextCursor: job.events.length,
+        events: job.events.slice(cursor),
+      };
     },
   );
 

@@ -4535,7 +4535,10 @@ All conclusions require human review and professional judgment.
         progressFill.style.width = '0%';
 
         const ruleXiEl = document.getElementById('timelineRuleXi');
-        const response = await fetch('/api/timeline/process', {
+        // Start processing as a background job and poll for progress + result.
+        // (A long-lived streaming response gets reset by the load balancer on big
+        // documents; short poll requests don't.)
+        const startResp = await fetch('/api/timeline/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4544,97 +4547,78 @@ All conclusions require human review and professional judgment.
             ruleContext: !!(ruleXiEl && ruleXiEl.checked)
           })
         });
-
-        // The streaming endpoint replies with text/event-stream on success.
-        // If something failed before the stream started (e.g. upload too large,
-        // session expired, server error) Fastify returns a plain JSON/text
-        // error instead — surface that real message rather than a generic one.
-        const contentType = response.headers.get('content-type') || '';
-        if (!response.ok || !contentType.includes('text/event-stream')) {
-          let serverMessage = '';
-          try {
-            if (contentType.includes('application/json')) {
-              const errData = await response.json();
-              // The API error shape is { error: { code, message } }, but some
-              // routes send { error: "..." } or { message: "..." } — unwrap any.
-              const e = errData && errData.error;
-              serverMessage =
-                (e && typeof e === 'object' ? e.message : e) || errData.message || '';
-            } else {
-              serverMessage = (await response.text()).trim();
-            }
-          } catch (_) { /* fall through to status-based message */ }
-          if (serverMessage && typeof serverMessage !== 'string') {
-            serverMessage = JSON.stringify(serverMessage);
-          }
-          if (!serverMessage) {
-            serverMessage = response.status === 413
-              ? 'The document is too large to upload. Try a smaller file or split it.'
-              : 'Server error (HTTP ' + response.status + ').';
-          }
-          throw new Error(serverMessage);
+        if (!startResp.ok) {
+          let m = 'Failed to start processing (HTTP ' + startResp.status + ').';
+          try { const j = await startResp.json(); m = (j && j.error && (j.error.message || j.error)) || m; } catch (_) { /* keep default */ }
+          throw new Error(m);
         }
+        const startData = await startResp.json();
+        const jobId = startData.jobId;
 
-        // Parse SSE stream
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        // Applies one buffered progress/complete/error event to the UI.
         let totalChunks = 0;
         let resultData = null;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              var currentEvent = line.slice(7).trim();
-            }
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
-
-              if (currentEvent === 'progress') {
-                progressDetail.textContent = data.message;
-
-                if (data.step === 'extract_text') {
-                  progressText.textContent = 'Extracting text...';
-                } else if (data.step === 'text_extracted') {
-                  progressText.textContent = 'Text extracted';
-                } else if (data.step === 'chunked') {
-                  totalChunks = data.totalChunks || 0;
-                  progressText.textContent = 'Processing ' + totalChunks + ' chunks...';
-                  if (totalChunks > 1) {
-                    progressBar.style.display = 'block';
-                    progressFill.style.width = '0%';
-                    progressCount.textContent = '0 / ' + totalChunks + ' chunks';
-                  }
-                } else if (data.step === 'chunk_done') {
-                  const completed = data.completedChunks;
-                  const total = data.totalChunks || totalChunks;
-                  const pct = Math.round((completed / total) * 100);
-                  progressFill.style.width = pct + '%';
-                  progressCount.textContent = completed + ' / ' + total + ' chunks extracted';
-                  progressText.textContent = 'Extracting chunks (' + pct + '%)...';
-                } else if (data.step === 'merging' || data.step === 'final_merge') {
-                  progressText.textContent = 'Merging timelines...';
-                  progressBar.style.display = 'none';
-                } else if (data.step === 'cleanup') {
-                  progressText.textContent = 'Final cleanup...';
-                }
-              } else if (currentEvent === 'complete') {
-                resultData = data;
-              } else if (currentEvent === 'error') {
-                throw new Error(data.message);
+        const handleEvent = (ev) => {
+          if (ev.type === 'progress') {
+            const data = ev.data;
+            progressDetail.textContent = data.message;
+            if (data.step === 'extract_text') {
+              progressText.textContent = 'Extracting text...';
+            } else if (data.step === 'text_extracted') {
+              progressText.textContent = 'Text extracted';
+            } else if (data.step === 'chunked') {
+              totalChunks = data.totalChunks || 0;
+              progressText.textContent = 'Processing ' + totalChunks + ' chunks...';
+              if (totalChunks > 1) {
+                progressBar.style.display = 'block';
+                progressFill.style.width = '0%';
+                progressCount.textContent = '0 / ' + totalChunks + ' chunks';
               }
+            } else if (data.step === 'chunk_done') {
+              const completed = data.completedChunks;
+              const total = data.totalChunks || totalChunks;
+              const pct = Math.round((completed / total) * 100);
+              progressFill.style.width = pct + '%';
+              progressCount.textContent = completed + ' / ' + total + ' chunks extracted';
+              progressText.textContent = 'Extracting chunks (' + pct + '%)...';
+            } else if (data.step === 'merging' || data.step === 'final_merge') {
+              progressText.textContent = 'Merging timelines...';
+              progressBar.style.display = 'none';
+            } else if (data.step === 'cleanup') {
+              progressText.textContent = 'Final cleanup...';
             }
+          } else if (ev.type === 'complete') {
+            resultData = ev.data;
+          } else if (ev.type === 'error') {
+            throw new Error(ev.data.message);
           }
+        };
+
+        // Poll until the job finishes. Transient poll failures are tolerated.
+        let cursor = 0;
+        let pollFails = 0;
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 2000));
+          let poll;
+          try {
+            poll = await fetch('/api/timeline/process/' + encodeURIComponent(jobId) + '?cursor=' + cursor);
+          } catch (e) {
+            if (++pollFails > 30) throw new Error('Lost connection while processing the document. Please try again.');
+            continue;
+          }
+          if (poll.status === 404) throw new Error('The processing job expired. Please try again.');
+          if (!poll.ok) {
+            if (++pollFails > 30) throw new Error('Processing status error (HTTP ' + poll.status + ').');
+            continue;
+          }
+          pollFails = 0;
+          const upd = await poll.json();
+          cursor = upd.nextCursor;
+          for (const ev of (upd.events || [])) handleEvent(ev);
+          if (upd.status === 'complete' || upd.status === 'error') break;
         }
 
-        if (!resultData) throw new Error('The server closed the connection before finishing. This can happen on very large or image-heavy PDFs (the OCR pass runs out of memory). Try a smaller file or fewer pages.');
+        if (!resultData) throw new Error('Processing finished without returning a result. This can happen on very large or image-heavy PDFs. Try a smaller file or fewer pages.');
 
         lastSourceTexts = resultData.sourceTexts || [];
         displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults, resultData.duplicates);
