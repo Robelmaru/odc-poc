@@ -4477,19 +4477,43 @@ All conclusions require human review and professional judgment.
           const numChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
           for (let i = 0; i < numChunks; i++) {
             const blob = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
-            const fd = new FormData();
-            fd.append('uploadId', uploadId);
-            fd.append('filename', file.name);
-            fd.append('index', String(i));
-            fd.append('chunk', blob, 'chunk');
-            const up = await fetch('/api/timeline/upload', { method: 'POST', body: fd });
-            if (!up.ok) {
-              let msg = 'Upload failed (HTTP ' + up.status + ').';
+            // Upload this chunk, retrying transient failures (network blips such as
+            // ERR_NETWORK_CHANGED / dropped connections, or 5xx) so one hiccup over
+            // a long multi-chunk upload doesn't fail the whole thing. Re-sending is
+            // safe: the server only appends a chunk after receiving it in full.
+            let attempt = 0;
+            const MAX_ATTEMPTS = 5;
+            for (;;) {
+              attempt++;
+              let retriable = false;
+              let errMsg = '';
               try {
-                const j = await up.json();
-                msg = (j && j.error && (j.error.message || j.error)) || msg;
-              } catch (_) { /* keep default */ }
-              throw new Error(msg);
+                const fd = new FormData();
+                fd.append('uploadId', uploadId);
+                fd.append('filename', file.name);
+                fd.append('index', String(i));
+                fd.append('chunk', blob, 'chunk');
+                const up = await fetch('/api/timeline/upload', { method: 'POST', body: fd });
+                if (up.ok) break;
+                errMsg = 'HTTP ' + up.status;
+                try {
+                  const j = await up.json();
+                  errMsg = (j && j.error && (j.error.message || j.error)) || errMsg;
+                } catch (_) { /* keep default */ }
+                retriable = up.status >= 500; // server-side transient; 4xx won't change on retry
+              } catch (e) {
+                // fetch() rejected = network error (ERR_NETWORK_CHANGED, reset) — retriable
+                retriable = true;
+                errMsg = (e && e.message) ? e.message : String(e);
+              }
+              if (!retriable || attempt >= MAX_ATTEMPTS) {
+                throw new Error('Upload of "' + file.name + '" failed around ' +
+                  Math.round((i / numChunks) * 100) + '% — ' + errMsg +
+                  (retriable ? ' (after ' + attempt + ' attempts; check your network and retry)' : ''));
+              }
+              progressDetail.textContent = 'Network hiccup — retrying chunk ' + (i + 1) +
+                ' of ' + numChunks + ' (attempt ' + (attempt + 1) + ')...';
+              await new Promise((r) => setTimeout(r, 800 * attempt));
             }
             sentBytes += blob.size;
             const pct = totalBytes ? Math.round((sentBytes / totalBytes) * 100) : 100;
