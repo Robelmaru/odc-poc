@@ -41,6 +41,42 @@ const EMPTY_TIMELINE: DocumentTimelineResult = {
   notes: [],
 };
 
+function dedupeArray<T>(arr: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of arr) {
+    const key = JSON.stringify(item);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/**
+ * Deterministic, model-free merge of two partial timelines — concatenate each
+ * array and drop exact duplicates. Used as a fallback when Claude's merge
+ * response is unparseable (e.g. truncated at max_tokens on a very large
+ * timeline), so one bad response never discards a long-running extraction.
+ * Result is correct and complete (finalCleanup still tidies ordering/dupes);
+ * it just isn't LLM-polished.
+ */
+function localMergeTimelines(
+  a: DocumentTimelineResult,
+  b: DocumentTimelineResult,
+): DocumentTimelineResult {
+  return {
+    ...a,
+    documents: dedupeArray([...(a.documents ?? []), ...(b.documents ?? [])]),
+    sections: dedupeArray([...(a.sections ?? []), ...(b.sections ?? [])]),
+    timeline: dedupeArray([...(a.timeline ?? []), ...(b.timeline ?? [])]),
+    conflicts: dedupeArray([...(a.conflicts ?? []), ...(b.conflicts ?? [])]),
+    keyDates: dedupeArray([...(a.keyDates ?? []), ...(b.keyDates ?? [])]),
+    notes: dedupeArray([...(a.notes ?? []), ...(b.notes ?? [])]),
+  };
+}
+
 export function parseTimelineJson(raw: string): DocumentTimelineResult {
   let text = raw.trim();
   if (text.startsWith("```")) text = text.replace(/^```(?:json)?\s*\n?/, "");
@@ -167,24 +203,13 @@ export async function mergeTwoTimelines(
 ): Promise<DocumentTimelineResult> {
   const payload = JSON.stringify([a, b]);
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16384,
-    system: timelineMergePrompt,
-    messages: [
-      {
-        role: "user",
-        content:
-          "Merge these 2 partial timelines into one. Deduplicate events and keep the most significant. Return valid JSON only.\n\n" +
-          payload,
-      },
-    ],
-  });
-  logTokenUsage("timeline-merge", response.usage);
-
-  if (response.stop_reason === "max_tokens") {
-    logger.debug("    Warning: merge truncated, retrying concise...");
-    const retry = await anthropic.messages.create({
+  // Never throw: a large timeline can truncate the merge response at max_tokens
+  // (claude-sonnet-4-6 caps at 64K output, but these calls are non-streaming so we
+  // keep max_tokens modest), and a truncated/garbled JSON would otherwise abort a
+  // long extraction. On any unparseable or failed response, fall back to a
+  // deterministic local merge so the job always completes.
+  try {
+    const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 16384,
       system: timelineMergePrompt,
@@ -192,20 +217,63 @@ export async function mergeTwoTimelines(
         {
           role: "user",
           content:
-            "Merge these 2 partial timelines. Be VERY CONCISE — deduplicate and keep only HIGH and MEDIUM significance events. Return valid JSON only.\n\n" +
+            "Merge these 2 partial timelines into one. Deduplicate events and keep the most significant. Return valid JSON only.\n\n" +
             payload,
         },
       ],
     });
-    logTokenUsage("timeline-merge-retry", retry.usage);
-    const retryBlock = retry.content.find((b) => b.type === "text");
-    if (!retryBlock || retryBlock.type !== "text") throw new Error("Merge retry failed");
-    return parseTimelineJson(retryBlock.text);
-  }
+    logTokenUsage("timeline-merge", response.usage);
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") throw new Error("Merge failed");
-  return parseTimelineJson(textBlock.text);
+    if (response.stop_reason === "max_tokens") {
+      logger.debug("    Warning: merge truncated, retrying concise...");
+      const retry = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 16384,
+        system: timelineMergePrompt,
+        messages: [
+          {
+            role: "user",
+            content:
+              "Merge these 2 partial timelines. Be VERY CONCISE — deduplicate and keep only HIGH and MEDIUM significance events. Return valid JSON only.\n\n" +
+              payload,
+          },
+        ],
+      });
+      logTokenUsage("timeline-merge-retry", retry.usage);
+      const retryBlock = retry.content.find((b) => b.type === "text");
+      if (retry.stop_reason !== "max_tokens" && retryBlock && retryBlock.type === "text") {
+        try {
+          return parseTimelineJson(retryBlock.text);
+        } catch {
+          /* fall through to local merge */
+        }
+      }
+      logger.debug("    Merge retry unusable — using deterministic local merge.");
+      return localMergeTimelines(a, b);
+    }
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (textBlock && textBlock.type === "text") {
+      try {
+        return parseTimelineJson(textBlock.text);
+      } catch (err) {
+        logger.debug(
+          "    Merge parse failed (" +
+            (err as Error).message.slice(0, 80) +
+            ") — using deterministic local merge.",
+        );
+        return localMergeTimelines(a, b);
+      }
+    }
+    return localMergeTimelines(a, b);
+  } catch (err) {
+    logger.debug(
+      "    Merge call failed (" +
+        (err instanceof Error ? err.message.slice(0, 80) : String(err)) +
+        ") — using deterministic local merge.",
+    );
+    return localMergeTimelines(a, b);
+  }
 }
 
 export async function mergePartialTimelines(
