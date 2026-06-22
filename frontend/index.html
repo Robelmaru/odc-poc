@@ -4460,7 +4460,7 @@ All conclusions require human review and professional judgment.
         // to hit the load balancer's request timeout (big productions can take
         // minutes to transfer). Chunks are appended server-side into one temp
         // file, then /process reads the assembled file and streams results.
-        const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB per chunk
+        const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk — smaller = gentler on a flaky link, less to re-send
         const uploads = [];
         let totalBytes = 0;
         timelineUploadedFiles.forEach((f) => { totalBytes += f.file.size; });
@@ -4482,7 +4482,7 @@ All conclusions require human review and professional judgment.
             // a long multi-chunk upload doesn't fail the whole thing. Re-sending is
             // safe: the server only appends a chunk after receiving it in full.
             let attempt = 0;
-            const MAX_ATTEMPTS = 5;
+            const MAX_ATTEMPTS = 8;
             for (;;) {
               attempt++;
               let retriable = false;
@@ -4511,9 +4511,13 @@ All conclusions require human review and professional judgment.
                   Math.round((i / numChunks) * 100) + '% — ' + errMsg +
                   (retriable ? ' (after ' + attempt + ' attempts; check your network and retry)' : ''));
               }
-              progressDetail.textContent = 'Network hiccup — retrying chunk ' + (i + 1) +
-                ' of ' + numChunks + ' (attempt ' + (attempt + 1) + ')...';
-              await new Promise((r) => setTimeout(r, 800 * attempt));
+              // Back off increasingly (capped at 8s) so a brief network/DNS
+              // outage of up to ~30s is ridden out instead of aborting the upload.
+              const backoff = Math.min(attempt * 1500, 8000);
+              progressDetail.textContent = 'Network dropped — retrying chunk ' + (i + 1) +
+                ' of ' + numChunks + ' in ' + Math.round(backoff / 1000) + 's (attempt ' +
+                (attempt + 1) + ' of ' + MAX_ATTEMPTS + ')...';
+              await new Promise((r) => setTimeout(r, backoff));
             }
             sentBytes += blob.size;
             const pct = totalBytes ? Math.round((sentBytes / totalBytes) * 100) : 100;
