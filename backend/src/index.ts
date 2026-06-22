@@ -8,6 +8,7 @@ import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { requireAuth } from "./auth/session.js";
 import { pingDb } from "./db/database.js";
 import { logger } from "./utils/logger.js";
@@ -92,6 +93,34 @@ app.setErrorHandler((err: FastifyError, request, reply) => {
   return reply.code(status).send({ error: { code: "REQUEST", message: err.message } });
 });
 
+// Report the container's real memory ceiling (the cgroup limit the kernel
+// OOM-kills against) alongside current RSS, so we can confirm what limit a pod
+// actually got — invaluable when a deployment's requested limit may not have
+// scheduled. Returns megabytes; limitMb is null when uncapped/unreadable.
+function memInfo(): { rssMb: number; heapUsedMb: number; limitMb: number | null } {
+  let limitMb: number | null = null;
+  for (const p of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
+    try {
+      const v = readFileSync(p, "utf8").trim();
+      if (v === "max") break; // cgroup v2, uncapped
+      const n = Number(v);
+      // Ignore the "no limit" sentinel (a huge number close to 2^63).
+      if (Number.isFinite(n) && n > 0 && n < 1e15) {
+        limitMb = Math.round(n / (1024 * 1024));
+      }
+      break;
+    } catch {
+      /* try the next path */
+    }
+  }
+  const m = process.memoryUsage();
+  return {
+    rssMb: Math.round(m.rss / (1024 * 1024)),
+    heapUsedMb: Math.round(m.heapUsed / (1024 * 1024)),
+    limitMb,
+  };
+}
+
 // ── Health ──────────────────────────────────────────────────────────────────
 // Liveness: "is the process up?" — no DB ping, no dependencies. The kubelet
 // liveness probe targets this so a slow DB or a long CPU-bound request (OCR /
@@ -115,7 +144,9 @@ app.get("/api/health", async (_request, reply) => {
     checks.db = "error";
   }
   const healthy = checks.db === "ok" && checks.anthropic === "ok";
-  return reply.code(healthy ? 200 : 503).send({ status: healthy ? "ok" : "degraded", checks });
+  return reply
+    .code(healthy ? 200 : 503)
+    .send({ status: healthy ? "ok" : "degraded", checks, mem: memInfo() });
 });
 
 // ── API routes ───────────────────────────────────────────────────────────────
