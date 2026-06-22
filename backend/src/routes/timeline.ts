@@ -207,10 +207,11 @@ async function runTimelineExtraction(
   });
 }
 
-// Open an SSE response on a hijacked reply and return a writer + the raw socket.
+// Open an SSE response on a hijacked reply. Returns the writer plus an end()
+// that tears down the heartbeat and closes the socket.
 function openSse(reply: import("fastify").FastifyReply): {
-  res: import("http").ServerResponse;
   send: SendFn;
+  end: () => void;
 } {
   reply.hijack();
   const res = reply.raw;
@@ -218,12 +219,36 @@ function openSse(reply: import("fastify").FastifyReply): {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    // Tell nginx not to buffer the event stream so events (and the heartbeat)
+    // reach the client immediately.
+    "X-Accel-Buffering": "no",
   });
+  res.write(": connected\n\n");
   let eventId = 0;
   const send: SendFn = (type, data) => {
     res.write(`id: ${eventId++}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
   };
-  return { res, send };
+  // Heartbeat: large documents have long silent processing steps (whole-file
+  // pdf-parse, multi-pass Claude merges) with no events. A proxied HTTP/2 stream
+  // that goes idle gets reset by the load balancer (ERR_HTTP2_PROTOCOL_ERROR), so
+  // emit a comment line every 10s to keep it alive. Comments (": …") are ignored
+  // by the SSE client.
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": ping\n\n");
+    } catch {
+      /* socket gone */
+    }
+  }, 10000);
+  const end = () => {
+    clearInterval(heartbeat);
+    try {
+      res.end();
+    } catch {
+      /* already closed */
+    }
+  };
+  return { send, end };
 }
 
 function errorMessage(error: unknown): string {
@@ -245,7 +270,7 @@ export default async function timeline(app: FastifyInstance) {
     const ruleContext = fields.ruleContext === "true";
     if (files.length === 0) return reply.code(400).send({ error: "No files uploaded." });
 
-    const { res, send } = openSse(reply);
+    const { send, end } = openSse(reply);
     try {
       await runTimelineExtraction(files, additionalContext, ruleContext, send);
     } catch (error) {
@@ -254,7 +279,7 @@ export default async function timeline(app: FastifyInstance) {
       });
       send("error", { message: errorMessage(error) });
     } finally {
-      res.end();
+      end();
     }
   });
 
@@ -318,7 +343,7 @@ export default async function timeline(app: FastifyInstance) {
         ruleContext?: boolean;
       };
 
-      const { res, send } = openSse(reply);
+      const { send, end } = openSse(reply);
       try {
         void sweepOldUploads();
         const files: UploadedFile[] = [];
@@ -339,7 +364,7 @@ export default async function timeline(app: FastifyInstance) {
         send("error", { message: errorMessage(error) });
       } finally {
         for (const u of body.uploads) await cleanupUpload(u.uploadId);
-        res.end();
+        end();
       }
     },
   );
