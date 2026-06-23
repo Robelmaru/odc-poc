@@ -7236,7 +7236,12 @@ th{background:#f0f2f8;font-weight:bold;}
             + (r.detectedLanguage ? ' \u2014 from ' + escapeHtml(r.detectedLanguage) : '')
             + '</div>';
         }
-        html += '<div style="margin-bottom:32px;">' + escapeHtml(r.translation) + '</div>';
+        const body = (r.translation == null ? '' : String(r.translation)).trim();
+        html += '<div style="margin-bottom:32px;">'
+          + (body
+              ? escapeHtml(r.translation)
+              : '<em style="color:var(--color-text-muted);">No readable text could be extracted from this document. If it is handwritten or a low-quality scan, the image may be too unclear — try a clearer scan.</em>')
+          + '</div>';
       }
 
       results.innerHTML = html;
