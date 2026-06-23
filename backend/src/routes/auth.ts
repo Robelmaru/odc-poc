@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { ConfidentialClientApplication, type Configuration } from "@azure/msal-node";
 import { getUserByEmail, insertAuditLog } from "../db/database.js";
 import { issueSession } from "../auth/session.js";
@@ -30,6 +30,30 @@ function getMsalClient(): ConfidentialClientApplication | null {
     },
   };
   return new ConfidentialClientApplication(config);
+}
+
+// Resolve the OAuth redirect URI from the *actual request host* rather than a
+// single static env var. Each environment (dev-tim / staging / prod) is reached
+// on its own hostname through the same image, so a hard-coded ENTRA_REDIRECT_URI
+// is a per-environment footgun: a secret copied from staging sends dev-tim users
+// to staging's /auth/callback (the state won't exist there → "Invalid login
+// state", and they never land back on dev-tim). Deriving it here keeps /login and
+// /callback in lock-step on whatever host the user actually came in on.
+//
+// This is not an open-redirect risk: Microsoft only honors redirect URIs that are
+// pre-registered on the app registration, so a spoofed Host just fails at the IdP
+// with AADSTS50011. ENTRA_REDIRECT_URI is kept as an explicit override / fallback
+// for when no host can be determined.
+function resolveRedirectUri(request: FastifyRequest): string {
+  const firstHeader = (name: string): string | undefined =>
+    (request.headers[name] as string | undefined)?.split(",")[0]?.trim();
+  // Behind the nginx ingress the original Host is preserved and X-Forwarded-Proto
+  // is set to https (TLS terminates at the edge); on localhost neither is present,
+  // so request.protocol ("http") and the Host header give the right local URL.
+  const host = firstHeader("x-forwarded-host") || request.headers.host;
+  const proto = firstHeader("x-forwarded-proto") || request.protocol;
+  if (host) return `${proto}://${host}/auth/callback`;
+  return process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
 }
 
 function getAllowedDomains(): string[] {
@@ -70,12 +94,12 @@ export default async function auth(app: FastifyInstance) {
   });
 
   // Start the OAuth login flow
-  app.get("/login", { schema: { tags: ["auth"] } }, async (_request, reply) => {
+  app.get("/login", { schema: { tags: ["auth"] } }, async (request, reply) => {
     cleanupStates();
     const client = getMsalClient();
     if (!client) return reply.code(500).send({ error: "Entra SSO not configured" });
 
-    const redirectUri = process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
+    const redirectUri = resolveRedirectUri(request);
     const state = crypto.randomUUID();
     stateStore.set(state, { createdAt: Date.now() });
 
@@ -103,7 +127,8 @@ export default async function auth(app: FastifyInstance) {
     const client = getMsalClient();
     if (!client) return html(renderError("SSO not configured", "Contact your administrator."));
 
-    const redirectUri = process.env.ENTRA_REDIRECT_URI || "http://localhost:3000/auth/callback";
+    // Must match the redirect_uri used in /login — both derive from the same host.
+    const redirectUri = resolveRedirectUri(request);
 
     try {
       const tokenResponse = await client.acquireTokenByCode({
