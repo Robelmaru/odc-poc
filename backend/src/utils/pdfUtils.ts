@@ -58,11 +58,12 @@ export async function extractTextFromPdf(
   // keeps them. The "Convert Handwriting to Text" path sets this.
   forceVision = false,
 ): Promise<PdfExtraction> {
-  // View the incoming buffer's memory directly rather than copying it — large
-  // scanned PDFs can be hundreds of MB and a copy would double peak memory.
-  const parser = new PDFParse({
-    data: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
-  });
+  // Pass pdf.js its OWN copy. While parsing, pdf.js detaches (neuters) the
+  // ArrayBuffer it is given; a view over `buffer` would leave `buffer` empty, so
+  // the later fs.writeFileSync(tmpPdf, buffer) for OCR writes 0 bytes and pdftoppm
+  // fails with "Document stream is empty" — silently breaking OCR for image-only
+  // (e.g. handwritten) PDFs. The transient copy is worth keeping OCR functional.
+  const parser = new PDFParse({ data: new Uint8Array(buffer) });
   const result = await parser.getText();
 
   // Reject documents too large to OCR in one pass up front (before the heavy
