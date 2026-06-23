@@ -43,6 +43,21 @@ export async function recordCrash(kind: string, err: unknown): Promise<void> {
   }
 }
 
+/** Record a non-fatal diagnostic line (reuses the crash_log table as a sink). */
+export async function recordDebug(kind: string, message: string): Promise<void> {
+  try {
+    if (!ensured) await ensureCrashTable();
+    await execute("INSERT INTO crash_log (kind, phase, message, stack) VALUES (?, ?, ?, ?)", [
+      kind,
+      currentPhase,
+      message.slice(0, 4000),
+      "",
+    ]);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** Most recent crashes, newest first. */
 export async function recentCrashes(limit = 20): Promise<unknown[]> {
   try {

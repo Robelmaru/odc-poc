@@ -8,6 +8,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { logger } from "./logger.js";
 import { logTokenUsage } from "./usage.js";
+import { recordDebug } from "./crashLog.js";
 
 const PAGES_PER_CHUNK = 60;
 const SPARSE_TEXT_THRESHOLD = 50; // pages with fewer chars than this are likely scanned/handwritten
@@ -106,6 +107,23 @@ export async function extractTextFromPdf(
   let visionPages = 0; // pages that used the Claude Vision FALLBACK
   let ocrPages = 0; // pages OCR'd by any engine (local Tesseract or Vision)
   let totalClarity = 0;
+  // OCR diagnostics (read via /api/health/crashes).
+  let dbgRendered = 0;
+  let dbgVisionCalls = 0;
+  let dbgVisionOk = 0;
+  let dbgRenderErr = "";
+  let dbgVisionErr = "";
+  void recordDebug(
+    "ocr-pre",
+    "forceVision=" +
+      forceVision +
+      " pages=" +
+      allPages.length +
+      " sparse=" +
+      sparsePages.length +
+      " firstPageChars=" +
+      (allPages[0]?.text.length ?? 0),
+  );
 
   if (sparsePages.length > 0) {
     if (onProgress) {
@@ -228,6 +246,7 @@ CLARITY: [number]
           ]);
           const actualPath = outRoot + ".jpg";
           if (!fs.existsSync(actualPath)) return;
+          dbgRendered++;
 
           let text = "";
           let score = 0;
@@ -253,14 +272,17 @@ CLARITY: [number]
           const localGood = localAvailable && text.length >= 40 && score >= LOCAL_CONF_MIN;
           if (!localGood) {
             try {
+              dbgVisionCalls++;
               const base64 = fs.readFileSync(actualPath).toString("base64");
               const v = await visionOcr(base64);
               if (v && v.text.length > 0) {
                 text = v.text;
                 score = v.clarity;
                 usedVision = true;
+                dbgVisionOk++;
               }
             } catch (err) {
+              if (!dbgVisionErr) dbgVisionErr = (err as Error).message.slice(0, 200);
               logger.debug(
                 "    Vision OCR failed for page " +
                   page.pageNum +
@@ -285,6 +307,7 @@ CLARITY: [number]
             /* ignore */
           }
         } catch (err) {
+          if (!dbgRenderErr) dbgRenderErr = (err as Error).message.slice(0, 200);
           logger.debug(
             "    OCR failed for page " + page.pageNum + ": " + (err as Error).message.slice(0, 80),
           );
@@ -305,6 +328,28 @@ CLARITY: [number]
       });
 
       await runWithConcurrency(tasks, localAvailable ? tessPool.length : VISION_CONCURRENCY);
+      void recordDebug(
+        "ocr-summary",
+        "engine=" +
+          ocrEngine +
+          " localAvail=" +
+          localAvailable +
+          " sparse=" +
+          totalSparse +
+          " rendered=" +
+          dbgRendered +
+          " visionCalls=" +
+          dbgVisionCalls +
+          " visionOk=" +
+          dbgVisionOk +
+          " ocrPages=" +
+          ocrPages +
+          " renderErr='" +
+          dbgRenderErr +
+          "' visionErr='" +
+          dbgVisionErr +
+          "'",
+      );
     } finally {
       for (const w of tessPool) {
         try {
