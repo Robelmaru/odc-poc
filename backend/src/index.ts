@@ -28,6 +28,10 @@ import session from "./routes/session.js";
 
 const uploadMaxBytes = (Number(process.env.UPLOAD_MAX_MB) || 1024) * 1024 * 1024;
 
+// Bumped per deploy so we can confirm (via /api/health) exactly which build a
+// pod is serving — the rolling-update window otherwise makes this ambiguous.
+const BUILD_MARKER = "ocr-buffer-copy-1";
+
 const app = Fastify({
   // Long OCR / multi-pass Claude requests are expected — no request timeout.
   requestTimeout: 0,
@@ -128,7 +132,7 @@ function memInfo(): { rssMb: number; heapUsedMb: number; limitMb: number | null 
 // multi-pass Claude) never gets the pod restarted out from under an in-flight
 // upload. Restart the pod only when the process itself is wedged.
 app.get("/api/health/live", async (_request, reply) => {
-  return reply.code(200).send({ status: "ok" });
+  return reply.code(200).send({ status: "ok", build: BUILD_MARKER });
 });
 
 // Recent crashes (uncaught exceptions / unhandled rejections), persisted across
