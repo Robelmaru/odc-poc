@@ -85,9 +85,17 @@ async function runTranslateJob(
     let pages: number | undefined;
 
     if (file.filename.toLowerCase().endsWith(".pdf")) {
-      const extracted = await extractTextFromPdf(file.buffer, async (msg) => {
-        send("progress", { message: msg });
-      });
+      // Convert (handwriting) forces Claude Vision OCR — Tesseract mangles
+      // handwriting into dashes. Translate keeps the default (Tesseract-first,
+      // Vision fallback), which is fine for printed foreign-language text.
+      const extracted = await extractTextFromPdf(
+        file.buffer,
+        async (msg) => {
+          send("progress", { message: msg });
+        },
+        undefined,
+        mode === "convert",
+      );
       fullText = extracted.pages.map((p) => p.text).join("\n\n");
       pages = extracted.totalPages;
       if (extracted.visionPages > 0) {

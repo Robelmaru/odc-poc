@@ -52,6 +52,10 @@ export async function extractTextFromPdf(
   buffer: Buffer,
   onProgress?: (msg: string) => Promise<void>,
   maxPages?: number,
+  // Force Claude Vision for OCR (skip local Tesseract). Tesseract is good at
+  // printed text but mangles handwriting — it reads ruled lines as dashes and
+  // keeps them. The "Convert Handwriting to Text" path sets this.
+  forceVision = false,
 ): Promise<PdfExtraction> {
   // View the incoming buffer's memory directly rather than copying it — large
   // scanned PDFs can be hundreds of MB and a copy would double peak memory.
@@ -120,7 +124,7 @@ export async function extractTextFromPdf(
     // OCR strategy: local Tesseract first (cheap, offline), Claude Vision as a
     // fallback only for pages Tesseract reads with low confidence. Set
     // OCR_ENGINE=vision to force Vision for every page.
-    const ocrEngine = (process.env.OCR_ENGINE || "local").toLowerCase();
+    const ocrEngine = forceVision ? "vision" : (process.env.OCR_ENGINE || "local").toLowerCase();
     const LOCAL_CONF_MIN = Number(process.env.OCR_LOCAL_CONF_MIN) || 55;
     const poolSize = Math.max(1, Math.min(VISION_CONCURRENCY, sparsePages.length));
 
