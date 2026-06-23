@@ -5,8 +5,40 @@ import { extractTextFromPdf, chunkText } from "../utils/pdfUtils.js";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
 import { readMultipart } from "../utils/multipart.js";
+import {
+  writeChunkAt,
+  readUpload,
+  uploadSize,
+  cleanupUpload,
+  sweepOldUploads,
+} from "../utils/uploadStore.js";
+import { randomUUID } from "node:crypto";
 
 const anthropic = new Anthropic();
+
+type SendFn = (type: string, data: unknown) => void;
+
+// ── Background jobs (own store; isolated from the timeline route) ─────────────
+// Translate/convert of a scanned doc runs minutes of OCR — too long for a single
+// synchronous request through the load balancer. The client uploads in chunks,
+// then polls this job for progress + result. In-memory is fine (single replica).
+interface JobEvent {
+  type: string;
+  data: unknown;
+}
+interface Job {
+  status: "running" | "complete" | "error";
+  events: JobEvent[];
+  createdAt: number;
+}
+const jobs = new Map<string, Job>();
+
+function sweepJobs(): void {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, job] of jobs) {
+    if (job.createdAt < cutoff) jobs.delete(id);
+  }
+}
 
 async function detectLanguage(text: string): Promise<string> {
   const response = await anthropic.messages.create({
@@ -32,6 +64,95 @@ async function translateChunk(text: string): Promise<string> {
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("No response from Claude");
   return textBlock.text;
+}
+
+// Shared pipeline for "translate" (any language → English) and "convert"
+// (handwriting/scanned → readable text, no translation). extractTextFromPdf
+// already OCRs handwriting via Claude Vision, so "convert" just returns that
+// transcription. Emits progress events into the job buffer; throws on failure.
+async function runTranslateJob(
+  files: { filename: string; buffer: Buffer; size: number }[],
+  mode: "translate" | "convert",
+  send: SendFn,
+): Promise<void> {
+  const results: Record<string, unknown>[] = [];
+  const ocrInfo: { filename: string; visionPages: number; visionClarity?: number }[] = [];
+  const sourceTexts: { filename: string; text: string }[] = [];
+
+  for (const file of files) {
+    send("progress", { message: "Reading " + file.filename + "..." });
+    let fullText = "";
+    let pages: number | undefined;
+
+    if (file.filename.toLowerCase().endsWith(".pdf")) {
+      const extracted = await extractTextFromPdf(file.buffer, async (msg) => {
+        send("progress", { message: msg });
+      });
+      fullText = extracted.pages.map((p) => p.text).join("\n\n");
+      pages = extracted.totalPages;
+      if (extracted.visionPages > 0) {
+        ocrInfo.push({
+          filename: file.filename,
+          visionPages: extracted.visionPages,
+          visionClarity: extracted.visionClarity,
+        });
+      }
+      sourceTexts.push({ filename: file.filename, text: fullText.slice(0, 50000) });
+    } else if (file.filename.toLowerCase().endsWith(".txt")) {
+      fullText = file.buffer.toString("utf8");
+      sourceTexts.push({ filename: file.filename, text: fullText.slice(0, 50000) });
+    } else {
+      continue;
+    }
+
+    if (mode === "convert") {
+      send("progress", { message: "Transcribed " + file.filename });
+      results.push({ filename: file.filename, text: fullText, pages });
+    } else {
+      const detectedLanguage = await detectLanguage(fullText);
+      if (detectedLanguage.toLowerCase() === TARGET_LANGUAGE.toLowerCase()) {
+        send("progress", { message: file.filename + " is already in " + TARGET_LANGUAGE + "." });
+        results.push({ filename: file.filename, translation: fullText, pages, detectedLanguage });
+      } else {
+        const chunks = chunkText(fullText);
+        const out: string[] = [];
+        for (let i = 0; i < chunks.length; i++) {
+          send("progress", {
+            message:
+              "Translating " +
+              file.filename +
+              " (from " +
+              detectedLanguage +
+              ") — part " +
+              (i + 1) +
+              " of " +
+              chunks.length +
+              "...",
+          });
+          out.push(await translateChunk(chunks[i]!));
+        }
+        results.push({
+          filename: file.filename,
+          translation: out.join("\n\n"),
+          pages,
+          detectedLanguage,
+        });
+      }
+    }
+  }
+
+  if (results.length === 0) throw new Error("No supported files could be processed.");
+
+  send("complete", {
+    mode,
+    success: true,
+    language: "en",
+    languageName: TARGET_LANGUAGE,
+    results,
+    ocrInfo: ocrInfo.length > 0 ? ocrInfo : undefined,
+    sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
+    usage: { inputTokens: 0, outputTokens: 0 },
+  });
 }
 
 export default async function translate(app: FastifyInstance) {
@@ -130,4 +251,142 @@ export default async function translate(app: FastifyInstance) {
       return reply.code(500).send({ error: "Translation failed" });
     }
   });
+
+  // ── Chunked upload: append one chunk at its byte offset (idempotent) ─────────
+  app.post("/upload", { schema: { tags: ["translate"] } }, async (request, reply) => {
+    if (!request.isMultipart())
+      return reply.code(400).send({ error: "multipart/form-data required." });
+    const { files, fields } = await readMultipart(request);
+    const uploadId = fields.uploadId;
+    const filename = fields.filename;
+    const offset = Number(fields.offset ?? "0");
+    const chunk = files[0];
+    if (!uploadId || !filename)
+      return reply.code(400).send({ error: "uploadId and filename are required." });
+    if (!chunk) return reply.code(400).send({ error: "A 'chunk' file part is required." });
+    try {
+      const size = await writeChunkAt(
+        uploadId,
+        filename,
+        chunk.buffer,
+        Number.isFinite(offset) && offset >= 0 ? offset : 0,
+      );
+      return { ok: true, size };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "Upload failed." });
+    }
+  });
+
+  // ── Start a translate/convert background job; returns a jobId to poll ────────
+  app.post(
+    "/process",
+    {
+      schema: {
+        tags: ["translate"],
+        body: {
+          type: "object",
+          required: ["uploads"],
+          properties: {
+            mode: { type: "string", enum: ["translate", "convert"] },
+            uploads: {
+              type: "array",
+              minItems: 1,
+              maxItems: 50,
+              items: {
+                type: "object",
+                required: ["uploadId", "filename"],
+                properties: {
+                  uploadId: { type: "string", maxLength: 128 },
+                  filename: { type: "string", maxLength: 256 },
+                  size: { type: "integer", minimum: 0 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = request.body as {
+        mode?: "translate" | "convert";
+        uploads: { uploadId: string; filename: string; size?: number }[];
+      };
+      const mode = body.mode === "convert" ? "convert" : "translate";
+
+      const jobId = randomUUID();
+      const job: Job = { status: "running", events: [], createdAt: Date.now() };
+      jobs.set(jobId, job);
+      sweepJobs();
+      const send: SendFn = (type, data) => {
+        job.events.push({ type, data });
+      };
+
+      void (async () => {
+        try {
+          void sweepOldUploads();
+          const loaded: { filename: string; buffer: Buffer; size: number }[] = [];
+          for (const u of body.uploads) {
+            if (typeof u.size === "number") {
+              const actual = await uploadSize(u.uploadId, u.filename);
+              if (actual !== u.size) {
+                throw new Error(
+                  'Upload of "' +
+                    u.filename +
+                    '" is incomplete (' +
+                    actual +
+                    " of " +
+                    u.size +
+                    " bytes). Please re-upload.",
+                );
+              }
+            }
+            const buffer = await readUpload(u.uploadId, u.filename);
+            loaded.push({ filename: u.filename, buffer, size: buffer.length });
+          }
+          await runTranslateJob(loaded, mode, send);
+          job.status = "complete";
+        } catch (error) {
+          logger.error("Translate/convert error", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          send("error", {
+            message:
+              error instanceof Anthropic.APIError
+                ? "Claude API error: " + error.message
+                : error instanceof Error
+                  ? error.message
+                  : "Processing failed",
+          });
+          job.status = "error";
+        } finally {
+          for (const u of body.uploads) await cleanupUpload(u.uploadId);
+        }
+      })();
+
+      return reply.send({ jobId });
+    },
+  );
+
+  // ── Poll a translate/convert job: events since `cursor` + status ─────────────
+  app.get(
+    "/process/:jobId",
+    {
+      schema: {
+        tags: ["translate"],
+        params: {
+          type: "object",
+          required: ["jobId"],
+          properties: { jobId: { type: "string", maxLength: 64 } },
+        },
+        querystring: { type: "object", properties: { cursor: { type: "integer", minimum: 0 } } },
+      },
+    },
+    async (request, reply) => {
+      const { jobId } = request.params as { jobId: string };
+      const cursor = Number((request.query as { cursor?: number }).cursor ?? 0) || 0;
+      const job = jobs.get(jobId);
+      if (!job) return reply.code(404).send({ error: "Unknown or expired job." });
+      return { status: job.status, nextCursor: job.events.length, events: job.events.slice(cursor) };
+    },
+  );
 }

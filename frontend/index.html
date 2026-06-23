@@ -2046,12 +2046,12 @@
     <div class="container">
       <div class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Translate Document</h2>
+          <h2 class="panel-title">Translation &amp; Handwriting</h2>
         </div>
 
-        <!-- Source language is auto-detected; documents are always translated into English -->
         <div style="margin-bottom: 20px; padding: 10px 14px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 6px; font-size: 13px; color: var(--color-text-secondary);">
-          &#127760; The source language is detected automatically and the document is translated into <strong>English</strong>.
+          &#127760; <strong>Translate to English</strong> — the source language is detected automatically and the document is translated into <strong>English</strong>.<br>
+          &#9997;&#65039; <strong>Convert Handwriting to Text</strong> — transcribe handwritten or scanned pages into readable digital text, in the original language (no translation).
         </div>
 
         <!-- File Upload -->
@@ -2067,7 +2067,8 @@
         <div class="file-list" id="translateFileList"></div>
 
         <div class="button-row" style="margin-top: 16px;">
-          <button class="btn btn-primary" id="translateBtn" onclick="runTranslation()">Translate</button>
+          <button class="btn btn-primary" id="translateBtn" onclick="runTranslation()" title="Detect the source language and translate the document into English">Translate to English</button>
+          <button class="btn btn-primary" id="convertBtn" onclick="runConvert()" title="Transcribe handwritten or scanned pages into readable digital text (no translation)">Convert Handwriting to Text</button>
           <button class="btn btn-secondary" onclick="clearTranslation()">Clear</button>
         </div>
         <div class="error" id="translateError"></div>
@@ -2086,9 +2087,9 @@
 
         <div class="loading" id="translateLoading">
           <div class="loading-spinner"></div>
-          <p class="loading-text">Translating...</p>
-          <p class="loading-subtext">Large documents are translated in chunks automatically</p>
-          <p class="loading-subtext" style="margin-top: 8px;">This may take 1–3 minutes for large documents</p>
+          <p class="loading-text" id="translateLoadingTitle">Working...</p>
+          <p class="loading-subtext" id="translateLoadingMsg">Uploading...</p>
+          <p class="loading-subtext" style="margin-top: 8px;">Scanned or handwritten documents can take several minutes.</p>
         </div>
 
         <div class="results" id="translateResults" style="white-space: pre-wrap; font-family: var(--font-sans); font-size: 15px; line-height: 1.7;">
@@ -7045,39 +7046,145 @@ th{background:#f0f2f8;font-weight:bold;}
         </div>`).join('');
     }
 
-    async function runTranslation() {
+    // Upload files in small chunks to /api/translate/upload (idempotent positional
+    // writes, per-chunk retry) so large/scanned docs don't hit the LB timeout.
+    async function uploadTranslateFilesInChunks(files, onProgress) {
+      const CHUNK = 8 * 1024 * 1024;
+      const uploads = [];
+      let total = 0; files.forEach(f => { total += f.size; });
+      let sent = 0;
+      for (const file of files) {
+        const uploadId = (window.crypto && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+        const numChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+        for (let i = 0; i < numChunks; i++) {
+          const blob = file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK));
+          let attempt = 0;
+          const MAX_ATTEMPTS = 8;
+          for (;;) {
+            attempt++;
+            let retriable = false, errMsg = '';
+            try {
+              const fd = new FormData();
+              fd.append('uploadId', uploadId);
+              fd.append('filename', file.name);
+              fd.append('offset', String(i * CHUNK));
+              fd.append('chunk', blob, 'chunk');
+              const up = await fetch('/api/translate/upload', { method: 'POST', body: fd });
+              if (up.ok) break;
+              errMsg = 'HTTP ' + up.status;
+              try { const j = await up.json(); errMsg = (j && j.error && (j.error.message || j.error)) || errMsg; } catch (_) {}
+              retriable = up.status >= 500;
+            } catch (e) {
+              retriable = true; errMsg = (e && e.message) ? e.message : String(e);
+            }
+            if (!retriable || attempt >= MAX_ATTEMPTS) {
+              throw new Error('Upload of "' + file.name + '" failed — ' + errMsg + ' (check your network and retry)');
+            }
+            if (onProgress) onProgress('Network hiccup — retrying chunk ' + (i + 1) + ' of ' + numChunks + '...');
+            await new Promise(r => setTimeout(r, Math.min(attempt * 1500, 8000)));
+          }
+          sent += blob.size;
+          if (onProgress) onProgress('Uploading ' + file.name + ' (' + (total ? Math.round(sent / total * 100) : 100) + '%)');
+        }
+        uploads.push({ uploadId: uploadId, filename: file.name, size: file.size });
+      }
+      return uploads;
+    }
+
+    // Poll a translate/convert job until done, applying each buffered event.
+    async function pollTranslateJob(jobId, onEvent) {
+      let cursor = 0, pollFails = 0, notFound = 0;
+      for (;;) {
+        await new Promise(r => setTimeout(r, 2000));
+        let poll;
+        try {
+          poll = await fetch('/api/translate/process/' + encodeURIComponent(jobId) + '?cursor=' + cursor);
+        } catch (e) {
+          if (++pollFails > 30) throw new Error('Lost connection while processing the document. Please try again.');
+          continue;
+        }
+        if (poll.status === 404) {
+          if (++notFound > 15) throw new Error('The job was lost (the server may have restarted). Please try again.');
+          continue;
+        }
+        if (!poll.ok) {
+          if (++pollFails > 30) throw new Error('Processing status error (HTTP ' + poll.status + ').');
+          continue;
+        }
+        pollFails = 0; notFound = 0;
+        const upd = await poll.json();
+        cursor = upd.nextCursor;
+        for (const ev of (upd.events || [])) onEvent(ev);
+        if (upd.status === 'complete' || upd.status === 'error') return;
+      }
+    }
+
+    function runTranslation() { return runTranslateOrConvert('translate'); }
+    function runConvert() { return runTranslateOrConvert('convert'); }
+
+    async function runTranslateOrConvert(mode) {
       const btn = document.getElementById('translateBtn');
+      const convertBtn = document.getElementById('convertBtn');
       const loading = document.getElementById('translateLoading');
       const results = document.getElementById('translateResults');
       const error = document.getElementById('translateError');
       const placeholder = document.getElementById('translatePlaceholder');
+      const title = document.getElementById('translateLoadingTitle');
+      const setProg = (m) => { const el = document.getElementById('translateLoadingMsg'); if (el) el.textContent = m; };
 
       if (!loggedInStaff) { showTranslateError('Please sign in first.'); return; }
       if (translateUploadedFiles.length === 0) { showTranslateError('Please upload at least one document.'); return; }
 
       error.classList.remove('active');
       btn.disabled = true;
+      if (convertBtn) convertBtn.disabled = true;
+      if (title) title.textContent = mode === 'convert' ? 'Converting handwriting to text...' : 'Translating...';
+      setProg('Uploading...');
       loading.classList.add('active');
       results.classList.remove('active');
       placeholder.style.display = 'none';
 
       try {
-        const formData = new FormData();
-        translateUploadedFiles.forEach(f => formData.append('files', f));
+        const uploads = await uploadTranslateFilesInChunks(translateUploadedFiles, setProg);
+        setProg(mode === 'convert' ? 'Transcribing document...' : 'Starting translation...');
 
-        const response = await fetch('/api/translate', { method: 'POST', body: formData });
-        const data = await response.json();
-        if (!response.ok) throw new Error(apiErr(data, 'Translation failed'));
+        const startResp = await fetch('/api/translate/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode, uploads: uploads })
+        });
+        if (!startResp.ok) {
+          let m = 'Failed to start (HTTP ' + startResp.status + ').';
+          try { const j = await startResp.json(); m = (j && j.error && (j.error.message || j.error)) || m; } catch (_) {}
+          throw new Error(m);
+        }
+        const startData = await startResp.json();
 
-        lastTranslation = data;
-        lastTranslateSourceTexts = data.sourceTexts || [];
-        lastTranslateOcrInfo = data.ocrInfo || [];
-        displayTranslation(data);
+        let resultData = null;
+        await pollTranslateJob(startData.jobId, (ev) => {
+          if (ev.type === 'progress') { setProg((ev.data && ev.data.message) || ''); }
+          else if (ev.type === 'complete') { resultData = ev.data; }
+          else if (ev.type === 'error') { throw new Error(ev.data.message); }
+        });
+
+        if (!resultData) throw new Error('Finished without returning a result. Please try again.');
+
+        lastTranslateSourceTexts = resultData.sourceTexts || [];
+        lastTranslateOcrInfo = resultData.ocrInfo || [];
+        if (mode === 'convert') {
+          displayConvert(resultData);
+        } else {
+          lastTranslation = resultData;
+          displayTranslation(resultData);
+        }
       } catch (err) {
         showTranslateError(err.message);
         placeholder.style.display = 'block';
       } finally {
         btn.disabled = false;
+        if (convertBtn) convertBtn.disabled = false;
         loading.classList.remove('active');
       }
     }
@@ -7136,6 +7243,21 @@ th{background:#f0f2f8;font-weight:bold;}
       results.classList.add('active');
       document.getElementById('translationQAPanel').style.display = 'block';
       clearTranslationQA();
+    }
+
+    // Handwriting/scanned → readable text. Reuses the translation renderer (and
+    // therefore export / save / Q&A) by mapping the transcription onto the same
+    // `translation` field, then relabels the result title.
+    function displayConvert(data) {
+      const norm = Object.assign({}, data, {
+        results: (data.results || []).map(function (r) {
+          return Object.assign({}, r, { translation: r.text != null ? r.text : r.translation });
+        }),
+      });
+      lastTranslation = norm;
+      displayTranslation(norm);
+      const t = document.getElementById('translateResultTitle');
+      if (t) t.textContent = 'Readable Text (transcribed)';
     }
 
     async function runTranslateAiDetection(sourceTexts) {
