@@ -16,7 +16,7 @@ resources:
 # cannot trigger another build.)
 images:
   - name: ghcr.io/dc-bar-web/odc-poc
-    newTag: c0f739393670b6780a03dd97e4c9f0f649dbe76f
+    newTag: 9f3cc665364791487c42a1d851351ae0ee62dd4b
 
 patches:
   - target:
