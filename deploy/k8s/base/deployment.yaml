@@ -36,6 +36,13 @@ spec:
               value: "1024"
             - name: MAX_PDF_PAGES
               value: "5000"
+            # Disciplinary-rule AI legal analysis (Rule XI lens, complaint
+            # rule-violation analysis, Rule 1.15 flags, deficiency-letter drafting)
+            # is OFF: ODC is not permitted to use AI for that analysis during
+            # testing. Absent/false = off; set to "true" (and flip the frontend
+            # RULE_ANALYSIS_ENABLED flag) to re-enable. See backend/src/config/features.ts.
+            - name: RULE_ANALYSIS_ENABLED
+              value: "false"
             # Give V8 heap headroom for multi-thousand-page extractions while
             # leaving room under the container limit for the off-heap file buffer.
             - name: NODE_OPTIONS
