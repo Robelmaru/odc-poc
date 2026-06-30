@@ -1912,7 +1912,7 @@
           <textarea class="qa-textarea" id="timelineContext" placeholder="Provide any additional context about these documents (e.g., case name, relevant parties, date ranges of interest)..."></textarea>
         </div>
 
-        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;">
+        <label id="timelineRuleXiLabel" style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;">
           <input type="checkbox" id="timelineRuleXi" style="width:16px;height:16px;cursor:pointer;">
           <span>&#9878; Use Rule XI context — analyze through the DC Rules / Rule XI disciplinary lens (weighs significance toward potential rule violations). The result saves &amp; exports like any timeline.</span>
         </label>
@@ -1924,7 +1924,7 @@
           <button class="btn btn-secondary" id="ruleXiCompareBtn" onclick="compareRuleXI()" title="Analyze the first uploaded file twice — with and without DC Rules / Rule XI context — and compare side by side">&#9878; Rule XI Comparison</button>
           <button class="btn btn-secondary btn-clear-wide" onclick="clearTimeline()">Clear</button>
         </div>
-        <div style="font-size:12px;color:var(--color-text-muted);margin-top:6px;">Rule XI Comparison runs the analysis with and without the disciplinary-rules context so you can see how it changes the result. Use a modestly sized file.</div>
+        <div id="ruleXiCompareNote" style="font-size:12px;color:var(--color-text-muted);margin-top:6px;">Rule XI Comparison runs the analysis with and without the disciplinary-rules context so you can see how it changes the result. Use a modestly sized file.</div>
         <div class="error" id="timelineError"></div>
       </div>
 
@@ -2320,6 +2320,15 @@
   </div>
 
   <script>
+    // ========================================
+    // Feature flags
+    // ========================================
+    // Disciplinary-rule AI analysis (Rule XI lens / "Potential Rule Violations" /
+    // Rule 1.15 flags / deficiency-letter drafting) is hidden for now: we are not
+    // permitted to use AI for that kind of legal analysis during testing. Flip this
+    // to true to restore the capability across Document Insight and Discovery.
+    const RULE_ANALYSIS_ENABLED = false;
+
     // ========================================
     // Dark Mode
     // ========================================
@@ -2855,9 +2864,12 @@
     });
 
     // ── Help Panel ─────────────────────────────────────────────────────────
-    const helpTopics = [
+    // Entries tagged ruleAnalysis:true are hidden while disciplinary-rule AI analysis
+    // is disabled (see RULE_ANALYSIS_ENABLED), to match the hidden Document Insight /
+    // Discovery controls.
+    const helpTopicsAll = [
       { section: 'Getting Started', title: 'Signing In', text: 'Sign in with Microsoft (single sign-on) using your dcbar.org account, or with a username and PIN. Click the avatar in the top-right header to see your name and sign out.' },
-      { section: 'Getting Started', title: 'Tabs Overview', text: 'The app has these tabs:\n• Dashboard — your home view with stats and recent activity\n• Document Insight — analyze documents into a timeline, sub-document index, duplicates, and a Rule XI comparison (formerly “Document Timeline”)\n• Translation & Handwriting — translate documents and OCR handwriting/scans\n• AI Detection — check whether text was AI-generated\n• Discovery — track subpoenas and reconcile attorney productions against what was requested\n• Admin — (admins only) manage users and view the full activity log' },
+      { section: 'Getting Started', title: 'Tabs Overview', text: 'The app has these tabs:\n• Dashboard — your home view with stats and recent activity\n• Document Insight — analyze documents into a timeline, sub-document index, and duplicates' + (RULE_ANALYSIS_ENABLED ? ', plus a Rule XI comparison' : '') + ' (formerly “Document Timeline”)\n• Translation & Handwriting — translate documents and OCR handwriting/scans\n• AI Detection — check whether text was AI-generated\n• Discovery — track subpoenas and reconcile attorney productions against what was requested\n• Admin — (admins only) manage users and view the full activity log' },
       { section: 'Getting Started', title: 'Dark Mode', text: 'Toggle dark mode using the moon icon button in the top-right header. Your preference is saved across sessions.' },
 
       { section: 'Document Insight', title: 'Upload Documents', text: 'Drag and drop PDF or TXT files into the upload area, or click to browse. Multiple files can be uploaded at once. The system extracts text and analyzes all documents together.' },
@@ -2865,7 +2877,7 @@
       { section: 'Document Insight', title: 'Handwritten / Scanned Pages (OCR)', text: 'Pages with little or no selectable text are automatically detected and OCR’d. The app runs local OCR (Tesseract) first — fast and at no API cost — and only falls back to Claude Vision for pages the local engine reads with low confidence. This handles scanned documents, image-based PDFs, and handwriting. Large scanned productions of 1,000+ pages are supported; you’ll see a live “OCR 340 / 1227” progress count.' },
       { section: 'Document Insight', title: 'Table of Contents (Sub-documents)', text: 'A single PDF often bundles many sub-documents (invoice, engagement letter, bank statement, check, etc.). The analyzer detects each one and builds a clickable Table of Contents grouped by file. Click any entry to open the source PDF at that page — e.g. jump straight to the “engagement contract.”' },
       { section: 'Document Insight', title: 'Duplicate Content Detection', text: 'The analyzer flags duplicate content blocks — EXACT (identical) and NEAR (highly similar) — within a single file or across files. Each finding lists the page locations (click to open). Useful for spotting repeated pages, re-sent documents, or near-identical statements with small changes.' },
-      { section: 'Document Insight', title: 'Rule XI Comparison', text: 'Click “⚖ Rule XI Comparison” to analyze the first uploaded file twice — once without and once with the DC Rules of Professional Conduct / Rule XI as interpretive context — and view the two results side by side. A metrics table shows the differences (sub-documents, events, HIGH-significance events, key dates, conflicts). Use a modestly sized file, as it runs two passes.' },
+      { section: 'Document Insight', title: 'Rule XI Comparison', ruleAnalysis: true, text: 'Click “⚖ Rule XI Comparison” to analyze the first uploaded file twice — once without and once with the DC Rules of Professional Conduct / Rule XI as interpretive context — and view the two results side by side. A metrics table shows the differences (sub-documents, events, HIGH-significance events, key dates, conflicts). Use a modestly sized file, as it runs two passes.' },
       { section: 'Document Insight', title: 'Save to My Records', text: 'After extracting a timeline, click the save button to store it. You can name the record, add a case/matter number, and review an auto-generated document summary before saving.' },
       { section: 'Document Insight', title: 'My Records', text: 'View all your saved timelines. Features include:\n\u2022 Search by name, notes, or case number\n\u2022 Filter by date range\n\u2022 Sort by clicking column headers\n\u2022 Expand the arrow next to a name to view the document summary\n\u2022 Click the document name to load the full timeline' },
       { section: 'Document Insight', title: 'Annotate Events (Add Notes)', text: 'After extracting a timeline, each event has a note icon. Click it to open the "Annotate Event" modal where you can:\n\u2022 Set a flag: Verify this date, Important, or Conflict\n\u2022 Add a free-text note to the event\n\u2022 Remove annotations with the X button\nAnnotations appear inline under the event and are saved when you save the record.' },
@@ -2884,12 +2896,12 @@
       { section: 'Translation', title: 'Ask About This Translation', text: 'After translating or loading a translation, ask questions about terminology, content, or translation choices in the Q&A panel.' },
       { section: 'Translation', title: 'Translation Activity Log', text: 'View a history of your translation saves and deletes. Searchable by keyword.' },
 
-      { section: 'Discovery', title: 'What Discovery Does', text: 'The Discovery tab tracks the subpoena → production → review workflow for a disciplinary matter. For each case (docket) you issue a subpoena to the respondent attorney, upload the attorney’s production (client file and/or financial records), and the app reconciles what was produced against what the subpoena demanded — flagging missing items, Rule 1.15 trust-record gaps, and drafting a deficiency letter.' },
+      { section: 'Discovery', title: 'What Discovery Does', text: 'The Discovery tab tracks the subpoena → production → review workflow for a disciplinary matter. For each case (docket) you issue a subpoena to the respondent attorney, upload the attorney’s production (client file and/or financial records), and the app reconciles what was produced against what the subpoena demanded — flagging missing items' + (RULE_ANALYSIS_ENABLED ? ', Rule 1.15 trust-record gaps, and drafting a deficiency letter' : '') + '.' },
       { section: 'Discovery', title: 'Create a Docket (Case)', text: 'Click “+ New Case” and enter the respondent attorney (and optional firm), the client/matter party, and a caption. The app assigns a docket number automatically (e.g. ODC-2026-0001). Cases are listed with their phase and status; click a row to open the case detail.' },
       { section: 'Discovery', title: 'Issue a Subpoena', text: 'In a case, choose the subpoena type and set the issued + response-due dates, then click “+ Subpoena”. The standard document-request checklist is seeded automatically by type:\n• Client file + Financial records (BOTH) → 12 items\n• Client file only → 5 items\n• Financial records only → 7 items\nThese 12 items come from ODC’s standard subpoena attachment. Match the type to the matter — requesting financial records on a non-financial matter will show those items as “missing.”' },
       { section: 'Discovery', title: 'Upload & Process a Production', text: 'Click “📤 Upload & process a production” on a subpoena and select the attorney’s PDF. The app runs in the background: extract text → OCR scanned pages (local first, Vision fallback) → index sub-documents → reconcile. You’ll see live status — “OCR 340 / 1227”, “Indexing sub-documents”, then “Reconciling”. Large scanned productions are supported and OCR runs at essentially no API cost.' },
       { section: 'Discovery', title: 'Reconciliation Results', text: 'When processing finishes, each requested item gets a status badge:\n• RECEIVED — the actual artifact is present\n• PARTIAL — present but incomplete (e.g. some months of statements)\n• MISSING — not produced (note: demand/cover-letter text that merely names an item does NOT count as produced)\n• DEFECTIVE — present but unusable/illegible\nEach received item links to the sub-document that satisfied it.' },
-      { section: 'Discovery', title: 'Rule 1.15 Flags & Deficiency Letter', text: 'If trust-record items (general ledger, subsidiary client ledger) are missing or defective on a matter involving client funds, the app raises a Rule 1.15 (Safekeeping Property) flag. When anything is missing/partial/defective, it also drafts a follow-up deficiency letter describing exactly what the attorney must still produce (expand “Draft deficiency letter”).' },
+      { section: 'Discovery', title: 'Rule 1.15 Flags & Deficiency Letter', ruleAnalysis: true, text: 'If trust-record items (general ledger, subsidiary client ledger) are missing or defective on a matter involving client funds, the app raises a Rule 1.15 (Safekeeping Property) flag. When anything is missing/partial/defective, it also drafts a follow-up deficiency letter describing exactly what the attorney must still produce (expand “Draft deficiency letter”).' },
       { section: 'Discovery', title: 'Discovery Dashboard & Overdue Subpoenas', text: 'The top of the Discovery tab shows case counts by phase and an Overdue widget. A subpoena is overdue when its response deadline (or extended deadline) has passed without a full production. Overdue subpoenas are listed in red.' },
       { section: 'Discovery', title: 'Delete a Docket or Production', text: 'Click the 🗑 icon on a case row to delete a docket — this permanently removes its subpoenas and productions (saved Document Insight timeline records are preserved, just unlinked). Click the 🗑 on an individual production to remove just that production. Both require confirmation and are recorded in the audit log.' },
 
@@ -2910,6 +2922,9 @@
       { section: 'Tips', title: 'Keyboard Shortcuts', text: 'Enter \u2014 Submit a question in Q&A panels\nShift+Enter \u2014 New line in Q&A text areas\nCtrl+S \u2014 Save the current timeline record' },
       { section: 'Tips', title: 'Source Links in Timelines', text: 'Clickable source links in timeline events open a preview of the original document at the referenced page. If loaded from saved records (file not in session), you\'ll see the source reference info instead.' },
     ];
+
+    // Hide disciplinary-rule AI analysis topics while that capability is disabled.
+    const helpTopics = helpTopicsAll.filter(t => RULE_ANALYSIS_ENABLED || !t.ruleAnalysis);
 
     function toggleHelpPanel() {
       const panel = document.getElementById('helpPanel');
@@ -3247,16 +3262,20 @@
             });
             h += '</table>';
           }
-          // Rule 1.15 flags
-          let flags = []; try { flags = JSON.parse(p.rule115_flags || '[]'); } catch (e) {}
-          if (flags.length) {
-            h += '<div style="margin-top:8px;background:#fde8e8;border:1px solid #f5c6cb;border-radius:6px;padding:8px 10px;font-size:12px;color:#c0392b;">'
-              + '<strong>&#9888; Rule 1.15 flags</strong><ul style="margin:4px 0 0;padding-left:18px;">'
-              + flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') + '</ul></div>';
-          }
-          if (p.follow_up) {
-            h += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--color-primary);">Draft deficiency letter</summary>'
-              + '<div style="white-space:pre-wrap;font-size:12px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:6px;padding:10px;margin-top:6px;">' + escapeHtml(p.follow_up) + '</div></details>';
+          // Rule 1.15 flags + deficiency-letter draft — disciplinary-rule AI analysis,
+          // hidden unless RULE_ANALYSIS_ENABLED. The mechanical produced-vs-requested
+          // reconciliation above stays visible.
+          if (RULE_ANALYSIS_ENABLED) {
+            let flags = []; try { flags = JSON.parse(p.rule115_flags || '[]'); } catch (e) {}
+            if (flags.length) {
+              h += '<div style="margin-top:8px;background:#fde8e8;border:1px solid #f5c6cb;border-radius:6px;padding:8px 10px;font-size:12px;color:#c0392b;">'
+                + '<strong>&#9888; Rule 1.15 flags</strong><ul style="margin:4px 0 0;padding-left:18px;">'
+                + flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') + '</ul></div>';
+            }
+            if (p.follow_up) {
+              h += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--color-primary);">Draft deficiency letter</summary>'
+                + '<div style="white-space:pre-wrap;font-size:12px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:6px;padding:10px;margin-top:6px;">' + escapeHtml(p.follow_up) + '</div></details>';
+            }
           }
           h += '</div>';
         });
@@ -3498,6 +3517,16 @@
 
     // Allow Enter key to submit question (Shift+Enter for new line)
     document.addEventListener('DOMContentLoaded', function() {
+      // Hide disciplinary-rule AI controls when the capability is disabled (see RULE_ANALYSIS_ENABLED).
+      if (!RULE_ANALYSIS_ENABLED) {
+        ['timelineRuleXiLabel', 'ruleXiCompareBtn', 'ruleXiCompareNote'].forEach(function(id) {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+        const rx = document.getElementById('timelineRuleXi');
+        if (rx) rx.checked = false;
+      }
+
       const qaTextarea = document.getElementById('qaQuestion');
       if (qaTextarea) {
         qaTextarea.addEventListener('keydown', function(e) {
@@ -3932,6 +3961,8 @@ ${a.summary || 'No summary available'}
         });
       }
 
+      // Potential rule violations omitted from export unless disciplinary-rule AI analysis is enabled (see RULE_ANALYSIS_ENABLED).
+      if (RULE_ANALYSIS_ENABLED) {
       text += `POTENTIAL RULE VIOLATIONS (${a.potentialViolations?.length || 0})
 ───────────────────────────────────────────────────────────────
 `;
@@ -3951,6 +3982,7 @@ Likelihood Rationale: ${v.likelihoodRationale}
         }
         text += '\n';
       });
+      }
 
       text += `AGGRAVATING & MITIGATING FACTORS
 ───────────────────────────────────────────────────────────────
@@ -4172,8 +4204,8 @@ All conclusions require human review and professional judgment.
         `;
       }
 
-      // POTENTIAL VIOLATIONS
-      html += `
+      // POTENTIAL VIOLATIONS — hidden unless disciplinary-rule AI analysis is enabled (see RULE_ANALYSIS_ENABLED).
+      if (RULE_ANALYSIS_ENABLED) html += `
         <div class="section">
           <div class="section-header">
             <span class="section-icon">&#9888;</span>
