@@ -20,6 +20,7 @@ import {
   sweepOldUploads,
 } from "../utils/uploadStore.js";
 import { setPhase } from "../utils/crashLog.js";
+import { RULE_ANALYSIS_ENABLED } from "../config/features.js";
 import { randomUUID } from "node:crypto";
 
 type SendFn = (type: string, data: unknown) => void;
@@ -308,7 +309,8 @@ export default async function timeline(app: FastifyInstance) {
     if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
     const { files, fields } = await readMultipart(request);
     const additionalContext = fields.additionalContext ?? null;
-    const ruleContext = fields.ruleContext === "true";
+    // Disciplinary-rule lens is gated off at the source (see features.ts).
+    const ruleContext = RULE_ANALYSIS_ENABLED && fields.ruleContext === "true";
     if (files.length === 0) return reply.code(400).send({ error: "No files uploaded." });
 
     const { send, end } = openSse(reply);
@@ -429,7 +431,8 @@ export default async function timeline(app: FastifyInstance) {
           await runTimelineExtraction(
             files,
             body.additionalContext ?? null,
-            body.ruleContext === true,
+            // Disciplinary-rule lens is gated off at the source (see features.ts).
+            RULE_ANALYSIS_ENABLED && body.ruleContext === true,
             send,
           );
           job.status = "complete";
@@ -480,6 +483,10 @@ export default async function timeline(app: FastifyInstance) {
 
   // ── Rule XI comparison (non-streaming) ──────────────────────────────────────
   app.post("/compare", { schema: { tags: ["timeline"] } }, async (request, reply) => {
+    // The Rule XI comparison IS the disciplinary-rule lens — disabled at the source
+    // so the analysis never runs (see features.ts).
+    if (!RULE_ANALYSIS_ENABLED)
+      return reply.code(403).send({ error: "Rule XI comparison is currently disabled." });
     if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
     const { files } = await readMultipart(request);
     const file = files[0];

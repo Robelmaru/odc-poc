@@ -5,11 +5,16 @@ import { AnalysisResultSchema } from "../schemas/claudeResults.js";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
 import { readMultipart } from "../utils/multipart.js";
+import { RULE_ANALYSIS_ENABLED } from "../config/features.js";
 
 const anthropic = new Anthropic();
 
 export default async function analyze(app: FastifyInstance) {
   app.post("/", { schema: { tags: ["analyze"] } }, async (request, reply) => {
+    // Complaint analysis identifies potential disciplinary-rule violations — a legal
+    // analysis we are not permitted to run via AI during testing (see features.ts).
+    if (!RULE_ANALYSIS_ENABLED)
+      return reply.code(403).send({ error: "Complaint rule-violation analysis is currently disabled." });
     try {
       let messageContent: Anthropic.MessageCreateParams["messages"][0]["content"];
 

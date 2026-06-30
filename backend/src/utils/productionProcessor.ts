@@ -13,9 +13,10 @@ import { extractTextFromPdf, chunkByPages } from "./pdfUtils.js";
 import { extractSectionsOnly } from "./timelinePipeline.js";
 import { type DocumentTimelineResult } from "../skills/DocumentTimeline.js";
 import {
-  productionCompliancePrompt,
+  buildProductionCompliancePrompt,
   type ProductionComplianceResult,
 } from "../skills/ProductionCompliance.js";
+import { RULE_ANALYSIS_ENABLED } from "../config/features.js";
 import { ProductionComplianceResultSchema } from "../schemas/claudeResults.js";
 import { insertRecord, insertNotification, insertAuditLog } from "../db/database.js";
 import {
@@ -87,7 +88,7 @@ export async function reconcileProductionContent(opts: {
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
-    system: productionCompliancePrompt,
+    system: buildProductionCompliancePrompt(RULE_ANALYSIS_ENABLED),
     messages: [{ role: "user", content: userContent }],
   });
   logTokenUsage("reconcile", response.usage);

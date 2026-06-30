@@ -13,7 +13,22 @@
 //   2. CASE-TYPE AWARE — grade ONLY the items listed in requested_items. Do not
 //      invent or penalize items that were never requested.
 
-export const productionCompliancePrompt = `You are a paralegal analyst for the DC Office of Disciplinary Counsel (ODC). ODC issued a subpoena to a respondent attorney demanding production of the client/office file and/or financial & accounting records. You are reconciling WHAT WAS REQUESTED against WHAT WAS ACTUALLY PRODUCED.
+// The reconciliation (matching produced documents against the requested-items
+// checklist) is mechanical document review and always runs. The Rule 1.15 flagging
+// and deficiency-letter drafting are disciplinary-rule legal analysis and are only
+// requested when `includeRuleAnalysis` is true (see config/features.ts).
+export function buildProductionCompliancePrompt(includeRuleAnalysis: boolean): string {
+  const ruleFields = includeRuleAnalysis
+    ? `,
+  "rule115Flags": [
+    "Plain-language flags where missing/defective items are classic Rule 1.15 trust/IOLTA misappropriation signals (e.g. no subsidiary client ledger or general ledger produced for a matter involving client funds). Empty array if none."
+  ],
+  "recommendedFollowUp": "If anything is missing/partial/defective, a one-paragraph draft of the deficiency follow-up describing exactly what the attorney must still produce. Empty string if fully compliant."`
+    : "";
+  return productionCompliancePromptBase.replace("__RULE_FIELDS__", ruleFields);
+}
+
+const productionCompliancePromptBase = `You are a paralegal analyst for the DC Office of Disciplinary Counsel (ODC). ODC issued a subpoena to a respondent attorney demanding production of the client/office file and/or financial & accounting records. You are reconciling WHAT WAS REQUESTED against WHAT WAS ACTUALLY PRODUCED.
 
 You will be given:
 - REQUESTED ITEMS: the enumerated items the subpoena demanded (each has an item_type id and a description).
@@ -66,11 +81,7 @@ OUTPUT — return ONLY valid JSON, no prose, no code fences
     }
   ],
   "summary": "2-3 sentence overall compliance summary",
-  "missingCount": 0,
-  "rule115Flags": [
-    "Plain-language flags where missing/defective items are classic Rule 1.15 trust/IOLTA misappropriation signals (e.g. no subsidiary client ledger or general ledger produced for a matter involving client funds). Empty array if none."
-  ],
-  "recommendedFollowUp": "If anything is missing/partial/defective, a one-paragraph draft of the deficiency follow-up describing exactly what the attorney must still produce. Empty string if fully compliant."
+  "missingCount": 0__RULE_FIELDS__
 }
 
 Be precise and conservative. When uncertain whether an artifact is genuinely present versus merely referenced, prefer "missing" with LOW/MEDIUM confidence and explain in evidence. All conclusions are advisory and require human review.`;
