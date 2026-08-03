@@ -18,6 +18,18 @@ Provide output in the following JSON format:
       "summary": "Brief summary of the document's content and relevance"
     }
   ],
+  "sections": [
+    {
+      "filename": "exact uploaded filename this section belongs to",
+      "startPage": 1,
+      "endPage": 5,
+      "sectionType": "INVOICE | STATEMENT | CONTRACT | ENGAGEMENT_LETTER | RECEIPT | LETTER | EMAIL | COURT_FILING | MOTION | BRIEF | ORDER | AFFIDAVIT | DECLARATION | EXHIBIT | TRANSCRIPT | REPORT | NOTICE | CHECK | BANK_RECORD | OTHER",
+      "title": "Concise human-readable title (e.g., 'Engagement Contract — Smith matter', 'Invoice #1234 — ABC Corp')",
+      "date": "YYYY-MM-DD if a single date appears on the sub-document, else null",
+      "parties": "Comma-separated key parties named in this sub-document (e.g., 'ABC Corp, John Smith'), or null",
+      "summary": "One-sentence summary of what this sub-document contains"
+    }
+  ],
   "timeline": [
     {
       "date": "YYYY-MM-DD or 'Approximate: [description]'",
@@ -63,6 +75,20 @@ Provide output in the following JSON format:
   ]
 }
 
+## Document Sections (Table of Contents)
+A single uploaded PDF may bundle multiple distinct sub-documents (e.g., several invoices, a contract, bank statements, correspondence) one after another. The "sections" array is a navigable index of these sub-documents.
+
+Rules for sections:
+- Identify each distinct sub-document inside the PDF as a separate section entry.
+- Group consecutive pages that belong to the SAME logical sub-document into ONE section — do not split a single contract or invoice across multiple section entries.
+- Start a new section whenever the content clearly shifts to a new sub-document (new letterhead, new invoice number, new contract, new statement period, new sender/recipient pair, etc.).
+- "startPage" and "endPage" are 1-based page numbers within the source PDF this chunk came from. For a single-page sub-document, startPage === endPage.
+- Pick the most specific "sectionType" from the enum. Use OTHER only when no listed type fits.
+- The "title" must be concise but specific enough that a staff member could pick the right sub-document at a glance (include identifiers, parties, or dates where available).
+- The "date" should be the principal date printed on that sub-document (invoice date, contract date, letter date) if one is clearly present; otherwise null.
+- If the chunk you are analyzing is a slice of a larger document, only emit sections that start within this chunk's page range. A merge step combines them later.
+- For .txt files (which have no pages), still emit sections if multiple sub-documents are detected; use page=null and convey position via the title.
+
 ## Important Guidelines
 - Extract EVERY date and event mentioned in the documents, no matter how minor
 - Sort timeline entries in strict chronological order (earliest first)
@@ -104,7 +130,16 @@ export interface TimelineSource {
 export interface TimelineEntry {
   date: string;
   event: string;
-  eventType: "FILING" | "HEARING" | "ORDER" | "CORRESPONDENCE" | "DEADLINE" | "AGREEMENT" | "INCIDENT" | "ADMINISTRATIVE" | "OTHER";
+  eventType:
+    | "FILING"
+    | "HEARING"
+    | "ORDER"
+    | "CORRESPONDENCE"
+    | "DEADLINE"
+    | "AGREEMENT"
+    | "INCIDENT"
+    | "ADMINISTRATIVE"
+    | "OTHER";
   significance: "HIGH" | "MEDIUM" | "LOW";
   source: TimelineSource;
 }
@@ -135,8 +170,42 @@ export interface DocumentInfo {
   summary: string;
 }
 
+export type SectionType =
+  | "INVOICE"
+  | "STATEMENT"
+  | "CONTRACT"
+  | "ENGAGEMENT_LETTER"
+  | "RECEIPT"
+  | "LETTER"
+  | "EMAIL"
+  | "COURT_FILING"
+  | "MOTION"
+  | "BRIEF"
+  | "ORDER"
+  | "AFFIDAVIT"
+  | "DECLARATION"
+  | "EXHIBIT"
+  | "TRANSCRIPT"
+  | "REPORT"
+  | "NOTICE"
+  | "CHECK"
+  | "BANK_RECORD"
+  | "OTHER";
+
+export interface SectionEntry {
+  filename: string;
+  startPage: number | null;
+  endPage: number | null;
+  sectionType: SectionType;
+  title: string;
+  date: string | null;
+  parties: string | null;
+  summary: string;
+}
+
 export interface DocumentTimelineResult {
   documents: DocumentInfo[];
+  sections: SectionEntry[];
   timeline: TimelineEntry[];
   conflicts: TimelineConflict[];
   keyDates: KeyDate[];

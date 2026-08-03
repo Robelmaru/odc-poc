@@ -1,5 +1,5 @@
 // Q&A skill - answers questions about DC Rules of Professional Conduct and Rule XI
-import { dcRulesKnowledge } from '../knowledge/dcRules';
+import { dcRulesKnowledge } from "../knowledge/dcRules.js";
 
 export const qaPrompt = `You are a legal reference assistant specializing in the DC Rules of Professional Conduct and Rule XI (Disciplinary Proceedings). Your role is to answer questions accurately and helpfully based on the rules knowledge base provided.
 

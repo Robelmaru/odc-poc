@@ -1,5 +1,31 @@
 node_modules/
 .env
+.env.local
 *.log
 .DS_Store
-.claude/
+
+# Claude Code: keep shared review commands in the repo, ignore local settings
+.claude/*
+!.claude/commands/
+.claude/settings.local.json
+
+# SQLite databases hold real case data — never commit them
+*.db
+*.db-shm
+*.db-wal
+
+# Local data dir (SQLite DBs + sample case files) — hold real case data; never
+# commit. EXCEPTION: the vendored Tesseract OCR model must ship in the deployed
+# image (scanned PDFs crash the OCR worker without it), so it is tracked.
+backend/data/*
+!backend/data/tessdata/
+backend/data/tessdata/*
+!backend/data/tessdata/eng.traineddata.gz
+Sample Cases/
+
+# Test coverage output
+coverage/
+
+# DC Bar code-review output (point-in-time snapshots, not source)
+findings.md
+findings.previous.md

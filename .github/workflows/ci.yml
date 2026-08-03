@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    # Match this repo's actual branch names (development / Staging / main). The
+    # `develop`/`staging` aliases are kept in case the branches are later renamed
+    # to the standard casing. PRs always run regardless of branch.
+    branches: [development, develop, Staging, staging, main]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    # Integration tests run against a real PostgreSQL + pgvector (per the testing
+    # standard) — a throwaway service container, migrated before the tests run.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: odc_poc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/odc_poc_test
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/odc_poc_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Apply migrations
+        run: pnpm run db:migrate
+
+      - name: Test (with coverage thresholds)
+        run: pnpm run test:coverage

@@ -1,367 +1,539 @@
-import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
+import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
-import { documentTimelinePrompt, type DocumentTimelineResult } from "../skills/DocumentTimeline.js";
-import { timelineMergePrompt } from "../skills/TimelineMerge.js";
+import { type DocumentTimelineResult } from "../skills/DocumentTimeline.js";
 import { extractTextFromPdf, chunkByPages, chunkText } from "../utils/pdfUtils.js";
+import {
+  CONCURRENCY,
+  runWithConcurrency,
+  extractChunk,
+  mergePartialTimelines,
+  finalCleanup,
+} from "../utils/timelinePipeline.js";
+import { findDuplicateBlocks, type FilePages } from "../utils/duplicateDetector.js";
+import { logger } from "../utils/logger.js";
+import { readMultipart, type UploadedFile } from "../utils/multipart.js";
+import {
+  writeChunkAt,
+  readUpload,
+  uploadSize,
+  cleanupUpload,
+  sweepOldUploads,
+} from "../utils/uploadStore.js";
+import { setPhase } from "../utils/crashLog.js";
+import { RULE_ANALYSIS_ENABLED } from "../config/features.js";
+import { randomUUID } from "node:crypto";
 
-const timeline = new Hono();
-const anthropic = new Anthropic();
+type SendFn = (type: string, data: unknown) => void;
 
-const CONCURRENCY = 3; // parallel API calls
+// ── Background processing jobs ────────────────────────────────────────────────
+// Large documents are processed as a background job the client polls, rather
+// than over a long-lived SSE/HTTP/2 response — a streamed response through the
+// external load balancer gets reset on big jobs (ERR_HTTP2_PROTOCOL_ERROR). The
+// same shape of progress events is buffered per job and drained by the poller.
+// In-memory is fine here: dev-tim/staging run a single replica.
+interface JobEvent {
+  type: string;
+  data: unknown;
+}
+interface Job {
+  status: "running" | "complete" | "error";
+  events: JobEvent[];
+  createdAt: number;
+}
+const jobs = new Map<string, Job>();
 
-// ── helpers ────────────────────────────────────────────────────────────────
-
-function parseTimelineJson(raw: string): DocumentTimelineResult {
-  let text = raw.trim();
-  // Strip code fences
-  if (text.startsWith("```")) {
-    text = text.replace(/^```(?:json)?\s*\n?/, "");
-  }
-  if (text.endsWith("```")) {
-    text = text.replace(/\n?```\s*$/, "");
-  }
-  // Try direct parse first
-  try {
-    return JSON.parse(text.trim());
-  } catch {
-    // Claude may have wrapped JSON in prose — try to extract it
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    throw new Error("Could not extract JSON from Claude response: " + text.slice(0, 100));
+function sweepJobs(): void {
+  const cutoff = Date.now() - 30 * 60 * 1000; // drop jobs older than 30 min
+  for (const [id, job] of jobs) {
+    if (job.createdAt < cutoff) jobs.delete(id);
   }
 }
 
-/** Run async tasks with limited concurrency */
-async function runWithConcurrency<T>(
-  tasks: (() => Promise<T>)[],
-  limit: number,
-  onComplete?: (index: number, result: T) => void
-): Promise<T[]> {
-  const results: T[] = new Array(tasks.length);
-  let next = 0;
-
-  async function worker() {
-    while (next < tasks.length) {
-      const idx = next++;
-      const result = await tasks[idx]!();
-      results[idx] = result;
-      if (onComplete) onComplete(idx, result);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
-async function extractChunk(
+async function sectionDocument(
   filename: string,
-  chunkText: string,
-  chunkLabel: string,
+  pages: { pageNum: number; text: string }[],
+  totalPages: number,
+  ruleContext: boolean,
+): Promise<DocumentTimelineResult> {
+  const pagesPerChunk = totalPages > 500 ? 100 : 60;
+  const pageChunks = chunkByPages(pages as never, pagesPerChunk);
+  const partials = await runWithConcurrency(
+    pageChunks.map((ch) => () => extractChunk(filename, ch.text, ch.label, null, 0, ruleContext)),
+    CONCURRENCY,
+  );
+  const merged = partials.length > 1 ? await mergePartialTimelines(partials) : partials[0]!;
+  return finalCleanup(merged);
+}
+
+// Core extraction pipeline. Emits SSE progress events via `send` and finishes
+// with a "complete" event; throws on failure (the caller emits the "error"
+// event and ends the stream). Shared by the single-shot "/" route and the
+// chunked-upload "/process" route.
+async function runTimelineExtraction(
+  files: UploadedFile[],
   additionalContext: string | null,
-  retryCount = 0
-): Promise<DocumentTimelineResult> {
-  const MAX_RETRIES = 2;
-
-  const parts: Anthropic.ContentBlockParam[] = [
-    { type: "text", text: "--- Document: " + filename + " " + chunkLabel + " ---\n\n" + chunkText + "\n\n" },
-  ];
-
-  if (additionalContext?.trim()) {
-    parts.push({ type: "text", text: "--- Additional Context ---\n\n" + additionalContext + "\n\n" });
-  }
-
-  // On retry, use a stricter prompt
-  const instruction = retryCount > 0
-    ? "IMPORTANT: Output ONLY valid JSON, no prose or explanation. Extract a chronological timeline from this text. Be VERY CONCISE — only HIGH significance events. Filename: " + filename
-    : "Extract all dates, events, and people from this text and return as structured JSON. Be CONCISE — focus on the most significant events. When citing sources, use the EXACT filename: " + filename;
-
-  parts.push({ type: "text", text: instruction });
-
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 16384,
-    system: documentTimelinePrompt,
-    messages: [{ role: "user", content: parts }],
+  ruleContext: boolean,
+  send: SendFn,
+): Promise<void> {
+  send("progress", {
+    step: "start",
+    message: "Processing " + files.length + " document(s)...",
   });
 
-  if (response.stop_reason === "max_tokens") {
-    console.log("    Warning: response truncated for " + filename + " " + chunkLabel + ", retrying concise...");
-    if (retryCount < MAX_RETRIES) {
-      return extractChunk(filename, chunkText, chunkLabel, additionalContext, retryCount + 1);
+  const allPartials: DocumentTimelineResult[] = [];
+  const ocrResults: {
+    filename: string;
+    quality: string;
+    score: number;
+    visionPages?: number;
+    visionClarity?: number;
+  }[] = [];
+  const sourceTexts: { filename: string; text: string }[] = [];
+  const filePages: FilePages[] = [];
+
+  for (const file of files) {
+    send("progress", {
+      step: "extract_text",
+      message: "Extracting text from " + file.filename + "...",
+    });
+    logger.info("  Processing: " + file.filename + " (" + (file.size / 1024).toFixed(1) + " KB)");
+
+    let chunks: { label: string; text: string }[] = [];
+
+    setPhase("extract-text:" + file.filename);
+    if (file.filename.endsWith(".pdf")) {
+      const extraction = await extractTextFromPdf(file.buffer, async (msg) => {
+        send("progress", { step: "vision_ocr", message: msg });
+      });
+      sourceTexts.push({
+        filename: file.filename,
+        text: extraction.pages
+          .map((p) => p.text)
+          .join("\n")
+          .slice(0, 50000),
+      });
+      filePages.push({
+        filename: file.filename,
+        pages: extraction.pages.map((p) => ({ pageNum: p.pageNum, text: p.text })),
+      });
+      const totalPages = extraction.totalPages;
+      const visionInfo =
+        extraction.visionPages > 0
+          ? ", " +
+            extraction.visionPages +
+            " via Vision OCR" +
+            (extraction.visionClarity != null ? " (" + extraction.visionClarity + "% clarity)" : "")
+          : "";
+      ocrResults.push({
+        filename: file.filename,
+        quality: extraction.ocrQuality,
+        score: extraction.ocrScore,
+        visionPages: extraction.visionPages,
+        visionClarity: extraction.visionClarity,
+      });
+      send("progress", {
+        step: "text_extracted",
+        message:
+          "Extracted " +
+          totalPages +
+          " pages (" +
+          extraction.totalChars.toLocaleString() +
+          " chars, OCR: " +
+          extraction.ocrQuality +
+          visionInfo +
+          ")",
+      });
+
+      const pagesPerChunk = totalPages > 500 ? 100 : 60;
+      const pageChunks = chunkByPages(extraction.pages, pagesPerChunk);
+      send("progress", {
+        step: "chunked",
+        message: "Split into " + pageChunks.length + " chunk(s) (" + pagesPerChunk + " pages each)",
+        totalChunks: pageChunks.length,
+      });
+      chunks = pageChunks.map((ch) => ({ label: ch.label, text: ch.text }));
+    } else if (file.filename.endsWith(".txt")) {
+      const text = file.buffer.toString("utf8");
+      sourceTexts.push({ filename: file.filename, text: text.slice(0, 50000) });
+      filePages.push({ filename: file.filename, pages: [{ pageNum: null, text }] });
+      const textChunks = chunkText(text);
+      chunks = textChunks.map((t, i) =>
+        textChunks.length > 1
+          ? { label: "(Part " + (i + 1) + " of " + textChunks.length + ")", text: t }
+          : { label: "", text: t },
+      );
+      send("progress", {
+        step: "chunked",
+        message: "Split into " + chunks.length + " chunk(s)",
+        totalChunks: chunks.length,
+      });
+    } else {
+      continue;
     }
-    // Last resort: try to parse what we have
+
+    // Text is now extracted into `chunks`; the raw file buffer (which can be
+    // hundreds of MB) is no longer needed. Release it before the analysis phase
+    // so it isn't held in memory through all the Claude calls.
+    file.buffer = Buffer.alloc(0);
+
+    setPhase("analyze-chunks:" + file.filename + " (" + chunks.length + " chunks)");
+    let completedChunks = 0;
+    const totalChunks = chunks.length;
+    const extractionTasks = chunks.map(
+      (chunk) => () =>
+        extractChunk(file.filename, chunk.text, chunk.label, additionalContext, 0, ruleContext),
+    );
+    const docPartials = await runWithConcurrency(extractionTasks, CONCURRENCY, async () => {
+      completedChunks++;
+      send("progress", {
+        step: "chunk_done",
+        message: "Extracted chunk " + completedChunks + " of " + totalChunks,
+        completedChunks,
+        totalChunks,
+      });
+    });
+
+    if (docPartials.length > 1) {
+      send("progress", {
+        step: "merging",
+        message: "Merging " + docPartials.length + " chunk timelines...",
+      });
+      allPartials.push(
+        await mergePartialTimelines(docPartials, async (msg) => {
+          send("progress", { step: "merging", message: msg });
+        }),
+      );
+    } else {
+      allPartials.push(docPartials[0]!);
+    }
   }
 
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") throw new Error("No response from Claude");
-
-  try {
-    return parseTimelineJson(textBlock.text);
-  } catch (err) {
-    console.log("    Parse failed for " + chunkLabel + ": " + (err as Error).message.slice(0, 80));
-    if (retryCount < MAX_RETRIES) {
-      console.log("    Retrying chunk " + chunkLabel + " (attempt " + (retryCount + 2) + ")...");
-      return extractChunk(filename, chunkText, chunkLabel, additionalContext, retryCount + 1);
-    }
-    // Return empty timeline for this chunk rather than crashing the whole job
-    console.log("    Skipping chunk " + chunkLabel + " after " + MAX_RETRIES + " retries");
-    return { documents: [], timeline: [], timelineSpan: { earliest: "", latest: "", totalDuration: "" }, conflicts: [], keyDates: [], notes: [] };
+  if (allPartials.length === 0) {
+    throw new Error("No supported files could be processed.");
   }
+
+  let finalTimeline: DocumentTimelineResult;
+  if (allPartials.length > 1) {
+    send("progress", {
+      step: "final_merge",
+      message: "Merging " + allPartials.length + " document timelines...",
+    });
+    finalTimeline = await mergePartialTimelines(allPartials, async (msg) => {
+      send("progress", { step: "final_merge", message: msg });
+    });
+  } else {
+    finalTimeline = allPartials[0]!;
+  }
+
+  setPhase("cleanup");
+  send("progress", { step: "cleanup", message: "Final cleanup and deduplication..." });
+  const cleanedTimeline = await finalCleanup(finalTimeline);
+
+  setPhase("duplicates");
+  send("progress", { step: "duplicates", message: "Scanning for duplicate content blocks..." });
+  const duplicates = findDuplicateBlocks(filePages);
+  logger.info(
+    "Done. " +
+      (cleanedTimeline.timeline?.length ?? 0) +
+      " events extracted, " +
+      duplicates.matches.length +
+      " duplicate match(es).",
+  );
+
+  send("complete", {
+    timeline: cleanedTimeline,
+    ocrResults: ocrResults.length > 0 ? ocrResults : undefined,
+    sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
+    duplicates,
+    usage: { inputTokens: 0, outputTokens: 0 },
+  });
 }
 
-async function mergeTwoTimelines(
-  a: DocumentTimelineResult,
-  b: DocumentTimelineResult
-): Promise<DocumentTimelineResult> {
-  const payload = JSON.stringify([a, b]);
+// Open an SSE response on a hijacked reply. Returns the writer plus an end()
+// that tears down the heartbeat and closes the socket.
+function openSse(reply: import("fastify").FastifyReply): {
+  send: SendFn;
+  end: () => void;
+} {
+  reply.hijack();
+  const res = reply.raw;
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    // Tell nginx not to buffer the event stream so events (and the heartbeat)
+    // reach the client immediately.
+    "X-Accel-Buffering": "no",
+  });
+  res.write(": connected\n\n");
+  let eventId = 0;
+  const send: SendFn = (type, data) => {
+    res.write(`id: ${eventId++}\nevent: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  // Heartbeat: large documents have long silent processing steps (whole-file
+  // pdf-parse, multi-pass Claude merges) with no events. A proxied HTTP/2 stream
+  // that goes idle gets reset by the load balancer (ERR_HTTP2_PROTOCOL_ERROR), so
+  // emit a comment line every 10s to keep it alive. Comments (": …") are ignored
+  // by the SSE client.
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": ping\n\n");
+    } catch {
+      /* socket gone */
+    }
+  }, 10000);
+  const end = () => {
+    clearInterval(heartbeat);
+    try {
+      res.end();
+    } catch {
+      /* already closed */
+    }
+  };
+  return { send, end };
+}
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 16384,
-    system: timelineMergePrompt,
-    messages: [
-      {
-        role: "user",
-        content: "Merge these 2 partial timelines into one. Deduplicate events and keep the most significant. Return valid JSON only.\n\n" + payload,
+function errorMessage(error: unknown): string {
+  return error instanceof Anthropic.APIError
+    ? "Claude API error: " + error.message
+    : error instanceof Error
+      ? error.message
+      : "Timeline extraction failed";
+}
+
+export default async function timeline(app: FastifyInstance) {
+  // ── Single-shot multipart upload + SSE extraction (small files) ─────────────
+  // Large files can't use this path — the whole upload must arrive in one request
+  // and the LB times out the slow transfer. The frontend uses /upload + /process.
+  app.post("/", { schema: { tags: ["timeline"] } }, async (request, reply) => {
+    if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
+    const { files, fields } = await readMultipart(request);
+    const additionalContext = fields.additionalContext ?? null;
+    // Disciplinary-rule lens is gated off at the source (see features.ts).
+    const ruleContext = RULE_ANALYSIS_ENABLED && fields.ruleContext === "true";
+    if (files.length === 0) return reply.code(400).send({ error: "No files uploaded." });
+
+    const { send, end } = openSse(reply);
+    try {
+      await runTimelineExtraction(files, additionalContext, ruleContext, send);
+    } catch (error) {
+      logger.error("Timeline extraction error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      send("error", { message: errorMessage(error) });
+    } finally {
+      end();
+    }
+  });
+
+  // ── Chunked upload: append one chunk of a file to its temp file on disk ──────
+  // Each call is a short request (well under any LB timeout); the client sends
+  // chunks in order. Returns the bytes received so far.
+  app.post("/upload", { schema: { tags: ["timeline"] } }, async (request, reply) => {
+    if (!request.isMultipart())
+      return reply.code(400).send({ error: "multipart/form-data required." });
+    const { files, fields } = await readMultipart(request);
+    const uploadId = fields.uploadId;
+    const filename = fields.filename;
+    const offset = Number(fields.offset ?? "0");
+    const chunk = files[0];
+    if (!uploadId || !filename)
+      return reply.code(400).send({ error: "uploadId and filename are required." });
+    if (!chunk) return reply.code(400).send({ error: "A 'chunk' file part is required." });
+    try {
+      const size = await writeChunkAt(
+        uploadId,
+        filename,
+        chunk.buffer,
+        Number.isFinite(offset) && offset >= 0 ? offset : 0,
+      );
+      return { ok: true, size };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "Upload failed." });
+    }
+  });
+
+  // ── Process previously-uploaded (assembled) files and stream results (SSE) ───
+  // Body is tiny (just ids), so this request starts immediately and streams
+  // progress — no large upload to time out.
+  app.post(
+    "/process",
+    {
+      schema: {
+        tags: ["timeline"],
+        body: {
+          type: "object",
+          required: ["uploads"],
+          properties: {
+            uploads: {
+              type: "array",
+              minItems: 1,
+              maxItems: 50,
+              items: {
+                type: "object",
+                required: ["uploadId", "filename"],
+                properties: {
+                  uploadId: { type: "string", maxLength: 128 },
+                  filename: { type: "string", maxLength: 256 },
+                  size: { type: "integer", minimum: 0 },
+                },
+              },
+            },
+            additionalContext: { type: "string" },
+            ruleContext: { type: "boolean" },
+          },
+        },
       },
-    ],
-  });
+    },
+    async (request, reply) => {
+      const body = request.body as {
+        uploads: { uploadId: string; filename: string; size?: number }[];
+        additionalContext?: string;
+        ruleContext?: boolean;
+      };
 
-  if (response.stop_reason === "max_tokens") {
-    console.log("    Warning: merge truncated, retrying concise...");
-    const retry = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 16384,
-      system: timelineMergePrompt,
-      messages: [
-        {
-          role: "user",
-          content: "Merge these 2 partial timelines. Be VERY CONCISE — deduplicate and keep only HIGH and MEDIUM significance events. Return valid JSON only.\n\n" + payload,
+      const jobId = randomUUID();
+      const job: Job = { status: "running", events: [], createdAt: Date.now() };
+      jobs.set(jobId, job);
+      sweepJobs();
+      const send: SendFn = (type, data) => {
+        job.events.push({ type, data });
+      };
+
+      // Run in the background; the HTTP response returns the job id immediately so
+      // there is no long-lived connection to drop. The client polls /process/:id.
+      void (async () => {
+        try {
+          void sweepOldUploads();
+          setPhase("read-uploads");
+          const files: UploadedFile[] = [];
+          for (const u of body.uploads) {
+            // Integrity check: a chunk may have been lost, so verify the assembled
+            // file is the expected size before parsing (a short/garbled file makes
+            // pdf-parse throw a cryptic "Invalid Root reference").
+            if (typeof u.size === "number") {
+              const actual = await uploadSize(u.uploadId, u.filename);
+              if (actual !== u.size) {
+                throw new Error(
+                  'Upload of "' +
+                    u.filename +
+                    '" is incomplete (' +
+                    actual +
+                    " of " +
+                    u.size +
+                    " bytes). Please re-upload the file.",
+                );
+              }
+            }
+            const buffer = await readUpload(u.uploadId, u.filename);
+            files.push({ field: "files", filename: u.filename, buffer, size: buffer.length });
+          }
+          await runTimelineExtraction(
+            files,
+            body.additionalContext ?? null,
+            // Disciplinary-rule lens is gated off at the source (see features.ts).
+            RULE_ANALYSIS_ENABLED && body.ruleContext === true,
+            send,
+          );
+          job.status = "complete";
+        } catch (error) {
+          logger.error("Timeline extraction error", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          send("error", { message: errorMessage(error) });
+          job.status = "error";
+        } finally {
+          for (const u of body.uploads) await cleanupUpload(u.uploadId);
+        }
+      })();
+
+      return reply.send({ jobId });
+    },
+  );
+
+  // ── Poll a processing job: buffered events since `cursor`, plus status ───────
+  app.get(
+    "/process/:jobId",
+    {
+      schema: {
+        tags: ["timeline"],
+        params: {
+          type: "object",
+          required: ["jobId"],
+          properties: { jobId: { type: "string", maxLength: 64 } },
         },
-      ],
-    });
-    const retryBlock = retry.content.find((b) => b.type === "text");
-    if (!retryBlock || retryBlock.type !== "text") throw new Error("Merge retry failed");
-    return parseTimelineJson(retryBlock.text);
-  }
-
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") throw new Error("Merge failed");
-  return parseTimelineJson(textBlock.text);
-}
-
-async function mergePartialTimelines(
-  partials: DocumentTimelineResult[],
-  onProgress?: (msg: string) => void
-): Promise<DocumentTimelineResult> {
-  if (partials.length === 1) return partials[0]!;
-
-  let current = partials;
-  let round = 1;
-  while (current.length > 1) {
-    const pairs = Math.ceil(current.length / 2);
-    if (onProgress) onProgress("Merge round " + round + ": combining " + current.length + " timelines into " + pairs + "...");
-
-    // Merge pairs in parallel (with concurrency limit)
-    const mergeTasks: (() => Promise<DocumentTimelineResult>)[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      if (i + 1 < current.length) {
-        const a = current[i]!, b = current[i + 1]!;
-        mergeTasks.push(() => mergeTwoTimelines(a, b));
-      } else {
-        const carry = current[i]!;
-        mergeTasks.push(() => Promise.resolve(carry));
-      }
-    }
-
-    current = await runWithConcurrency(mergeTasks, CONCURRENCY);
-    round++;
-  }
-  return current[0]!;
-}
-
-async function finalCleanup(tl: DocumentTimelineResult): Promise<DocumentTimelineResult> {
-  try {
-    if ((tl.timeline?.length ?? 0) <= 20) return tl;
-
-    const payload = JSON.stringify(tl);
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 16384,
-      system: "You are a legal document analyst. Clean up this merged timeline: remove exact duplicates, ensure strict chronological order, verify date formats are YYYY-MM-DD, and write a concise overall summary. Output only valid JSON in the same DocumentTimelineResult format. No markdown code fences.",
-      messages: [
-        {
-          role: "user",
-          content: "Clean up and finalize this timeline. Remove duplicates, sort chronologically, and add a brief overall summary.\n\n" + payload,
+        querystring: {
+          type: "object",
+          properties: { cursor: { type: "integer", minimum: 0 } },
         },
-      ],
-    });
+      },
+    },
+    async (request, reply) => {
+      const { jobId } = request.params as { jobId: string };
+      const cursor = Number((request.query as { cursor?: number }).cursor ?? 0) || 0;
+      const job = jobs.get(jobId);
+      if (!job) return reply.code(404).send({ error: "Unknown or expired job." });
+      return {
+        status: job.status,
+        nextCursor: job.events.length,
+        events: job.events.slice(cursor),
+      };
+    },
+  );
 
-    if (response.stop_reason === "max_tokens") {
-      console.log("    Cleanup truncated, using unclean timeline.");
-      return tl;
-    }
+  // ── Rule XI comparison (non-streaming) ──────────────────────────────────────
+  app.post("/compare", { schema: { tags: ["timeline"] } }, async (request, reply) => {
+    // The Rule XI comparison IS the disciplinary-rule lens — disabled at the source
+    // so the analysis never runs (see features.ts).
+    if (!RULE_ANALYSIS_ENABLED)
+      return reply.code(403).send({ error: "Rule XI comparison is currently disabled." });
+    if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });
+    const { files } = await readMultipart(request);
+    const file = files[0];
+    if (!file) return reply.code(400).send({ error: "A single 'file' is required." });
 
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") return tl;
-    return parseTimelineJson(textBlock.text);
-  } catch (err) {
-    console.log("    Cleanup pass failed, using unclean timeline:", err);
-    return tl;
-  }
-}
-
-// ── SSE streaming route ───────────────────────────────────────────────────
-
-timeline.post("/", async (c) => {
-  const contentType = c.req.header("Content-Type") || "";
-  if (!contentType.includes("multipart/form-data")) {
-    return c.json({ error: "File upload required." }, 400);
-  }
-
-  const formData = await c.req.formData();
-  const files = formData.getAll("files") as File[];
-  const additionalContext = formData.get("additionalContext") as string | null;
-
-  if (files.length === 0) {
-    return c.json({ error: "No files uploaded." }, 400);
-  }
-
-  return streamSSE(c, async (stream) => {
-    let eventId = 0;
-    const send = async (type: string, data: any) => {
-      await stream.writeSSE({ id: String(eventId++), event: type, data: JSON.stringify(data) });
-    };
+    const COMPARE_MAX_PAGES = Math.max(5, Number(process.env.COMPARE_MAX_PAGES) || 40);
 
     try {
-      await send("progress", { step: "start", message: "Processing " + files.length + " document(s)..." });
-
-      const allPartials: DocumentTimelineResult[] = [];
-      const ocrResults: { filename: string; quality: string; score: number }[] = [];
-      const sourceTexts: { filename: string; text: string }[] = [];
-
-      for (const file of files) {
-        await send("progress", { step: "extract_text", message: "Extracting text from " + file.name + "..." });
-        console.log("  Processing: " + file.name + " (" + (file.size / 1024).toFixed(1) + " KB)");
-
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        let chunks: { label: string; text: string }[] = [];
-
-        if (file.name.endsWith(".pdf")) {
-          const extraction = await extractTextFromPdf(buffer, async (msg) => {
-            await send("progress", { step: "vision_ocr", message: msg });
-          });
-          ocrResults.push({ filename: file.name, quality: extraction.ocrQuality, score: extraction.ocrScore });
-          sourceTexts.push({
-            filename: file.name,
-            text: extraction.pages.map((p) => p.text).join("\n").slice(0, 50000),
-          });
-
-          const totalPages = extraction.totalPages;
-          const visionInfo = extraction.visionPages > 0 ? ", " + extraction.visionPages + " via Vision OCR" : "";
-          console.log("    Extracted " + totalPages + " pages, " + extraction.totalChars.toLocaleString() + " chars" + visionInfo);
-          await send("progress", {
-            step: "text_extracted",
-            message: "Extracted " + totalPages + " pages (" + extraction.totalChars.toLocaleString() + " chars, OCR: " + extraction.ocrQuality + visionInfo + ")",
-          });
-
-          // Dynamic chunk sizing: bigger chunks for bigger docs
-          const pagesPerChunk = totalPages > 500 ? 100 : 60;
-          const pageChunks = chunkByPages(extraction.pages, pagesPerChunk);
-          console.log("    Split into " + pageChunks.length + " chunk(s) (" + pagesPerChunk + " pages/chunk)");
-          await send("progress", {
-            step: "chunked",
-            message: "Split into " + pageChunks.length + " chunk(s) (" + pagesPerChunk + " pages each)",
-            totalChunks: pageChunks.length,
-          });
-          chunks = pageChunks.map((ch) => ({ label: ch.label, text: ch.text }));
-        } else if (file.name.endsWith(".txt")) {
-          const text = await file.text();
-          sourceTexts.push({ filename: file.name, text: text.slice(0, 50000) });
-          const textChunks = chunkText(text);
-          chunks = textChunks.map((t, i) =>
-            textChunks.length > 1
-              ? { label: "(Part " + (i + 1) + " of " + textChunks.length + ")", text: t }
-              : { label: "", text: t }
-          );
-          await send("progress", { step: "chunked", message: "Split into " + chunks.length + " chunk(s)", totalChunks: chunks.length });
-        } else {
-          continue;
-        }
-
-        // Parallel chunk extraction
-        let completedChunks = 0;
-        const totalChunks = chunks.length;
-
-        const extractionTasks = chunks.map((chunk) => () => {
-          console.log("    Extracting timeline " + chunk.label + "...");
-          return extractChunk(file.name, chunk.text, chunk.label, additionalContext);
-        });
-
-        const docPartials = await runWithConcurrency(extractionTasks, CONCURRENCY, async (_idx, _result) => {
-          completedChunks++;
-          await send("progress", {
-            step: "chunk_done",
-            message: "Extracted chunk " + completedChunks + " of " + totalChunks,
-            completedChunks,
-            totalChunks,
-          });
-        });
-
-        // Merge chunks for this document
-        if (docPartials.length > 1) {
-          await send("progress", { step: "merging", message: "Merging " + docPartials.length + " chunk timelines..." });
-          const merged = await mergePartialTimelines(docPartials, async (msg) => {
-            await send("progress", { step: "merging", message: msg });
-          });
-          allPartials.push(merged);
-        } else {
-          allPartials.push(docPartials[0]!);
-        }
-      }
-
-      if (allPartials.length === 0) {
-        await send("error", { message: "No supported files could be processed." });
-        return;
-      }
-
-      // Final merge across documents
-      let finalTimeline: DocumentTimelineResult;
-      if (allPartials.length > 1) {
-        await send("progress", { step: "final_merge", message: "Merging " + allPartials.length + " document timelines..." });
-        finalTimeline = await mergePartialTimelines(allPartials, async (msg) => {
-          await send("progress", { step: "final_merge", message: msg });
-        });
+      let pages: { pageNum: number; text: string }[] = [];
+      let totalPages = 0;
+      let visionPages = 0;
+      if (file.filename.toLowerCase().endsWith(".pdf")) {
+        const extraction = await extractTextFromPdf(file.buffer, undefined, COMPARE_MAX_PAGES);
+        pages = extraction.pages.map((p) => ({ pageNum: p.pageNum, text: p.text }));
+        totalPages = extraction.totalPages;
+        visionPages = extraction.visionPages;
+      } else if (file.filename.toLowerCase().endsWith(".txt")) {
+        pages = [{ pageNum: 1, text: file.buffer.toString("utf8") }];
+        totalPages = 1;
       } else {
-        finalTimeline = allPartials[0]!;
+        return reply.code(400).send({ error: "Only PDF or TXT files are supported." });
       }
 
-      // Final cleanup
-      await send("progress", { step: "cleanup", message: "Final cleanup and deduplication..." });
-      const cleanedTimeline = await finalCleanup(finalTimeline);
+      const sampledPages = pages.length;
+      const [without, withRule] = await Promise.all([
+        sectionDocument(file.filename, pages, sampledPages, false),
+        sectionDocument(file.filename, pages, sampledPages, true),
+      ]);
 
-      console.log("Done. " + (cleanedTimeline.timeline?.length ?? 0) + " events extracted.");
-
-      await send("complete", {
-        timeline: cleanedTimeline,
-        ocrResults: ocrResults.length > 0 ? ocrResults : undefined,
-        sourceTexts: sourceTexts.length > 0 ? sourceTexts : undefined,
-        usage: { inputTokens: 0, outputTokens: 0 },
-      });
+      return {
+        success: true,
+        filename: file.filename,
+        totalPages,
+        sampledPages,
+        truncated: sampledPages < totalPages,
+        visionPages,
+        without,
+        withRuleXI: withRule,
+      };
     } catch (error) {
-      console.error("Timeline extraction error:", error);
-      const message = error instanceof Anthropic.APIError
-        ? "Claude API error: " + error.message
-        : (error instanceof Error ? error.message : "Timeline extraction failed");
-      await send("error", { message });
+      const message =
+        error instanceof Anthropic.APIError
+          ? "Claude API error: " + error.message
+          : error instanceof Error
+            ? error.message
+            : "Comparison failed";
+      return reply.code(502).send({ error: message });
     }
   });
-});
-
-export default timeline;
+}

@@ -1,66 +1,34 @@
-import pg from "pg";
-const { Pool } = pg;
+// Core data access (PostgreSQL via the pooled `pg` client in ./client.ts).
+// Schema + migrations are owned by Drizzle (src/db/schema.ts, migrations/);
+// this module is queries + startup seeding only.
+import { query, queryOne, execute, withTransaction } from "./client.js";
+import { hashPin, isHashed } from "../auth/pin.js";
 
-const pool = new Pool({
-  host: process.env.DATABASE_HOST || "localhost",
-  port: Number(process.env.DATABASE_PORT) || 5432,
-  user: process.env.DATABASE_USER || "postgres",
-  password: process.env.DATABASE_PASSWORD || "",
-  database: process.env.DATABASE_NAME || "document_analyzer",
-});
+// ── Startup: clean expired sessions, seed default users, hash legacy PINs ────
+// Runs once at import (top-level await). Assumes migrations have been applied
+// (db:migrate / the deploy migration step).
+async function init(): Promise<void> {
+  await execute(`DELETE FROM sessions WHERE expires_at <= now()`);
 
-// Create tables
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS timeline_records (
-    id          SERIAL PRIMARY KEY,
-    staff_id    TEXT    NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    record_name TEXT,
-    case_number TEXT,
-    shared_with TEXT    DEFAULT '[]',
-    file_names  TEXT    NOT NULL,
-    notes       TEXT,
-    summary     TEXT,
-    status      TEXT    DEFAULT 'draft',
-    tags        TEXT    DEFAULT '[]',
-    timeline    TEXT    NOT NULL
-  );
+  // Idempotent seed (ON CONFLICT) — safe across restarts and parallel test workers.
+  const seed = `INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)
+                ON CONFLICT (username) DO NOTHING`;
+  const count = (await queryOne<{ count: number }>(`SELECT COUNT(*)::int AS count FROM users`))!
+    .count;
+  if (count === 0) {
+    await execute(seed, ["Caterina", hashPin("1111"), "staff"]);
+    await execute(seed, ["Abesha", hashPin("2222"), "admin"]);
+    await execute(seed, ["Robel", hashPin("3333"), "staff"]);
+  }
 
-  CREATE TABLE IF NOT EXISTS translation_records (
-    id            SERIAL PRIMARY KEY,
-    staff_id      TEXT    NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    record_name   TEXT,
-    file_names    TEXT    NOT NULL,
-    language      TEXT    NOT NULL,
-    language_name TEXT    NOT NULL,
-    status        TEXT    DEFAULT 'draft',
-    tags          TEXT    DEFAULT '[]',
-    translation   TEXT    NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS notifications (
-    id         SERIAL PRIMARY KEY,
-    staff_id   TEXT    NOT NULL,
-    message    TEXT    NOT NULL,
-    link       TEXT,
-    read       BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-
-  CREATE TABLE IF NOT EXISTS staff_sessions (
-    staff_id    TEXT PRIMARY KEY,
-    last_active TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-
-  CREATE TABLE IF NOT EXISTS audit_log (
-    id         SERIAL PRIMARY KEY,
-    staff_id   TEXT    NOT NULL,
-    action     TEXT    NOT NULL,
-    details    TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-`);
+  // One-time migration: hash any legacy plaintext PINs in place (idempotent).
+  const rows = await query<{ id: number; pin: string }>(`SELECT id, pin FROM users`);
+  for (const row of rows) {
+    if (!isHashed(row.pin))
+      await execute(`UPDATE users SET pin = ? WHERE id = ?`, [hashPin(row.pin), row.id]);
+  }
+}
+await init();
 
 // ── Interfaces ────────────────────────────────────────────────────────────
 
@@ -95,69 +63,112 @@ export async function insertRecord(params: {
   file_names: string;
   notes: string | null;
   summary?: string | null;
+  ai_score?: number | null;
   timeline: string;
 }) {
-  const result = await pool.query(
-    `INSERT INTO timeline_records (staff_id, record_name, case_number, file_names, notes, summary, timeline)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [params.staff_id, params.record_name, params.case_number || null, params.file_names, params.notes, params.summary || null, params.timeline]
+  const row = await queryOne<{ id: number }>(
+    `INSERT INTO timeline_records (staff_id, record_name, case_number, file_names, notes, summary, ai_score, timeline)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    [
+      params.staff_id,
+      params.record_name,
+      params.case_number || null,
+      params.file_names,
+      params.notes,
+      params.summary || null,
+      params.ai_score ?? null,
+      params.timeline,
+    ],
   );
-  return { lastInsertRowid: result.rows[0].id };
+  return { lastInsertRowid: row!.id };
 }
 
 export async function getRecordsByStaff(staffId: string) {
-  const result = await pool.query(
-    `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, length(timeline) as timeline_size
+  return query(
+    `SELECT id, staff_id, created_at, record_name, case_number, shared_with, file_names, notes, summary, status, tags, ai_score, length(timeline)::int as timeline_size
      FROM timeline_records
-     WHERE staff_id = $1 OR shared_with LIKE '%"' || $2 || '"%'
+     WHERE staff_id = ?
+        OR EXISTS (SELECT 1 FROM record_shares rs WHERE rs.record_id = timeline_records.id AND rs.staff_id = ?)
      ORDER BY created_at DESC`,
-    [staffId, staffId]
+    [staffId, staffId],
   );
-  return result.rows;
 }
 
 export async function getRecordById(id: number) {
-  const result = await pool.query(`SELECT * FROM timeline_records WHERE id = $1`, [id]);
-  return result.rows[0] as TimelineRecord | undefined;
+  return queryOne<TimelineRecord>(`SELECT * FROM timeline_records WHERE id = ?`, [id]);
+}
+
+/** Batch fetch (DB-002): one query for many ids instead of N getRecordById calls. */
+export async function getRecordsByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return query<TimelineRecord>(`SELECT * FROM timeline_records WHERE id = ANY(?::int[])`, [ids]);
 }
 
 export async function deleteRecord(id: number, staffId: string) {
-  const result = await pool.query(`DELETE FROM timeline_records WHERE id = $1 AND staff_id = $2`, [id, staffId]);
-  return { changes: result.rowCount };
+  const changes = await execute(`DELETE FROM timeline_records WHERE id = ? AND staff_id = ?`, [
+    id,
+    staffId,
+  ]);
+  return { changes };
 }
 
-export async function updateRecordSharing(sharedWith: string, id: number) {
-  await pool.query(`UPDATE timeline_records SET shared_with = $1 WHERE id = $2`, [sharedWith, id]);
+/**
+ * DB-006: record_shares is the source of truth; shared_with TEXT is kept as a
+ * write-through cache for API responses. Both are updated in one transaction.
+ */
+export async function updateRecordSharing(sharedWith: string[], id: number) {
+  await withTransaction(async (q) => {
+    await q(`UPDATE timeline_records SET shared_with = ? WHERE id = ?`, [
+      JSON.stringify(sharedWith),
+      id,
+    ]);
+    await q(`DELETE FROM record_shares WHERE record_id = ?`, [id]);
+    if (sharedWith.length > 0) {
+      const rows = sharedWith.map(() => "(?, ?)").join(", ");
+      const params = sharedWith.flatMap((s) => [id, s]);
+      await q(
+        `INSERT INTO record_shares (record_id, staff_id) VALUES ${rows} ON CONFLICT DO NOTHING`,
+        params,
+      );
+    }
+  });
 }
 
 export async function updateRecordName(recordName: string, id: number) {
-  await pool.query(`UPDATE timeline_records SET record_name = $1 WHERE id = $2`, [recordName, id]);
+  await execute(`UPDATE timeline_records SET record_name = ? WHERE id = ?`, [recordName, id]);
 }
 
 export async function updateRecordCase(caseNumber: string | null, id: number) {
-  await pool.query(`UPDATE timeline_records SET case_number = $1 WHERE id = $2`, [caseNumber, id]);
+  await execute(`UPDATE timeline_records SET case_number = ? WHERE id = ?`, [caseNumber, id]);
+}
+
+/** Replace the full timeline JSON of a record (formerly a raw db.prepare in the route — ARCH-001). */
+export async function updateTimelineContent(id: number, timeline: string) {
+  await execute(`UPDATE timeline_records SET timeline = ? WHERE id = ?`, [timeline, id]);
 }
 
 // ── Audit Log ─────────────────────────────────────────────────────────────
 
-export async function insertAuditLog(params: { staff_id: string; action: string; details: string | null }) {
-  await pool.query(
-    `INSERT INTO audit_log (staff_id, action, details) VALUES ($1, $2, $3)`,
-    [params.staff_id, params.action, params.details]
-  );
+export async function insertAuditLog(params: {
+  staff_id: string;
+  action: string;
+  details: string | null;
+}) {
+  await execute(`INSERT INTO audit_log (staff_id, action, details) VALUES (?, ?, ?)`, [
+    params.staff_id,
+    params.action,
+    params.details,
+  ]);
 }
 
 export async function getAuditLog(staffId: string) {
-  const result = await pool.query(
-    `SELECT * FROM audit_log WHERE staff_id = $1 ORDER BY created_at DESC LIMIT 100`,
-    [staffId]
-  );
-  return result.rows;
+  return query(`SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 100`, [
+    staffId,
+  ]);
 }
 
 export async function getAuditLogAll() {
-  const result = await pool.query(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200`);
-  return result.rows;
+  return query(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 200`);
 }
 
 // ── Translation Records ───────────────────────────────────────────────────
@@ -170,122 +181,302 @@ export async function insertTranslationRecord(params: {
   language_name: string;
   translation: string;
 }) {
-  const result = await pool.query(
+  const row = await queryOne<{ id: number }>(
     `INSERT INTO translation_records (staff_id, record_name, file_names, language, language_name, translation)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [params.staff_id, params.record_name || null, params.file_names, params.language, params.language_name, params.translation]
+     VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+    [
+      params.staff_id,
+      params.record_name || null,
+      params.file_names,
+      params.language,
+      params.language_name,
+      params.translation,
+    ],
   );
-  return { lastInsertRowid: result.rows[0].id };
+  return { lastInsertRowid: row!.id };
 }
 
 export async function getTranslationsByStaff(staffId: string) {
-  const result = await pool.query(
+  return query(
     `SELECT id, staff_id, created_at, record_name, file_names, language, language_name, status, tags
-     FROM translation_records WHERE staff_id = $1 ORDER BY created_at DESC`,
-    [staffId]
+     FROM translation_records WHERE staff_id = ? ORDER BY created_at DESC`,
+    [staffId],
   );
-  return result.rows;
 }
 
 export async function getTranslationById(id: number) {
-  const result = await pool.query(`SELECT * FROM translation_records WHERE id = $1`, [id]);
-  return result.rows[0] as TranslationRecord | undefined;
+  return queryOne<TranslationRecord>(`SELECT * FROM translation_records WHERE id = ?`, [id]);
+}
+
+/** Rename a translation record (formerly a raw db.prepare in the route — ARCH-001). */
+export async function updateTranslationRecordName(id: number, recordName: string) {
+  await execute(`UPDATE translation_records SET record_name = ? WHERE id = ?`, [recordName, id]);
 }
 
 export async function deleteTranslation(id: number, staffId: string) {
-  const result = await pool.query(`DELETE FROM translation_records WHERE id = $1 AND staff_id = $2`, [id, staffId]);
-  return { changes: result.rowCount };
+  const changes = await execute(`DELETE FROM translation_records WHERE id = ? AND staff_id = ?`, [
+    id,
+    staffId,
+  ]);
+  return { changes };
 }
 
 // ── Status & Tags ────────────────────────────────────────────────────────
 
 export async function updateRecordStatus(id: number, status: string) {
-  await pool.query(`UPDATE timeline_records SET status = $1 WHERE id = $2`, [status, id]);
+  await execute(`UPDATE timeline_records SET status = ? WHERE id = ?`, [status, id]);
 }
 
 export async function updateRecordTags(id: number, tags: string) {
-  await pool.query(`UPDATE timeline_records SET tags = $1 WHERE id = $2`, [tags, id]);
+  await execute(`UPDATE timeline_records SET tags = ? WHERE id = ?`, [tags, id]);
 }
 
 export async function updateTranslationStatus(id: number, status: string) {
-  await pool.query(`UPDATE translation_records SET status = $1 WHERE id = $2`, [status, id]);
+  await execute(`UPDATE translation_records SET status = ? WHERE id = ?`, [status, id]);
 }
 
 export async function updateTranslationTags(id: number, tags: string) {
-  await pool.query(`UPDATE translation_records SET tags = $1 WHERE id = $2`, [tags, id]);
+  await execute(`UPDATE translation_records SET tags = ? WHERE id = ?`, [tags, id]);
 }
 
 // ── Notifications ────────────────────────────────────────────────────────
 
-export async function insertNotification(params: { staff_id: string; message: string; link?: string }) {
-  await pool.query(
-    `INSERT INTO notifications (staff_id, message, link) VALUES ($1, $2, $3)`,
-    [params.staff_id, params.message, params.link || null]
-  );
+export async function insertNotification(params: {
+  staff_id: string;
+  message: string;
+  link?: string;
+}) {
+  await execute(`INSERT INTO notifications (staff_id, message, link) VALUES (?, ?, ?)`, [
+    params.staff_id,
+    params.message,
+    params.link || null,
+  ]);
 }
 
 export async function getNotifications(staffId: string) {
-  const result = await pool.query(
-    `SELECT * FROM notifications WHERE staff_id = $1 ORDER BY created_at DESC LIMIT 50`,
-    [staffId]
-  );
-  return result.rows;
+  return query(`SELECT * FROM notifications WHERE staff_id = ? ORDER BY created_at DESC LIMIT 50`, [
+    staffId,
+  ]);
 }
 
 export async function markNotificationRead(id: number, staffId: string) {
-  await pool.query(`UPDATE notifications SET read = true WHERE id = $1 AND staff_id = $2`, [id, staffId]);
+  await execute(`UPDATE notifications SET read = 1 WHERE id = ? AND staff_id = ?`, [id, staffId]);
 }
 
 export async function markAllNotificationsRead(staffId: string) {
-  await pool.query(`UPDATE notifications SET read = true WHERE staff_id = $1`, [staffId]);
+  await execute(`UPDATE notifications SET read = 1 WHERE staff_id = ?`, [staffId]);
 }
 
 export async function getUnreadNotificationCount(staffId: string): Promise<number> {
-  const result = await pool.query(`SELECT COUNT(*) as count FROM notifications WHERE staff_id = $1 AND read = false`, [staffId]);
-  return parseInt(result.rows[0].count, 10);
+  const result = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int as count FROM notifications WHERE staff_id = ? AND read = 0`,
+    [staffId],
+  );
+  return result!.count;
 }
 
-// ── Session Timeout ──────────────────────────────────────────────────────
+// ── Session Timeout (inactivity heartbeat) ─────────────────────────────────
 
 export async function touchSession(staffId: string) {
-  await pool.query(
-    `INSERT INTO staff_sessions (staff_id, last_active) VALUES ($1, NOW())
-     ON CONFLICT (staff_id) DO UPDATE SET last_active = NOW()`,
-    [staffId]
+  await execute(
+    `INSERT INTO staff_sessions (staff_id, last_active) VALUES (?, now())
+     ON CONFLICT (staff_id) DO UPDATE SET last_active = now()`,
+    [staffId],
   );
 }
 
 export async function getSessionLastActive(staffId: string): Promise<Date | null> {
-  const result = await pool.query(`SELECT last_active FROM staff_sessions WHERE staff_id = $1`, [staffId]);
-  return result.rows[0]?.last_active || null;
+  const result = await queryOne<{ last_active: Date }>(
+    `SELECT last_active FROM staff_sessions WHERE staff_id = ?`,
+    [staffId],
+  );
+  return result?.last_active ? new Date(result.last_active) : null;
+}
+
+// ── Auth Sessions (cookie-backed) ─────────────────────────────────────────
+
+export interface Session {
+  token: string;
+  username: string;
+  role: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export async function createSession(
+  token: string,
+  username: string,
+  role: string,
+  ttlHours: number,
+) {
+  await execute(
+    `INSERT INTO sessions (token, username, role, expires_at)
+     VALUES (?, ?, ?, now() + (? * interval '1 hour'))`,
+    [token, username, role, ttlHours],
+  );
+}
+
+/** Returns the session only if it exists and has not expired. */
+export async function getSession(token: string): Promise<Session | undefined> {
+  return queryOne<Session>(
+    `SELECT token, username, role, created_at, expires_at
+     FROM sessions WHERE token = ? AND expires_at > now()`,
+    [token],
+  );
+}
+
+export async function deleteSession(token: string) {
+  await execute(`DELETE FROM sessions WHERE token = ?`, [token]);
+}
+
+/**
+ * DB-005: resolve the authenticated user for a session token in a SINGLE query
+ * (the requireAuth hook runs on every request). Joins sessions→users, enforces
+ * expiry, and returns the live role/active flag (so role changes / deactivation
+ * take effect immediately) — replacing the previous getSession + getUserByUsername
+ * round-trip pair.
+ */
+export async function getSessionUser(
+  token: string,
+): Promise<{ username: string; role: string; active: number } | undefined> {
+  return queryOne<{ username: string; role: string; active: number }>(
+    `SELECT u.username, u.role, u.active
+     FROM sessions s JOIN users u ON LOWER(u.username) = LOWER(s.username)
+     WHERE s.token = ? AND s.expires_at > now()`,
+    [token],
+  );
 }
 
 // ── Dashboard Stats ──────────────────────────────────────────────────────
 
 export async function getDashboardStats(staffId: string) {
-  const [timelineCount, translationCount, sharedCount, recentActivity] = await Promise.all([
-    pool.query(`SELECT COUNT(*) as count FROM timeline_records WHERE staff_id = $1`, [staffId]),
-    pool.query(`SELECT COUNT(*) as count FROM translation_records WHERE staff_id = $1`, [staffId]),
-    pool.query(`SELECT COUNT(*) as count FROM timeline_records WHERE shared_with LIKE '%"' || $1 || '"%' AND staff_id != $1`, [staffId]),
-    pool.query(`SELECT * FROM audit_log WHERE staff_id = $1 ORDER BY created_at DESC LIMIT 5`, [staffId]),
-  ]);
+  const timelineCount = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int as count FROM timeline_records WHERE staff_id = ?`,
+    [staffId],
+  );
+  const translationCount = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int as count FROM translation_records WHERE staff_id = ?`,
+    [staffId],
+  );
+  const sharedCount = await queryOne<{ count: number }>(
+    `SELECT COUNT(*)::int as count
+     FROM record_shares rs JOIN timeline_records t ON t.id = rs.record_id
+     WHERE rs.staff_id = ? AND t.staff_id != ?`,
+    [staffId, staffId],
+  );
+  const recentActivity = await query(
+    `SELECT * FROM audit_log WHERE staff_id = ? ORDER BY created_at DESC LIMIT 5`,
+    [staffId],
+  );
+  const timelineStatuses = await query(
+    `SELECT COALESCE(status, 'draft') as status, COUNT(*)::int as count FROM timeline_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`,
+    [staffId],
+  );
+  const translationStatuses = await query(
+    `SELECT COALESCE(status, 'draft') as status, COUNT(*)::int as count FROM translation_records WHERE staff_id = ? GROUP BY COALESCE(status, 'draft')`,
+    [staffId],
+  );
+  // Recent 5 per status for hover previews — one windowed query per table
+  // instead of one-per-status (DB-004).
+  const statusNames = ["draft", "in_review", "complete", "flagged"];
+  const recentPerStatus = (table: string) =>
+    query<{ status: string; record_name: string | null; file_names: string }>(
+      `SELECT status, record_name, file_names FROM (
+         SELECT COALESCE(status, 'draft') AS status, record_name, file_names,
+                ROW_NUMBER() OVER (PARTITION BY COALESCE(status, 'draft') ORDER BY created_at DESC) AS rn
+         FROM ${table} WHERE staff_id = ?
+       ) ranked WHERE rn <= 5`,
+      [staffId],
+    );
+  const groupByStatus = (rows: { status: string }[]) => {
+    const out: Record<string, unknown[]> = {};
+    for (const s of statusNames) out[s] = [];
+    for (const r of rows) (out[r.status] ??= []).push(r);
+    return out;
+  };
+  const timelineRecent = groupByStatus(await recentPerStatus("timeline_records"));
+  const translationRecent = groupByStatus(await recentPerStatus("translation_records"));
   return {
-    timelineRecords: parseInt(timelineCount.rows[0].count, 10),
-    translationRecords: parseInt(translationCount.rows[0].count, 10),
-    sharedWithMe: parseInt(sharedCount.rows[0].count, 10),
-    recentActivity: recentActivity.rows,
+    timelineRecords: timelineCount!.count,
+    translationRecords: translationCount!.count,
+    sharedWithMe: sharedCount!.count,
+    recentActivity,
+    timelineStatuses,
+    translationStatuses,
+    timelineRecent,
+    translationRecent,
   };
 }
 
 // ── Admin ────────────────────────────────────────────────────────────────
 
 export async function getAllRecordCounts() {
-  const [timelines, translations, staff] = await Promise.all([
-    pool.query(`SELECT staff_id, COUNT(*) as count FROM timeline_records GROUP BY staff_id`),
-    pool.query(`SELECT staff_id, COUNT(*) as count FROM translation_records GROUP BY staff_id`),
-    pool.query(`SELECT DISTINCT staff_id FROM audit_log`),
-  ]);
-  return { timelines: timelines.rows, translations: translations.rows, activeStaff: staff.rows.map((r: any) => r.staff_id) };
+  const timelines = await query(
+    `SELECT staff_id, COUNT(*)::int as count FROM timeline_records GROUP BY staff_id`,
+  );
+  const translations = await query(
+    `SELECT staff_id, COUNT(*)::int as count FROM translation_records GROUP BY staff_id`,
+  );
+  const staff = await query<{ staff_id: string }>(`SELECT DISTINCT staff_id FROM audit_log`);
+  return { timelines, translations, activeStaff: staff.map((r) => r.staff_id) };
 }
 
-export default pool;
+// ── User Management ──────────────────────────────────────────────────────
+
+export interface User {
+  id: number;
+  username: string;
+  email?: string | null;
+  pin: string;
+  role: string;
+  active: number;
+  created_at: string;
+}
+
+export async function getAllUsers(): Promise<User[]> {
+  return query<User>(
+    `SELECT id, username, email, pin, role, active, created_at FROM users ORDER BY username`,
+  );
+}
+
+export async function getUserByUsername(username: string): Promise<User | undefined> {
+  return queryOne<User>(`SELECT * FROM users WHERE LOWER(username) = LOWER(?)`, [username]);
+}
+
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  return queryOne<User>(`SELECT * FROM users WHERE LOWER(email) = LOWER(?)`, [email]);
+}
+
+export async function updateUserEmail(id: number, email: string | null) {
+  await execute(`UPDATE users SET email = ? WHERE id = ?`, [email, id]);
+}
+
+export async function getActiveUsernames(): Promise<string[]> {
+  const rows = await query<{ username: string }>(`SELECT username FROM users WHERE active = 1`);
+  return rows.map((r) => r.username);
+}
+
+export async function createUser(username: string, pin: string, role: string) {
+  await execute(`INSERT INTO users (username, pin, role, active) VALUES (?, ?, ?, 1)`, [
+    username,
+    hashPin(pin),
+    role,
+  ]);
+}
+
+export async function updateUserActive(id: number, active: boolean) {
+  await execute(`UPDATE users SET active = ? WHERE id = ?`, [active ? 1 : 0, id]);
+}
+
+export async function updateUserPin(id: number, pin: string) {
+  await execute(`UPDATE users SET pin = ? WHERE id = ?`, [hashPin(pin), id]);
+}
+
+export async function updateUserRole(id: number, role: string) {
+  await execute(`UPDATE users SET role = ? WHERE id = ?`, [role, id]);
+}
+
+/** Lightweight liveness probe for the health endpoint (OPS-008). Throws if the DB is unreachable. */
+export async function pingDb(): Promise<void> {
+  await queryOne(`SELECT 1`);
+}

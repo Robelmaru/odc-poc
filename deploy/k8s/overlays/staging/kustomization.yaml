@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging overlay. The staging Argo CD Application points its source `path` here
+# and auto-syncs on every change to the `staging` branch.
+namespace: odc-poc-staging
+
+resources:
+  - ../../base
+
+# Staging tracks the mutable :staging tag. Argo CD Image Updater pins the live
+# digest on top of it (git write-back, configured in argocd/applications-staging.yaml),
+# so this file stays the source of truth.
+# (Production still bumps newTag to a commit SHA via the promotion PR.)
+images:
+  - name: ghcr.io/dc-bar-web/odc-poc
+    newTag: staging
+
+patches:
+  - target:
+      kind: Ingress
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: odc-document-analyzer-staging.dcbar.org
+      - op: replace
+        path: /spec/rules/0/host
+        value: odc-document-analyzer-staging.dcbar.org
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: odc-poc-tls
+
+# Staging runs a single replica; production uses the base default of 2.
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1

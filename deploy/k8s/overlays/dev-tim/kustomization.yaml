@@ -1,0 +1,79 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Tim's development overlay. The odc-poc-dev-tim Argo CD Application points its
+# source `path` here and auto-syncs on every change to the `Development-Tim` branch.
+namespace: odc-poc-dev-tim
+
+resources:
+  - ../../base
+
+# CI-managed image tag. .github/workflows/build-image.yml rewrites newTag to the
+# just-built commit SHA on every push to Development-Tim and commits it back here;
+# Argo CD then reconciles this overlay onto the cluster. This file is the source of
+# truth for what is deployed to dev-tim — do not hand-edit newTag, CI overwrites it.
+# (The write-back touches only deploy/**, which build-image.yml path-ignores, so it
+# cannot trigger another build.)
+images:
+  - name: ghcr.io/dc-bar-web/odc-poc
+    newTag: f077a37bfd53fe5cda711fee63523e41f12859fd
+
+patches:
+  - target:
+      kind: Ingress
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: odc-document-analyzer-dev-tim.dcbar.org
+      - op: replace
+        path: /spec/rules/0/host
+        value: odc-document-analyzer-dev-tim.dcbar.org
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: odc-poc-tls
+
+  # Single replica for a dev environment; always re-pull the image.
+  # imagePullPolicy: Always is belt-and-suspenders: while the image is pinned to an
+  # immutable SHA tag (or a digest via Image Updater) the reference already forces a
+  # fresh pull, so this only matters if the overlay ever tracks the mutable
+  # :development-tim tag again. Scoped to this overlay so SHA-pinned staging/prod keep
+  # the default IfNotPresent (no extra registry pull on every pod start).
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+
+  # Processing headroom (dev-tim only). With chunked upload, the pod now actually
+  # assembles + parses large productions (a full ~500 MB PDF) in one /process
+  # request — pdf-parse holds the file plus its parse structures. The base 4Gi is
+  # tight for that; bump to 8Gi (verified to schedule — a 12Gi pod ran here) and
+  # give the V8 heap 6 GB, leaving ~2 GB off-heap for the file buffer + pdf.js.
+  # Strategic-merge keyed on container/env name. staging/prod keep base 4Gi.
+  - target:
+      kind: Deployment
+      name: odc-poc
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: odc-poc
+      spec:
+        template:
+          spec:
+            containers:
+              - name: app
+                resources:
+                  requests:
+                    memory: "2Gi"
+                  limits:
+                    memory: "12Gi"
+                env:
+                  - name: NODE_OPTIONS
+                    value: "--max-old-space-size=8192"

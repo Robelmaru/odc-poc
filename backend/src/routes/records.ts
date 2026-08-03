@@ -1,8 +1,9 @@
-import { Hono } from "hono";
+import type { FastifyInstance } from "fastify";
 import {
   insertRecord,
   getRecordsByStaff,
   getRecordById,
+  getRecordsByIds,
   deleteRecord,
   updateRecordSharing,
   updateRecordName,
@@ -22,453 +23,633 @@ import {
   touchSession,
   getDashboardStats,
   getAllRecordCounts,
-  type TimelineRecord,
   insertTranslationRecord,
   getTranslationsByStaff,
   getTranslationById,
   deleteTranslation,
-  type TranslationRecord,
+  getUserByUsername,
+  getUserByEmail,
+  getActiveUsernames,
+  getAllUsers,
+  createUser,
+  updateUserActive,
+  updateUserPin,
+  updateUserEmail,
+  updateUserRole,
+  updateTranslationRecordName,
+  updateTimelineContent,
 } from "../db/database.js";
-
-const VALID_STAFF = ["Caterina", "Abesha", "Robel"];
-
-function getPinForStaff(staffId: string): string | undefined {
-  const key = `PIN_${staffId.toUpperCase()}`;
-  return process.env[key];
-}
-
-const records = new Hono();
-
-// PIN verification
-records.post("/verify", async (c) => {
-  const { staff_id, pin } = await c.req.json();
-
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) {
-    return c.json({ error: "Invalid staff member" }, 400);
-  }
-
-  const correctPin = getPinForStaff(staff_id);
-  if (!correctPin) {
-    return c.json({ error: "PIN not configured for this staff member" }, 500);
-  }
-
-  if (pin !== correctPin) {
-    return c.json({ success: false, error: "Incorrect PIN" }, 401);
-  }
-
-  return c.json({ success: true });
-});
-
-// Save a new timeline record
-records.post("/", async (c) => {
-  const { staff_id, record_name, case_number, file_names, notes, summary, timeline } = await c.req.json();
-
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) {
-    return c.json({ error: "Invalid staff member" }, 400);
-  }
-  if (!file_names || !timeline) {
-    return c.json({ error: "file_names and timeline are required" }, 400);
-  }
-
-  const result = await insertRecord({
-    staff_id,
-    record_name: record_name || null,
-    case_number: case_number || null,
-    file_names: JSON.stringify(file_names),
-    notes: notes || null,
-    summary: summary || null,
-    timeline: JSON.stringify(timeline),
-  });
-
-  await insertAuditLog({ staff_id, action: 'save_timeline', details: `Record "${record_name || file_names.join(', ')}" (ID: ${result.lastInsertRowid})` });
-  return c.json({ success: true, id: result.lastInsertRowid });
-});
-
-// ── Translation Records ────────────────────────────────────────────────────
-// NOTE: these must be registered BEFORE /:staffId to avoid being swallowed by it
-
-records.post("/translations", async (c) => {
-  const { staff_id, record_name, file_names, language, language_name, translation } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (!file_names || !language || !translation) return c.json({ error: "file_names, language, and translation are required" }, 400);
-
-  const result = await insertTranslationRecord({
-    staff_id, record_name: record_name || null, file_names: JSON.stringify(file_names), language, language_name,
-    translation: JSON.stringify(translation),
-  });
-  await insertAuditLog({ staff_id, action: 'save_translation', details: `"${record_name || file_names.join(', ')}" to ${language_name} (ID: ${result.lastInsertRowid})` });
-  return c.json({ success: true, id: result.lastInsertRowid });
-});
-
-records.get("/translations/:staffId", async (c) => {
-  const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
-  const rows = await getTranslationsByStaff(staffId);
-  return c.json({ success: true, records: rows.map((r) => ({ ...r, file_names: JSON.parse(r.file_names) })) });
-});
-
-records.get("/translations/:staffId/:id", async (c) => {
-  const staffId = c.req.param("staffId");
-  const id = Number(c.req.param("id"));
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
-  const row = await getTranslationById(id);
-  if (!row || row.staff_id !== staffId) return c.json({ error: "Record not found" }, 404);
-  return c.json({ success: true, record: { ...row, file_names: JSON.parse(row.file_names), translation: JSON.parse(row.translation) } });
-});
-
-records.delete("/translations/:staffId/:id", async (c) => {
-  const staffId = c.req.param("staffId");
-  const id = Number(c.req.param("id"));
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
-  const result = await deleteTranslation(id, staffId);
-  if (result.changes === 0) return c.json({ error: "Record not found" }, 404);
-  await insertAuditLog({ staff_id: staffId, action: 'delete_translation', details: `Translation ${id} deleted` });
-  return c.json({ success: true });
-});
-
-// Share a record with other staff members
-records.post("/share", async (c) => {
-  const { staff_id, record_id, share_with } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (!record_id || !share_with) return c.json({ error: "record_id and share_with are required" }, 400);
-
-  const row = await getRecordById(record_id);
-  if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
-
-  // share_with should be an array of staff names
-  const validShares = share_with.filter((s: string) => VALID_STAFF.includes(s) && s !== staff_id);
-  await updateRecordSharing(JSON.stringify(validShares), record_id);
-  await insertAuditLog({ staff_id, action: 'share_record', details: `Record ${record_id} shared with ${validShares.join(', ')}` });
-  // Notify each recipient
-  const recordName = row.record_name || 'a timeline record';
-  for (const recipient of validShares) {
-    await insertNotification({ staff_id: recipient, message: `${staff_id} shared "${recordName}" with you`, link: `record:${record_id}` });
-  }
-  return c.json({ success: true, shared_with: validShares });
-});
-
-// Rename a record
-records.post("/rename", async (c) => {
-  const { staff_id, record_id, record_name } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (!record_id || !record_name) return c.json({ error: "record_id and record_name are required" }, 400);
-
-  const row = await getRecordById(record_id);
-  if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
-
-  await updateRecordName(record_name, record_id);
-  return c.json({ success: true });
-});
-
-// Update case number for a record
-records.post("/case", async (c) => {
-  const { staff_id, record_id, case_number } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (!record_id) return c.json({ error: "record_id is required" }, 400);
-
-  const row = await getRecordById(record_id);
-  if (!row || row.staff_id !== staff_id) return c.json({ error: "Record not found or not yours" }, 404);
-
-  await updateRecordCase(case_number || null, record_id);
-  return c.json({ success: true });
-});
-
-// Merge multiple timeline records
-records.post("/merge", async (c) => {
-  const { staff_id, record_ids, record_name } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (!record_ids || record_ids.length < 2) return c.json({ error: "Select at least 2 records to merge" }, 400);
-
-  // Load all selected records
-  const records_data: any[] = [];
-  for (const id of record_ids) {
-    const row = await getRecordById(id);
-    if (!row || row.staff_id !== staff_id) continue;
-    records_data.push({ ...row, file_names: JSON.parse(row.file_names), timeline: JSON.parse(row.timeline) });
-  }
-
-  if (records_data.length < 2) return c.json({ error: "Could not load selected records" }, 400);
-
-  // Normalize text for fuzzy dedup: lowercase, collapse whitespace, strip punctuation
-  function normalize(s: string): string {
-    return s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-  }
-
-  // Extract key words (remove common filler) for comparison
-  function keyWords(s: string): Set<string> {
-    const stop = new Set(['the','a','an','of','to','in','on','at','for','and','or','was','were','is','by','with','from','that','this','it','be','as','had','has','have']);
-    return new Set(normalize(s).split(' ').filter(w => w.length > 2 && !stop.has(w)));
-  }
-
-  // Jaccard similarity: overlap of key words
-  function wordOverlap(a: string, b: string): number {
-    const wa = keyWords(a);
-    const wb = keyWords(b);
-    if (wa.size === 0 || wb.size === 0) return 0;
-    let intersection = 0;
-    for (const w of wa) { if (wb.has(w)) intersection++; }
-    return intersection / Math.min(wa.size, wb.size);
-  }
-
-  function isSimilar(a: string, b: string): boolean {
-    const na = normalize(a);
-    const nb = normalize(b);
-    if (na === nb) return true;
-    // Check if one contains most of the other
-    const shorter = na.length < nb.length ? na : nb;
-    const longer = na.length < nb.length ? nb : na;
-    if (shorter.length > 15 && longer.includes(shorter.substring(0, Math.floor(shorter.length * 0.7)))) return true;
-    // Check word overlap — if 60%+ of key words match, it's the same event
-    if (wordOverlap(a, b) >= 0.6) return true;
-    return false;
-  }
-
-  // Merge timelines: combine all events, fuzzy dedup, sort by date
-  const mergedTimeline = records_data[0].timeline;
-  for (let i = 1; i < records_data.length; i++) {
-    const other = records_data[i].timeline;
-
-    // Dedup documents by filename
-    if (other.documents) {
-      const existingFilenames = new Set((mergedTimeline.documents || []).map((d: any) => d.filename));
-      for (const doc of other.documents) {
-        if (!existingFilenames.has(doc.filename)) {
-          mergedTimeline.documents = mergedTimeline.documents || [];
-          mergedTimeline.documents.push(doc);
-        }
-      }
-    }
-
-    // Dedup timeline events by date + fuzzy event text
-    if (other.timeline) {
-      for (const evt of other.timeline) {
-        const isDupe = (mergedTimeline.timeline || []).some((existing: any) =>
-          existing.date === evt.date && isSimilar(existing.event, evt.event)
-        );
-        if (!isDupe) {
-          mergedTimeline.timeline = mergedTimeline.timeline || [];
-          mergedTimeline.timeline.push(evt);
-        }
-      }
-    }
-
-    // Dedup key dates by date + fuzzy label
-    if (other.keyDates) {
-      for (const kd of other.keyDates) {
-        const isDupe = (mergedTimeline.keyDates || []).some((existing: any) =>
-          existing.date === kd.date && isSimilar(existing.label, kd.label)
-        );
-        if (!isDupe) {
-          mergedTimeline.keyDates = mergedTimeline.keyDates || [];
-          mergedTimeline.keyDates.push(kd);
-        }
-      }
-    }
-
-    // Dedup conflicts by fuzzy description
-    if (other.conflicts) {
-      for (const c of other.conflicts) {
-        const isDupe = (mergedTimeline.conflicts || []).some((existing: any) =>
-          isSimilar(existing.description, c.description)
-        );
-        if (!isDupe) {
-          mergedTimeline.conflicts = mergedTimeline.conflicts || [];
-          mergedTimeline.conflicts.push(c);
-        }
-      }
-    }
-
-    // Dedup notes by fuzzy match
-    if (other.notes) {
-      for (const n of other.notes) {
-        const isDupe = (mergedTimeline.notes || []).some((existing: any) => isSimilar(existing, n));
-        if (!isDupe) {
-          mergedTimeline.notes = mergedTimeline.notes || [];
-          mergedTimeline.notes.push(n);
-        }
-      }
-    }
-  }
-
-  // Sort timeline events by date
-  if (mergedTimeline.timeline) {
-    mergedTimeline.timeline.sort((a: any, b: any) => a.date.localeCompare(b.date));
-  }
-
-  // Update timeline span
-  if (mergedTimeline.timeline && mergedTimeline.timeline.length > 0) {
-    mergedTimeline.timelineSpan = {
-      earliest: mergedTimeline.timeline[0].date,
-      latest: mergedTimeline.timeline[mergedTimeline.timeline.length - 1].date,
-      totalDuration: '',
-    };
-  }
-
-  // Collect all file names
-  const allFileNames = [...new Set(records_data.flatMap((r: any) => r.file_names))];
-  const allNotes = records_data.map((r: any) => r.notes).filter(Boolean).join('; ');
-
-  const result = await insertRecord({
-    staff_id,
-    record_name: record_name || `Merged: ${allFileNames.join(', ')}`,
-    file_names: JSON.stringify(allFileNames),
-    notes: allNotes || null,
-    timeline: JSON.stringify(mergedTimeline),
-  });
-
-  return c.json({ success: true, id: result.lastInsertRowid, timeline: mergedTimeline });
-});
-
-// ── Audit Log ─────────────────────────────────────────────────────────────
-records.get("/audit/:staffId", async (c) => {
-  const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
-  const logs = await getAuditLog(staffId);
-  return c.json({ success: true, logs });
-});
-
-// ── Status & Tags ────────────────────────────────────────────────────────
-
-records.post("/status", async (c) => {
-  const { staff_id, record_id, record_type, status } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  const validStatuses = ['draft', 'in_review', 'complete', 'flagged'];
-  if (!validStatuses.includes(status)) return c.json({ error: "Invalid status" }, 400);
-  if (record_type === 'translation') {
-    await updateTranslationStatus(record_id, status);
-  } else {
-    await updateRecordStatus(record_id, status);
-  }
-  return c.json({ success: true });
-});
-
-records.post("/tags", async (c) => {
-  const { staff_id, record_id, record_type, tags } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (!Array.isArray(tags)) return c.json({ error: "Tags must be an array" }, 400);
-  if (record_type === 'translation') {
-    await updateTranslationTags(record_id, JSON.stringify(tags));
-  } else {
-    await updateRecordTags(record_id, JSON.stringify(tags));
-  }
-  return c.json({ success: true });
-});
-
-// ── Notifications ────────────────────────────────────────────────────────
-
-records.get("/notifications/:staffId", async (c) => {
-  const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
-  const [notifications, unread] = await Promise.all([
-    getNotifications(staffId),
-    getUnreadNotificationCount(staffId),
-  ]);
-  return c.json({ success: true, notifications, unread });
-});
-
-records.post("/notifications/read", async (c) => {
-  const { staff_id, notification_id } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid staff member" }, 400);
-  if (notification_id === 'all') {
-    await markAllNotificationsRead(staff_id);
-  } else {
-    await markNotificationRead(notification_id, staff_id);
-  }
-  return c.json({ success: true });
-});
-
-// ── Dashboard ────────────────────────────────────────────────────────────
-
-records.get("/dashboard/:staffId", async (c) => {
-  const staffId = c.req.param("staffId");
-  if (!VALID_STAFF.includes(staffId)) return c.json({ error: "Invalid staff member" }, 400);
-  const stats = await getDashboardStats(staffId);
-  const unread = await getUnreadNotificationCount(staffId);
-  return c.json({ success: true, ...stats, unreadNotifications: unread });
-});
-
-// ── Session Heartbeat ────────────────────────────────────────────────────
-
-records.post("/heartbeat", async (c) => {
-  const { staff_id } = await c.req.json();
-  if (!staff_id || !VALID_STAFF.includes(staff_id)) return c.json({ error: "Invalid" }, 400);
-  await touchSession(staff_id);
-  return c.json({ success: true });
-});
-
-// ── Admin ────────────────────────────────────────────────────────────────
-
-records.get("/admin/overview", async (c) => {
-  const counts = await getAllRecordCounts();
-  const allLogs = await getAuditLogAll();
-  return c.json({ success: true, ...counts, recentActivity: allLogs });
-});
-
-// ── Timeline Records ────────────────────────────────────────────────────────
-
-// Get all records for a staff member (without full timeline to keep response small)
-records.get("/:staffId", async (c) => {
-  const staffId = c.req.param("staffId");
-
-  if (!VALID_STAFF.includes(staffId)) {
-    return c.json({ error: "Invalid staff member" }, 400);
-  }
-
-  const rows = await getRecordsByStaff(staffId);
-  const parsed = rows.map((r: any) => ({
-    ...r,
-    file_names: JSON.parse(r.file_names),
-    shared_with: JSON.parse(r.shared_with || '[]'),
-  }));
-
-  return c.json({ success: true, records: parsed });
-});
-
-// Get a single full record by ID
-records.get("/:staffId/:id", async (c) => {
-  const staffId = c.req.param("staffId");
-  const id = Number(c.req.param("id"));
-
-  if (!VALID_STAFF.includes(staffId)) {
-    return c.json({ error: "Invalid staff member" }, 400);
-  }
-
-  const row = await getRecordById(id);
-  if (!row) {
-    return c.json({ error: "Record not found" }, 404);
-  }
-  const sharedWith: string[] = JSON.parse(row.shared_with || '[]');
-  if (row.staff_id !== staffId && !sharedWith.includes(staffId)) {
-    return c.json({ error: "Record not found" }, 404);
-  }
-
-  return c.json({
-    success: true,
-    record: {
-      ...row,
-      file_names: JSON.parse(row.file_names),
-      timeline: JSON.parse(row.timeline),
+import { issueSession, authUser } from "../auth/session.js";
+import { verifyPin } from "../auth/pin.js";
+import { safeJsonParse } from "../utils/json.js";
+import { isSimilar } from "../utils/textSimilarity.js";
+import { randomBytes } from "node:crypto";
+
+const tags = { tags: ["records"] };
+type Body = Record<string, unknown>;
+
+// Request-body validation fragments (TS-002). `required` matches what each handler
+// already treats as mandatory; optional/nullable fields are intentionally left out
+// of `properties` (additionalProperties stays open) so the SPA can send them with
+// any value. Integer `user_id`/`record_id` stops Number(undefined)=NaN no-ops.
+const str = { type: "string" } as const;
+const idInt = { type: "integer", minimum: 1 } as const;
+const RB = {
+  verify: {
+    type: "object",
+    required: ["staff_id", "pin"],
+    properties: { staff_id: str, pin: str },
+  },
+  createUser: { type: "object", required: ["username"], properties: { username: str } },
+  toggle: { type: "object", required: ["user_id"], properties: { user_id: idInt } },
+  resetPin: {
+    type: "object",
+    required: ["user_id", "new_pin"],
+    properties: { user_id: idInt, new_pin: str },
+  },
+  userEmail: { type: "object", required: ["user_id"], properties: { user_id: idInt } },
+  userRole: {
+    type: "object",
+    required: ["user_id", "role"],
+    properties: { user_id: idInt, role: str },
+  },
+  saveTimeline: {
+    type: "object",
+    required: ["file_names", "timeline"],
+    properties: { file_names: { type: "array" } },
+  },
+  saveTranslation: {
+    type: "object",
+    required: ["file_names", "language", "translation"],
+    properties: { file_names: { type: "array" }, language: str },
+  },
+  share: {
+    type: "object",
+    required: ["record_id", "share_with"],
+    properties: { record_id: idInt, share_with: { type: "array", items: str } },
+  },
+} as const;
+const rsch = (body: object) => ({ schema: { ...tags, body } });
+
+export default async function records(app: FastifyInstance) {
+  // PIN verification (public — sets the session cookie). Rate-limited against
+  // brute force: 10 attempts / 5 min / IP (SEC-014, via @fastify/rate-limit).
+  app.post(
+    "/verify",
+    {
+      schema: { ...tags, body: RB.verify },
+      config: { rateLimit: { max: 10, timeWindow: "5 minutes" } },
     },
+    async (request, reply) => {
+      const { staff_id, pin } = (request.body ?? {}) as { staff_id?: string; pin?: string };
+      if (!staff_id || !pin)
+        return reply.code(400).send({ error: "Username and password required" });
+      const user = await getUserByUsername(staff_id);
+      if (!user) return reply.code(401).send({ error: "Invalid username or password" });
+      if (!user.active)
+        return reply.code(403).send({ error: "Account is disabled. Contact your administrator." });
+      if (!verifyPin(pin, user.pin))
+        return reply.code(401).send({ success: false, error: "Invalid username or password" });
+      await issueSession(reply, { username: user.username, role: user.role });
+      return { success: true, role: user.role };
+    },
+  );
+
+  // ── Admin: User Management ───────────────────────────────────────────────
+  app.get("/admin/users", { schema: tags }, async (request, reply) => {
+    if (authUser(request).role !== "admin")
+      return reply.code(403).send({ error: "Admin access required" });
+    const users = await getAllUsers();
+    return { success: true, users: users.map((u) => ({ ...u, pin: "****" })) };
   });
-});
 
-// Delete a record
-records.delete("/:staffId/:id", async (c) => {
-  const staffId = c.req.param("staffId");
-  const id = Number(c.req.param("id"));
+  app.post("/admin/users", rsch(RB.createUser), async (request, reply) => {
+    const { username, email, pin, role } = (request.body ?? {}) as Body & {
+      username?: string;
+      email?: string;
+      pin?: string;
+      role?: string;
+    };
+    const admin = authUser(request);
+    if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
+    if (!username) return reply.code(400).send({ error: "Username required" });
+    if (!email && !pin) return reply.code(400).send({ error: "Email (for SSO) or PIN required" });
+    if (await getUserByUsername(username))
+      return reply.code(400).send({ error: "Username already exists" });
+    if (email && (await getUserByEmail(email)))
+      return reply.code(400).send({ error: "A user with that email already exists" });
+    const userPin = pin || randomBytes(6).toString("hex");
+    await createUser(username, userPin, role || "staff");
+    if (email) {
+      const newUser = await getUserByUsername(username);
+      if (newUser) await updateUserEmail(newUser.id, email);
+    }
+    await insertAuditLog({
+      staff_id: admin.username,
+      action: "create_user",
+      details: `Created user "${username}"${email ? " (" + email + ")" : ""} with role ${role || "staff"}`,
+    });
+    return { success: true };
+  });
 
-  if (!VALID_STAFF.includes(staffId)) {
-    return c.json({ error: "Invalid staff member" }, 400);
-  }
+  app.post("/admin/users/toggle", rsch(RB.toggle), async (request, reply) => {
+    const { user_id, active } = (request.body ?? {}) as { user_id?: number; active?: boolean };
+    const admin = authUser(request);
+    if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
+    await updateUserActive(Number(user_id), !!active);
+    await insertAuditLog({
+      staff_id: admin.username,
+      action: active ? "enable_user" : "disable_user",
+      details: `User ID ${user_id}`,
+    });
+    return { success: true };
+  });
 
-  const result = await deleteRecord(id, staffId);
-  if (result.changes === 0) {
-    return c.json({ error: "Record not found" }, 404);
-  }
+  app.post("/admin/users/reset-pin", rsch(RB.resetPin), async (request, reply) => {
+    const { user_id, new_pin } = (request.body ?? {}) as { user_id?: number; new_pin?: string };
+    const admin = authUser(request);
+    if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
+    if (!new_pin) return reply.code(400).send({ error: "New PIN required" });
+    await updateUserPin(Number(user_id), new_pin);
+    await insertAuditLog({
+      staff_id: admin.username,
+      action: "reset_pin",
+      details: `Reset PIN for user ID ${user_id}`,
+    });
+    return { success: true };
+  });
 
-  await insertAuditLog({ staff_id: staffId, action: 'delete_record', details: `Record ${id} deleted` });
-  return c.json({ success: true });
-});
+  app.post("/admin/users/email", rsch(RB.userEmail), async (request, reply) => {
+    const { user_id, email } = (request.body ?? {}) as { user_id?: number; email?: string };
+    const admin = authUser(request);
+    if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
+    await updateUserEmail(Number(user_id), email || null);
+    await insertAuditLog({
+      staff_id: admin.username,
+      action: "set_email",
+      details: `User ID ${user_id} email set to ${email || "(empty)"}`,
+    });
+    return { success: true };
+  });
 
-export { VALID_STAFF };
-export default records;
+  app.post("/admin/users/role", rsch(RB.userRole), async (request, reply) => {
+    const { user_id, role } = (request.body ?? {}) as { user_id?: number; role?: string };
+    const admin = authUser(request);
+    if (admin.role !== "admin") return reply.code(403).send({ error: "Admin access required" });
+    if (!role || !["staff", "admin"].includes(role))
+      return reply.code(400).send({ error: "Invalid role" });
+    await updateUserRole(Number(user_id), role);
+    await insertAuditLog({
+      staff_id: admin.username,
+      action: "change_role",
+      details: `User ID ${user_id} role changed to ${role}`,
+    });
+    return { success: true };
+  });
+
+  // Save a new timeline record
+  app.post("/", rsch(RB.saveTimeline), async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_name, case_number, file_names, notes, summary, ai_score, timeline } =
+      (request.body ?? {}) as Body & { file_names?: string[]; record_name?: string };
+    if (!file_names || !timeline)
+      return reply.code(400).send({ error: "file_names and timeline are required" });
+    const result = await insertRecord({
+      staff_id: me,
+      record_name: record_name || null,
+      case_number: (case_number as string) || null,
+      file_names: JSON.stringify(file_names),
+      notes: (notes as string) || null,
+      summary: (summary as string) || null,
+      ai_score: ai_score != null ? (ai_score as number) : null,
+      timeline: JSON.stringify(timeline),
+    });
+    await insertAuditLog({
+      staff_id: me,
+      action: "save_timeline",
+      details: `Record "${record_name || file_names.join(", ")}" (ID: ${result.lastInsertRowid})`,
+    });
+    return { success: true, id: result.lastInsertRowid };
+  });
+
+  // ── Translation Records (registered before /:staffId) ──────────────────────
+  app.post("/translations", rsch(RB.saveTranslation), async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_name, file_names, language, language_name, translation } = (request.body ??
+      {}) as Body & { file_names?: string[]; language?: string; record_name?: string };
+    if (!file_names || !language || !translation)
+      return reply.code(400).send({ error: "file_names, language, and translation are required" });
+    const result = await insertTranslationRecord({
+      staff_id: me,
+      record_name: record_name || null,
+      file_names: JSON.stringify(file_names),
+      language,
+      language_name: language_name as string,
+      translation: JSON.stringify(translation),
+    });
+    await insertAuditLog({
+      staff_id: me,
+      action: "save_translation",
+      details: `"${record_name || file_names.join(", ")}" to ${language_name} (ID: ${result.lastInsertRowid})`,
+    });
+    return { success: true, id: result.lastInsertRowid };
+  });
+
+  app.get("/translations/:staffId", { schema: tags }, async (request) => {
+    const staffId = authUser(request).username;
+    const rows = await getTranslationsByStaff(staffId);
+    return {
+      success: true,
+      records: rows.map((r: Record<string, unknown>) => ({
+        ...r,
+        file_names: safeJsonParse(r.file_names as string, []),
+      })),
+    };
+  });
+
+  app.get("/translations/:staffId/:id", { schema: tags }, async (request, reply) => {
+    const staffId = authUser(request).username;
+    const id = Number((request.params as { id: string }).id);
+    const row = await getTranslationById(id);
+    if (!row || row.staff_id !== staffId)
+      return reply.code(404).send({ error: "Record not found" });
+    return {
+      success: true,
+      record: {
+        ...row,
+        file_names: safeJsonParse(row.file_names, []),
+        translation: safeJsonParse(row.translation, {}),
+      },
+    };
+  });
+
+  app.post("/translations/rename", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_id, record_name } = (request.body ?? {}) as {
+      record_id?: number;
+      record_name?: string;
+    };
+    if (!record_id || !record_name)
+      return reply.code(400).send({ error: "record_id and record_name required" });
+    const row = await getTranslationById(record_id);
+    if (!row || row.staff_id !== me)
+      return reply.code(404).send({ error: "Record not found or not yours" });
+    await updateTranslationRecordName(record_id, record_name);
+    return { success: true };
+  });
+
+  app.delete("/translations/:staffId/:id", { schema: tags }, async (request, reply) => {
+    const staffId = authUser(request).username;
+    const id = Number((request.params as { id: string }).id);
+    const result = await deleteTranslation(id, staffId);
+    if (result.changes === 0) return reply.code(404).send({ error: "Record not found" });
+    await insertAuditLog({
+      staff_id: staffId,
+      action: "delete_translation",
+      details: `Translation ${id} deleted`,
+    });
+    return { success: true };
+  });
+
+  // Share a record with other staff members
+  app.post("/share", rsch(RB.share), async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_id, share_with } = (request.body ?? {}) as {
+      record_id?: number;
+      share_with?: string[];
+    };
+    if (!record_id || !share_with)
+      return reply.code(400).send({ error: "record_id and share_with are required" });
+    const row = await getRecordById(record_id);
+    if (!row || row.staff_id !== me)
+      return reply.code(404).send({ error: "Record not found or not yours" });
+    const activeStaff = await getActiveUsernames();
+    const validShares = share_with.filter((s: string) => activeStaff.includes(s) && s !== me);
+    await updateRecordSharing(validShares, record_id);
+    await insertAuditLog({
+      staff_id: me,
+      action: "share_record",
+      details: `Record ${record_id} shared with ${validShares.join(", ")}`,
+    });
+    const recordName = row.record_name || "a timeline record";
+    for (const recipient of validShares) {
+      await insertNotification({
+        staff_id: recipient,
+        message: `${me} shared "${recordName}" with you`,
+        link: `record:${record_id}`,
+      });
+    }
+    return { success: true, shared_with: validShares };
+  });
+
+  // Update timeline content of an existing record
+  app.post("/update-timeline", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_id, timeline } = (request.body ?? {}) as {
+      record_id?: number;
+      timeline?: unknown;
+    };
+    if (!record_id || !timeline)
+      return reply.code(400).send({ error: "record_id and timeline required" });
+    const row = await getRecordById(record_id);
+    if (!row || row.staff_id !== me)
+      return reply.code(404).send({ error: "Record not found or not yours" });
+    await updateTimelineContent(record_id, JSON.stringify(timeline));
+    return { success: true };
+  });
+
+  app.post("/rename", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_id, record_name } = (request.body ?? {}) as {
+      record_id?: number;
+      record_name?: string;
+    };
+    if (!record_id || !record_name)
+      return reply.code(400).send({ error: "record_id and record_name are required" });
+    const row = await getRecordById(record_id);
+    if (!row || row.staff_id !== me)
+      return reply.code(404).send({ error: "Record not found or not yours" });
+    await updateRecordName(record_name, record_id);
+    return { success: true };
+  });
+
+  // Update case number for a record
+  app.post("/case", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_id, case_number } = (request.body ?? {}) as {
+      record_id?: number;
+      case_number?: string;
+    };
+    if (!record_id) return reply.code(400).send({ error: "record_id is required" });
+    const row = await getRecordById(record_id);
+    if (!row || row.staff_id !== me)
+      return reply.code(404).send({ error: "Record not found or not yours" });
+    await updateRecordCase(case_number || null, record_id);
+    return { success: true };
+  });
+
+  // Merge multiple timeline records
+  app.post("/merge", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_ids, record_name } = (request.body ?? {}) as {
+      record_ids?: number[];
+      record_name?: string;
+    };
+    if (!record_ids || record_ids.length < 2)
+      return reply.code(400).send({ error: "Select at least 2 records to merge" });
+
+    interface MergedTimeline {
+      documents?: Array<{ filename: string }>;
+      timeline?: Array<{ date: string; event: string }>;
+      keyDates?: Array<{ date: string; label: string }>;
+      conflicts?: Array<{ description: string }>;
+      notes?: string[];
+      timelineSpan?: { earliest: string; latest: string; totalDuration: string };
+      [k: string]: unknown;
+    }
+    const records_data: Record<string, unknown>[] = [];
+    // DB-002: one batched query for all selected ids, then preserve the caller's
+    // selection order (record_ids[0] is the merge base).
+    const byId = new Map((await getRecordsByIds(record_ids)).map((r) => [r.id, r]));
+    for (const id of record_ids) {
+      const row = byId.get(id);
+      if (!row || row.staff_id !== me) continue;
+      records_data.push({
+        ...row,
+        file_names: safeJsonParse(row.file_names, []),
+        timeline: safeJsonParse(row.timeline, {}),
+      });
+    }
+    if (records_data.length < 2)
+      return reply.code(400).send({ error: "Could not load selected records" });
+
+    // Merge timelines: combine all events, fuzzy dedup (isSimilar), sort by date
+    const mergedTimeline = records_data[0]!.timeline as MergedTimeline;
+    for (let i = 1; i < records_data.length; i++) {
+      const other = records_data[i]!.timeline as MergedTimeline;
+      if (other.documents) {
+        const existingFilenames = new Set((mergedTimeline.documents || []).map((d) => d.filename));
+        for (const doc of other.documents) {
+          if (!existingFilenames.has(doc.filename)) {
+            mergedTimeline.documents = mergedTimeline.documents || [];
+            mergedTimeline.documents.push(doc);
+          }
+        }
+      }
+      if (other.timeline) {
+        for (const evt of other.timeline) {
+          const isDupe = (mergedTimeline.timeline || []).some(
+            (existing) => existing.date === evt.date && isSimilar(existing.event, evt.event),
+          );
+          if (!isDupe) {
+            mergedTimeline.timeline = mergedTimeline.timeline || [];
+            mergedTimeline.timeline.push(evt);
+          }
+        }
+      }
+      if (other.keyDates) {
+        for (const kd of other.keyDates) {
+          const isDupe = (mergedTimeline.keyDates || []).some(
+            (existing) => existing.date === kd.date && isSimilar(existing.label, kd.label),
+          );
+          if (!isDupe) {
+            mergedTimeline.keyDates = mergedTimeline.keyDates || [];
+            mergedTimeline.keyDates.push(kd);
+          }
+        }
+      }
+      if (other.conflicts) {
+        for (const conflict of other.conflicts) {
+          const isDupe = (mergedTimeline.conflicts || []).some((existing) =>
+            isSimilar(existing.description, conflict.description),
+          );
+          if (!isDupe) {
+            mergedTimeline.conflicts = mergedTimeline.conflicts || [];
+            mergedTimeline.conflicts.push(conflict);
+          }
+        }
+      }
+      if (other.notes) {
+        for (const n of other.notes) {
+          const isDupe = (mergedTimeline.notes || []).some((existing) => isSimilar(existing, n));
+          if (!isDupe) {
+            mergedTimeline.notes = mergedTimeline.notes || [];
+            mergedTimeline.notes.push(n);
+          }
+        }
+      }
+    }
+
+    if (mergedTimeline.timeline) {
+      mergedTimeline.timeline.sort((a, b) => a.date.localeCompare(b.date));
+    }
+    if (mergedTimeline.timeline && mergedTimeline.timeline.length > 0) {
+      mergedTimeline.timelineSpan = {
+        earliest: mergedTimeline.timeline[0]!.date,
+        latest: mergedTimeline.timeline[mergedTimeline.timeline.length - 1]!.date,
+        totalDuration: "",
+      };
+    }
+
+    const allFileNames = [...new Set(records_data.flatMap((r) => r.file_names))];
+    const allNotes = records_data
+      .map((r) => r.notes)
+      .filter(Boolean)
+      .join("; ");
+
+    const result = await insertRecord({
+      staff_id: me,
+      record_name: record_name || `Merged: ${allFileNames.join(", ")}`,
+      file_names: JSON.stringify(allFileNames),
+      notes: allNotes || null,
+      timeline: JSON.stringify(mergedTimeline),
+    });
+    return { success: true, id: result.lastInsertRowid, timeline: mergedTimeline };
+  });
+
+  // ── Audit Log ─────────────────────────────────────────────────────────────
+  app.get("/audit/:staffId", { schema: tags }, async (request) => {
+    return { success: true, logs: await getAuditLog(authUser(request).username) };
+  });
+
+  // ── Status & Tags ────────────────────────────────────────────────────────
+  app.post("/status", { schema: tags }, async (request, reply) => {
+    const me = authUser(request).username;
+    const { record_id, record_type, status } = (request.body ?? {}) as {
+      record_id?: number;
+      record_type?: string;
+      status?: string;
+    };
+    const validStatuses = ["draft", "in_review", "complete", "flagged"];
+    if (!status || !validStatuses.includes(status))
+      return reply.code(400).send({ error: "Invalid status" });
+    const id = Number(record_id);
+    if (!Number.isInteger(id) || id <= 0)
+      return reply.code(400).send({ error: "Valid record_id required" });
+    // Ownership gate (SEC-002): only the record's owner may change its status.
+    if (record_type === "translation") {
+      const row = await getTranslationById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateTranslationStatus(id, status);
+    } else {
+      const row = await getRecordById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateRecordStatus(id, status);
+    }
+    return { success: true };
+  });
+
+  app.post("/tags", { schema: tags }, async (request, reply) => {
+    const {
+      record_id,
+      record_type,
+      tags: t,
+    } = (request.body ?? {}) as {
+      record_id?: number;
+      record_type?: string;
+      tags?: unknown;
+    };
+    if (!Array.isArray(t)) return reply.code(400).send({ error: "Tags must be an array" });
+    const me = authUser(request).username;
+    const id = Number(record_id);
+    if (!Number.isInteger(id) || id <= 0)
+      return reply.code(400).send({ error: "Valid record_id required" });
+    // Ownership gate (SEC-002): only the record's owner may change its tags.
+    if (record_type === "translation") {
+      const row = await getTranslationById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateTranslationTags(id, JSON.stringify(t));
+    } else {
+      const row = await getRecordById(id);
+      if (!row || row.staff_id !== me) return reply.code(404).send({ error: "Record not found" });
+      await updateRecordTags(id, JSON.stringify(t));
+    }
+    return { success: true };
+  });
+
+  // ── Notifications ────────────────────────────────────────────────────────
+  app.get("/notifications/:staffId", { schema: tags }, async (request) => {
+    const staffId = authUser(request).username;
+    const [notifications, unread] = await Promise.all([
+      getNotifications(staffId),
+      getUnreadNotificationCount(staffId),
+    ]);
+    return { success: true, notifications, unread };
+  });
+
+  app.post("/notifications/read", { schema: tags }, async (request) => {
+    const me = authUser(request).username;
+    const { notification_id } = (request.body ?? {}) as { notification_id?: number | "all" };
+    if (notification_id === "all") await markAllNotificationsRead(me);
+    else await markNotificationRead(Number(notification_id), me);
+    return { success: true };
+  });
+
+  // ── Dashboard ────────────────────────────────────────────────────────────
+  app.get("/dashboard/:staffId", { schema: tags }, async (request) => {
+    const staffId = authUser(request).username;
+    const stats = await getDashboardStats(staffId);
+    const unread = await getUnreadNotificationCount(staffId);
+    return { success: true, ...stats, unreadNotifications: unread };
+  });
+
+  // ── Session heartbeat ──────────────────────────────────────────────────────
+  app.post("/heartbeat", { schema: tags }, async (request) => {
+    await touchSession(authUser(request).username);
+    return { success: true };
+  });
+
+  // ── Admin overview ──────────────────────────────────────────────────────────
+  app.get("/admin/overview", { schema: tags }, async (request, reply) => {
+    if (authUser(request).role !== "admin")
+      return reply.code(403).send({ error: "Admin access required" });
+    const counts = await getAllRecordCounts();
+    const allLogs = await getAuditLogAll();
+    return { success: true, ...counts, recentActivity: allLogs };
+  });
+
+  // ── Timeline records (catch-all params; registered last) ──────────────────
+  app.get("/:staffId", { schema: tags }, async (request) => {
+    const staffId = authUser(request).username;
+    const rows = await getRecordsByStaff(staffId);
+    return {
+      success: true,
+      records: rows.map((r: Record<string, unknown>) => ({
+        ...r,
+        file_names: safeJsonParse(r.file_names as string, []),
+        shared_with: safeJsonParse(r.shared_with as string, []),
+      })),
+    };
+  });
+
+  app.get("/:staffId/:id", { schema: tags }, async (request, reply) => {
+    const staffId = authUser(request).username;
+    const id = Number((request.params as { id: string }).id);
+    const row = await getRecordById(id);
+    if (!row) return reply.code(404).send({ error: "Record not found" });
+    const sharedWith: string[] = safeJsonParse(row.shared_with, []);
+    if (row.staff_id !== staffId && !sharedWith.includes(staffId))
+      return reply.code(404).send({ error: "Record not found" });
+    return {
+      success: true,
+      record: {
+        ...row,
+        file_names: safeJsonParse(row.file_names, []),
+        timeline: safeJsonParse(row.timeline, {}),
+      },
+    };
+  });
+
+  app.delete("/:staffId/:id", { schema: tags }, async (request, reply) => {
+    const staffId = authUser(request).username;
+    const id = Number((request.params as { id: string }).id);
+    const result = await deleteRecord(id, staffId);
+    if (result.changes === 0) return reply.code(404).send({ error: "Record not found" });
+    await insertAuditLog({
+      staff_id: staffId,
+      action: "delete_record",
+      details: `Record ${id} deleted`,
+    });
+    return { success: true };
+  });
+}

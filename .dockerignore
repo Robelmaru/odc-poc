@@ -1,5 +1,31 @@
 node_modules
 backend/node_modules
-backend/data
+# Exclude local data (SQLite / case data) but KEEP the vendored Tesseract OCR
+# model — the runtime needs it to OCR scanned PDFs (without it the worker crashes).
+backend/data/*
+!backend/data/tessdata
+!backend/data/tessdata/**
 .git
+.github
+.claude
 *.log
+
+# Secrets & local config — never send to the build context
+.env
+.env.*
+!backend/.env.example
+
+# Real case data / sample files
+Sample Cases/
+*.db
+*.db-shm
+*.db-wal
+
+# Tests, coverage, and docs aren't needed in the runtime image
+backend/tests
+**/*.test.ts
+coverage
+findings.md
+findings.previous.md
+CLAUDE.md
+README.md

@@ -1,0 +1,17 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Windows-specific files keep CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never normalize
+*.png binary
+*.db binary
+*.pdf binary

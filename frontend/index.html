@@ -360,6 +360,25 @@
       flex: 1;
     }
 
+    /* Compact, wrapping action row for the Document Insight tab so the
+       longer "Rule XI Comparison" label doesn't push "Clear" off the line */
+    .button-row.compact {
+      flex-wrap: wrap;
+    }
+    .button-row.compact .btn {
+      font-size: 12px;
+      padding: 8px 14px;
+    }
+    .button-row.compact .btn-primary {
+      flex: 0 1 auto;
+    }
+    /* "Clear" stretches to fill the rest of the row (thin + long) */
+    .button-row.compact .btn-clear-wide {
+      flex: 1;
+      padding-top: 5px;
+      padding-bottom: 5px;
+    }
+
     /* Results Header */
     .results-header {
       display: flex;
@@ -559,15 +578,15 @@
 
     /* Source Links */
     .source-link {
-      color: var(--color-secondary);
-      text-decoration: none;
-      font-weight: 500;
-      border-bottom: 1px solid transparent;
-      transition: border-color 0.2s;
+      color: var(--color-primary);
+      text-decoration: underline;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
     }
 
     .source-link:hover {
-      border-bottom-color: var(--color-secondary);
+      opacity: 0.75;
     }
 
     /* Violations */
@@ -1579,6 +1598,19 @@
         page-break-inside: avoid;
       }
     }
+
+    /* ── Discovery tab ── */
+    .disc-lbl { font-size:11px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:4px; }
+    .disc-in, .disc-sel { width:100%; padding:8px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface); box-sizing:border-box; }
+    .disc-stat { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; }
+    .disc-row { cursor:pointer; }
+    .disc-row:hover { background:var(--color-bg); }
+    .disc-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+    .ci-received  { background:#e6f4ea; color:#1e7e34; }
+    .ci-partial   { background:#fff4e0; color:#9a6700; }
+    .ci-missing   { background:#fde8e8; color:#c0392b; }
+    .ci-defective { background:#f3e0f7; color:#8e44ad; }
+    .ci-pending   { background:var(--color-border-light); color:var(--color-text-muted); }
   </style>
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 </head>
@@ -1590,21 +1622,66 @@
       <img src="odc-logo.png" alt="ODC Logo" style="width:80px; height:80px; object-fit:contain; margin-bottom:16px;" />
       <h1 style="font-size:1.3rem; font-weight:700; color:var(--color-text); margin-bottom:4px;">Office of Disciplinary Counsel</h1>
       <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:28px;">Document Analysis System</p>
-      <div style="text-align:left; margin-bottom:16px;">
-        <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Username</label>
-        <input type="text" id="loginUsername" placeholder="Enter your name"
-          style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
-          onkeydown="if(event.key==='Enter') document.getElementById('loginPassword').focus()" />
+
+      <!-- Microsoft SSO Sign-in -->
+      <button id="msSignInBtn" onclick="window.location.href='/auth/login'" style="display:none;width:100%;padding:12px 14px;font-size:14px;font-weight:600;background:#2f2f2f;color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-family:var(--font-sans);" onmouseover="this.style.background='#1a1a1a'" onmouseout="this.style.background='#2f2f2f'">
+        <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+          <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+          <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+        </svg>
+        Sign in with Microsoft
+      </button>
+
+      <div id="ssoLegacyDivider" style="display:none;margin:20px 0;text-align:center;position:relative;">
+        <hr style="border:none;border-top:1px solid var(--color-border);"/>
+        <span style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--color-surface);padding:0 12px;font-size:11px;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;">or</span>
       </div>
-      <div style="text-align:left; margin-bottom:20px;">
-        <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Password</label>
-        <input type="password" id="loginPassword" placeholder="Enter your PIN"
-          style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
-          onkeydown="if(event.key==='Enter') doLogin()" />
+
+      <div id="legacyLoginForm">
+        <div style="text-align:left; margin-bottom:16px;">
+          <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Username</label>
+          <input type="text" id="loginUsername" placeholder="Enter your name"
+            style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
+            onkeydown="if(event.key==='Enter') document.getElementById('loginPassword').focus()" />
+        </div>
+        <div style="text-align:left; margin-bottom:20px;">
+          <label style="font-size:12px; font-weight:600; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:6px;">Password</label>
+          <input type="password" id="loginPassword" placeholder="Enter your PIN"
+            style="width:100%; padding:12px 14px; font-size:15px; font-family:var(--font-sans); border:1.5px solid var(--color-border); border-radius:8px; background:var(--color-bg); color:var(--color-text); box-sizing:border-box;"
+            onkeydown="if(event.key==='Enter') doLogin()" />
+        </div>
+        <button class="btn btn-primary" onclick="doLogin()" style="width:100%; padding:12px; font-size:15px;">Sign In</button>
       </div>
-      <div id="loginError" style="display:none; color:var(--color-danger); font-size:13px; margin-bottom:14px; padding:10px; background:var(--color-danger-bg); border-radius:6px;"></div>
-      <button class="btn btn-primary" onclick="doLogin()" style="width:100%; padding:12px; font-size:15px;">Sign In</button>
-      <p style="margin-top:16px; font-size:13px;"><a href="#" onclick="event.preventDefault(); alert('Please contact your administrator to reset your credentials.');" style="color:var(--color-primary); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot username or password?</a></p>
+
+      <div id="loginError" style="display:none; color:var(--color-danger); font-size:13px; margin:14px 0 0; padding:10px; background:var(--color-danger-bg); border-radius:6px;"></div>
+      <p style="margin-top:16px; font-size:13px;"><a href="#" onclick="event.preventDefault(); document.getElementById('forgotModal').style.display='flex';" style="color:var(--color-primary); text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot username or password?</a></p>
+    </div>
+  </div>
+
+  <script>
+    // Check if Entra SSO is enabled and show/hide the right login UI
+    fetch('/auth/status').then(function(r) { return r.json(); }).then(function(d) {
+      if (d.enabled) {
+        document.getElementById('msSignInBtn').style.display = 'flex';
+        document.getElementById('ssoLegacyDivider').style.display = 'block';
+        // Hide legacy form by default when SSO is enabled — admins can still use PIN if needed
+        // (uncomment to hide PIN form entirely): document.getElementById('legacyLoginForm').style.display = 'none';
+      }
+    }).catch(function() {});
+  </script>
+
+  <!-- Forgot Password Modal -->
+  <div id="forgotModal" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);text-align:center;">
+      <div style="font-size:2rem;margin-bottom:12px;">&#128274;</div>
+      <h3 style="font-size:16px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Forgot Username or Password?</h3>
+      <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.6;margin:0 0 16px;">Please contact your administrator to reset your credentials, or submit a ticket at:</p>
+      <a href="https://dcbar.zendesk.com/" target="_blank" rel="noopener" style="display:inline-block;padding:10px 20px;background:var(--color-primary);color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">dcbar.zendesk.com</a>
+      <div style="margin-top:16px;">
+        <button onclick="document.getElementById('forgotModal').style.display='none'" class="btn btn-secondary" style="font-size:13px;padding:8px 20px;">Close</button>
+      </div>
     </div>
   </div>
 
@@ -1638,8 +1715,10 @@
 
   <nav class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('dashboard')" data-tab="dashboard">Dashboard</button>
-    <button class="tab-btn" onclick="switchTab('timeline')" data-tab="timeline">Document Timeline</button>
-    <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation</button>
+    <button class="tab-btn" onclick="switchTab('timeline')" data-tab="timeline">Document Insight</button>
+    <button class="tab-btn" onclick="switchTab('translate')" data-tab="translate">Translation &amp; Handwriting</button>
+    <button class="tab-btn" onclick="switchTab('aidetect')" data-tab="aidetect">AI Detection</button>
+    <button class="tab-btn" onclick="switchTab('discovery')" data-tab="discovery">Discovery</button>
     <button class="tab-btn" onclick="switchTab('admin')" data-tab="admin" id="adminTabBtn" style="display:none;">Admin</button>
     <div style="margin-left:auto;position:relative;" id="notifWrapper">
       <button onclick="toggleNotifPanel()" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;position:relative;" title="Notifications">&#128276;
@@ -1677,6 +1756,16 @@
           <div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">Unread Notifications</div>
         </div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div class="panel" style="padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Timeline Status</h3>
+          <div id="dashTimelineStatuses" style="display:flex;gap:12px;flex-wrap:wrap;">-</div>
+        </div>
+        <div class="panel" style="padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Translation Status</h3>
+          <div id="dashTranslationStatuses" style="display:flex;gap:12px;flex-wrap:wrap;">-</div>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="panel" style="padding:20px;">
           <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Recent Activity</h3>
@@ -1685,7 +1774,7 @@
         <div class="panel" style="padding:20px;">
           <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Quick Actions</h3>
           <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="btn btn-primary" onclick="switchTab('timeline')" style="text-align:left;padding:10px 16px;font-size:13px;">&#128197; Extract a Document Timeline</button>
+            <button class="btn btn-primary" onclick="switchTab('timeline')" style="text-align:left;padding:10px 16px;font-size:13px;">&#128197; Document Insight</button>
             <button class="btn btn-primary" onclick="switchTab('translate')" style="text-align:left;padding:10px 16px;font-size:13px;">&#127760; Translate a Document</button>
           </div>
         </div>
@@ -1798,7 +1887,7 @@
     </div>
   </div><!-- End Tab 2: Rules Q&A -->
 
-  <!-- Tab 3: Document Timeline -->
+  <!-- Tab 3: Document Insight -->
   <div class="tab-panel active" id="tab-timeline">
     <div class="container">
       <div class="panel">
@@ -1823,18 +1912,25 @@
           <textarea class="qa-textarea" id="timelineContext" placeholder="Provide any additional context about these documents (e.g., case name, relevant parties, date ranges of interest)..."></textarea>
         </div>
 
-        <div class="button-row">
+        <label id="timelineRuleXiLabel" style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;">
+          <input type="checkbox" id="timelineRuleXi" style="width:16px;height:16px;cursor:pointer;">
+          <span>&#9878; Use Rule XI context — analyze through the DC Rules / Rule XI disciplinary lens (weighs significance toward potential rule violations). The result saves &amp; exports like any timeline.</span>
+        </label>
+
+        <div class="button-row compact">
           <button class="btn btn-primary" id="timelineBtn" onclick="extractTimeline()">
             Extract Timeline
           </button>
-          <button class="btn btn-secondary" onclick="clearTimeline()">Clear</button>
+          <button class="btn btn-secondary" id="ruleXiCompareBtn" onclick="compareRuleXI()" title="Analyze the first uploaded file twice — with and without DC Rules / Rule XI context — and compare side by side">&#9878; Rule XI Comparison</button>
+          <button class="btn btn-secondary btn-clear-wide" onclick="clearTimeline()">Clear</button>
         </div>
+        <div id="ruleXiCompareNote" style="font-size:12px;color:var(--color-text-muted);margin-top:6px;">Rule XI Comparison runs the analysis with and without the disciplinary-rules context so you can see how it changes the result. Use a modestly sized file.</div>
         <div class="error" id="timelineError"></div>
       </div>
 
       <div class="panel results-panel">
         <div class="results-header">
-          <h2 class="panel-title">Document Timeline</h2>
+          <h2 class="panel-title">Document Insight</h2>
           <div class="export-buttons" id="timelineExportButtons" style="display: none;">
             <button class="btn btn-export" onclick="exportTimelineToTxt()">Export TXT</button>
             <button class="btn btn-export" onclick="exportTimelineToDocx()">Export DOCX</button>
@@ -1943,25 +2039,19 @@
       </div>
       </div>
     </div>
-  </div><!-- End Tab 3: Document Timeline -->
+  </div><!-- End Tab 3: Document Insight -->
 
   <!-- Tab 4: Translation -->
   <div class="tab-panel" id="tab-translate">
     <div class="container">
       <div class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Translate Document</h2>
+          <h2 class="panel-title">Translation &amp; Handwriting</h2>
         </div>
 
-        <!-- Language Selector -->
-        <div style="margin-bottom: 20px;">
-          <label for="translateLangSelect" style="font-size: 13px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">Target Language</label>
-          <select id="translateLangSelect" name="translateLang" style="width: 100%; padding: 10px 14px; font-size: 15px; font-family: var(--font-sans); border: 1.5px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer;">
-            <option value="">— Select a language —</option>
-            <option value="en">🇺🇸 English</option>
-            <option value="es">🇪🇸 Spanish</option>
-            <option value="pt-BR">🇧🇷 Brazilian Portuguese</option>
-          </select>
+        <div style="margin-bottom: 20px; padding: 10px 14px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 6px; font-size: 13px; color: var(--color-text-secondary);">
+          &#127760; <strong>Translate to English</strong> — the source language is detected automatically and the document is translated into <strong>English</strong>.<br>
+          &#9997;&#65039; <strong>Convert Handwriting to Text</strong> — transcribe handwritten or scanned pages into readable digital text, in the original language (no translation).
         </div>
 
         <!-- File Upload -->
@@ -1976,9 +2066,10 @@
         </div>
         <div class="file-list" id="translateFileList"></div>
 
-        <div class="button-row" style="margin-top: 16px;">
-          <button class="btn btn-primary" id="translateBtn" onclick="runTranslation()">Translate</button>
-          <button class="btn btn-secondary" onclick="clearTranslation()">Clear</button>
+        <div class="button-row compact">
+          <button class="btn btn-primary" id="translateBtn" style="flex:1 1 0;" onclick="runTranslation()" title="Detect the source language and translate the document into English">Translate to English</button>
+          <button class="btn btn-primary" id="convertBtn" style="flex:1 1 0;" onclick="runConvert()" title="Transcribe handwritten or scanned pages into readable digital text (no translation)">Convert Handwriting to Text</button>
+          <button class="btn btn-secondary btn-clear-wide" style="flex-basis:100%;" onclick="clearTranslation()">Clear</button>
         </div>
         <div class="error" id="translateError"></div>
       </div>
@@ -1996,9 +2087,9 @@
 
         <div class="loading" id="translateLoading">
           <div class="loading-spinner"></div>
-          <p class="loading-text">Translating...</p>
-          <p class="loading-subtext">Large documents are translated in chunks automatically</p>
-          <p class="loading-subtext" style="margin-top: 8px;">This may take 1–3 minutes for large documents</p>
+          <p class="loading-text" id="translateLoadingTitle">Working...</p>
+          <p class="loading-subtext" id="translateLoadingMsg">Uploading...</p>
+          <p class="loading-subtext" style="margin-top: 8px;">Scanned or handwritten documents can take several minutes.</p>
         </div>
 
         <div class="results" id="translateResults" style="white-space: pre-wrap; font-family: var(--font-sans); font-size: 15px; line-height: 1.7;">
@@ -2007,7 +2098,7 @@
 
         <div class="placeholder" id="translatePlaceholder">
           <div class="placeholder-icon">&#127760;</div>
-          <p class="placeholder-text">Select a language and upload documents to translate</p>
+          <p class="placeholder-text">Upload documents to translate into English</p>
         </div>
       </div>
     </div>
@@ -2082,14 +2173,113 @@
     </div>
   </div><!-- End Tab 4: Translation -->
 
+  <!-- Tab: AI Detection -->
+  <div class="tab-panel" id="tab-aidetect">
+    <div class="container">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">AI Content Detection</h2>
+        </div>
+        <p style="font-size:13px;color:var(--color-text-muted);margin:0 0 16px;">Upload a document to check whether the text was written by a human or generated by an AI tool (ChatGPT, Claude, Gemini, etc.).</p>
+
+        <div class="upload-zone" id="aiDetectUploadZone" onclick="document.getElementById('aiDetectFileInput').click()"
+             ondragover="handleAiDetectDragOver(event)" ondragleave="handleAiDetectDragLeave(event)" ondrop="handleAiDetectDrop(event)">
+          <input type="file" id="aiDetectFileInput" accept=".txt,.pdf" multiple onchange="handleAiDetectFileSelect(event)" style="display: none;">
+          <div class="upload-zone-icon">&#128269;</div>
+          <div class="upload-zone-text">
+            <strong>Click to upload</strong> or drag documents here<br>
+            <span style="font-size: 13px; color: var(--color-text-muted);">PDF and TXT files supported</span>
+          </div>
+        </div>
+        <div class="file-list" id="aiDetectFileList"></div>
+
+        <div class="button-row" style="margin-top:16px;">
+          <button class="btn btn-primary" id="aiDetectBtn" onclick="runAiDetectionTab()">Analyze for AI Content</button>
+          <button class="btn btn-secondary" onclick="clearAiDetectionTab()">Clear</button>
+        </div>
+        <div class="error" id="aiDetectError"></div>
+      </div>
+
+      <div class="panel results-panel">
+        <div class="results-header">
+          <h2 class="panel-title">Detection Results</h2>
+        </div>
+        <div class="loading" id="aiDetectLoading">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Analyzing for AI patterns...</p>
+          <p class="loading-subtext">Checking sentence structure, vocabulary, and other indicators</p>
+        </div>
+        <div class="results" id="aiDetectResults"></div>
+        <div class="placeholder" id="aiDetectPlaceholder">
+          <div class="placeholder-icon">&#128269;</div>
+          <p class="placeholder-text">Upload a document and click Analyze to check for AI-generated content</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Discovery -->
+  <div class="tab-panel" id="tab-discovery">
+    <div style="max-width:1100px;margin:0 auto;padding:20px;">
+
+      <!-- Discovery dashboard strip -->
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <h2 class="panel-title">&#128203; Discovery &amp; Productions</h2>
+          <button class="btn btn-secondary" onclick="loadDiscovery()" style="font-size:11px;padding:3px 8px;">&#8635; Refresh</button>
+        </div>
+        <p style="font-size:13px;color:var(--color-text-muted);margin:0 0 14px;">Track subpoenas to respondent attorneys, ingest their productions (client file &amp; financial records), and reconcile what was produced against what was demanded.</p>
+        <div id="discoveryDashboard" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
+      </div>
+
+      <!-- Cases list -->
+      <div class="panel" id="discoveryCasesPanel" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <h2 class="panel-title">Cases</h2>
+          <button class="btn btn-primary" onclick="toggleNewCaseForm()" style="font-size:12px;padding:6px 12px;">+ New Case</button>
+        </div>
+        <div id="newCaseForm" style="display:none;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:14px;margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label class="disc-lbl">Respondent attorney</label><input id="ncRespondent" class="disc-in" placeholder="e.g. Jane Attorney"></div>
+            <div><label class="disc-lbl">Firm (optional)</label><input id="ncFirm" class="disc-in" placeholder="e.g. LarJack PLLC"></div>
+            <div><label class="disc-lbl">Client / matter party</label><input id="ncClient" class="disc-in" placeholder="e.g. Mary D. Goode"></div>
+            <div><label class="disc-lbl">Matter caption (optional)</label><input id="ncCaption" class="disc-in" placeholder="e.g. Estate of Mary D. Goode"></div>
+          </div>
+          <div class="button-row" style="margin-top:12px;">
+            <button class="btn btn-primary" onclick="createCase()" style="font-size:12px;padding:6px 14px;">Create Case</button>
+            <button class="btn btn-secondary" onclick="toggleNewCaseForm()" style="font-size:12px;padding:6px 14px;">Cancel</button>
+          </div>
+          <div class="error" id="newCaseError"></div>
+        </div>
+        <div id="discoveryCasesList"><p style="color:var(--color-text-muted);font-size:13px;">Loading cases…</p></div>
+      </div>
+
+      <!-- Case detail -->
+      <div class="panel" id="discoveryCaseDetail" style="display:none;"></div>
+    </div>
+  </div>
+
   <!-- Tab: Admin -->
   <div class="tab-panel" id="tab-admin">
     <div style="max-width:1000px;margin:0 auto;padding:20px;">
-      <h2 style="font-size:20px;font-weight:700;margin:0 0 20px;color:var(--color-text);">Admin Overview</h2>
+      <h2 style="font-size:20px;font-weight:700;margin:0 0 20px;color:var(--color-text);">Admin Panel</h2>
+
+      <!-- User Management -->
+      <div class="panel" style="padding:20px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0;">User Management</h3>
+          <button class="btn btn-primary" onclick="showAddUserModal()" style="font-size:12px;padding:5px 14px;">+ Add User</button>
+        </div>
+        <div id="adminUsersList">Loading...</div>
+      </div>
+
+      <!-- Records by Staff -->
       <div class="panel" style="padding:20px;margin-bottom:16px;">
         <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">Records by Staff</h3>
         <div id="adminStaffStats">Loading...</div>
       </div>
+
+      <!-- Activity Log -->
       <div class="panel" style="padding:20px;">
         <h3 style="font-size:14px;font-weight:700;color:var(--color-text);margin:0 0 12px;">All Activity (Last 200)</h3>
         <input type="text" id="adminActivitySearch" oninput="filterAdminActivity()" placeholder="Search activity..." style="width:100%;padding:8px 12px;border:1px solid var(--color-border);border-radius:6px;font-size:13px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-surface);box-sizing:border-box;margin-bottom:10px;" />
@@ -2131,6 +2321,15 @@
 
   <script>
     // ========================================
+    // Feature flags
+    // ========================================
+    // Disciplinary-rule AI analysis (Rule XI lens / "Potential Rule Violations" /
+    // Rule 1.15 flags / deficiency-letter drafting) is hidden for now: we are not
+    // permitted to use AI for that kind of legal analysis during testing. Flip this
+    // to true to restore the capability across Document Insight and Discovery.
+    const RULE_ANALYSIS_ENABLED = false;
+
+    // ========================================
     // Dark Mode
     // ========================================
     // ── Dashboard ──────────────────────────────────────────────────────────
@@ -2145,6 +2344,10 @@
         document.getElementById('dashTranslationCount').textContent = data.translationRecords;
         document.getElementById('dashSharedCount').textContent = data.sharedWithMe;
         document.getElementById('dashNotifCount').textContent = data.unreadNotifications;
+
+        // Render status breakdowns
+        renderDashStatuses('dashTimelineStatuses', data.timelineStatuses || [], data.timelineRecent || {});
+        renderDashStatuses('dashTranslationStatuses', data.translationStatuses || [], data.translationRecent || {});
         const actEl = document.getElementById('dashRecentActivity');
         if (!data.recentActivity || !data.recentActivity.length) {
           actEl.innerHTML = '<p style="color:var(--color-text-muted);">No recent activity.</p>';
@@ -2158,6 +2361,35 @@
           }).join('');
         }
       } catch (e) { /* ignore */ }
+    }
+
+    function renderDashStatuses(containerId, statuses, recentMap) {
+      const el = document.getElementById(containerId);
+      const colors = { draft: '#6b7280', in_review: '#f59e0b', complete: '#10b981', flagged: '#ef4444' };
+      const labels = { draft: 'Draft', in_review: 'In Review', complete: 'Complete', flagged: 'Flagged' };
+      const allStatuses = ['draft', 'in_review', 'complete', 'flagged'];
+      const map = {};
+      statuses.forEach(function(s) { map[s.status] = s.count; });
+      var total = allStatuses.reduce(function(sum, s) { return sum + (map[s] || 0); }, 0);
+      if (!total) { el.innerHTML = '<span style="color:var(--color-text-muted);font-size:13px;">No records yet</span>'; return; }
+      el.innerHTML = allStatuses.map(function(s) {
+        var count = map[s] || 0;
+        var recent = (recentMap && recentMap[s]) || [];
+        var tooltipItems = recent.map(function(r) {
+          var name = r.record_name || '';
+          if (!name) { try { name = JSON.parse(r.file_names).join(', '); } catch(e) { name = r.file_names; } }
+          return escapeHtml(name);
+        });
+        var tooltipHtml = tooltipItems.length
+          ? tooltipItems.map(function(n) { return '<div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.15);">' + n + '</div>'; }).join('')
+          : '<div style="padding:3px 0;">No records</div>';
+        var uid = containerId + '_' + s;
+        return '<div style="text-align:center;min-width:70px;position:relative;cursor:pointer;padding:6px 8px;border-radius:8px;transition:background 0.15s;" onmouseover="this.style.background=\'#3b82f6\';this.querySelector(\'.dash-num\').style.color=\'#fff\';this.querySelector(\'.dash-lbl\').style.color=\'rgba(255,255,255,0.8)\';document.getElementById(\'' + uid + '\').style.display=\'block\';" onmouseout="this.style.background=\'transparent\';this.querySelector(\'.dash-num\').style.color=\'' + colors[s] + '\';this.querySelector(\'.dash-lbl\').style.color=\'var(--color-text-muted)\';document.getElementById(\'' + uid + '\').style.display=\'none\';">'
+          + '<div class="dash-num" style="font-size:22px;font-weight:700;color:' + colors[s] + ';transition:color 0.15s;">' + count + '</div>'
+          + '<div class="dash-lbl" style="font-size:11px;color:var(--color-text-muted);transition:color 0.15s;">' + labels[s] + '</div>'
+          + '<div id="' + uid + '" style="display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;background:#1e3a5f;color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;white-space:nowrap;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.2);text-align:left;min-width:160px;">' + tooltipHtml + '</div>'
+          + '</div>';
+      }).join('');
     }
 
     // ── Notifications ─────────────────────────────────────────────────────
@@ -2211,6 +2443,15 @@
       { value: 'complete', label: 'Complete', color: '#10b981' },
       { value: 'flagged', label: 'Flagged', color: '#ef4444' },
     ];
+
+    function renderAiScoreBadge(score) {
+      if (score == null) return '';
+      var color, label;
+      if (score <= 30) { color = '#10b981'; label = 'AI: ' + score + '%'; }
+      else if (score <= 60) { color = '#f59e0b'; label = 'AI: ' + score + '%'; }
+      else { color = '#ef4444'; label = 'AI: ' + score + '%'; }
+      return '<span style="font-size:10px;padding:2px 6px;border-radius:10px;color:#fff;background:' + color + ';font-weight:600;margin-left:6px;" title="AI content likelihood: ' + score + '%">' + label + '</span>';
+    }
 
     function renderStatusBadge(status) {
       const opt = STATUS_OPTIONS.find(function(s) { return s.value === status; }) || STATUS_OPTIONS[0];
@@ -2279,7 +2520,7 @@
       if (!lastTimeline) { alert('Please extract or load a timeline first, then click Print.'); return; }
       const win = window.open('', '_blank');
       let html = '<html><head><title>Timeline Print</title><style>body{font-family:Arial,sans-serif;padding:40px;color:#333;font-size:13px;}h1{font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top;}th{background:#f5f5f5;font-size:11px;text-transform:uppercase;}@media print{body{padding:20px;}}</style></head><body>';
-      html += '<h1>Document Timeline</h1>';
+      html += '<h1>Document Insight</h1>';
       if (lastTimeline.documents) {
         html += '<p><strong>Documents:</strong> ' + lastTimeline.documents.map(function(d) { return d.filename || d.title; }).join(', ') + '</p>';
       }
@@ -2411,7 +2652,137 @@
     // ── Admin Panel ───────────────────────────────────────────────────────
     let adminActivityData = [];
 
+    // ── Admin User Management ───────────────────────────────────────────────
+
+    async function loadAdminUsers() {
+      const container = document.getElementById('adminUsersList');
+      try {
+        const r = await fetch('/api/records/admin/users');
+        const data = await r.json();
+        if (!data.success) return;
+        var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+          + '<thead><tr style="border-bottom:2px solid var(--color-border);text-align:left;">'
+          + '<th style="padding:8px 12px;">Username</th>'
+          + '<th style="padding:8px 12px;">Email (SSO)</th>'
+          + '<th style="padding:8px 12px;">Role</th>'
+          + '<th style="padding:8px 12px;">Status</th>'
+          + '<th style="padding:8px 12px;">Created</th>'
+          + '<th style="padding:8px 12px;text-align:right;">Actions</th>'
+          + '</tr></thead><tbody>';
+        data.users.forEach(function(u) {
+          var statusColor = u.active ? '#10b981' : '#ef4444';
+          var statusLabel = u.active ? 'Active' : 'Disabled';
+          var roleBadge = u.role === 'admin'
+            ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:#8b5cf6;font-weight:600;">ADMIN</span>'
+            : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;color:#fff;background:#6b7280;font-weight:600;">STAFF</span>';
+          var emailCell = u.email
+            ? '<span style="font-size:12px;">' + escapeHtml(u.email) + '</span>'
+            : '<span style="font-size:11px;color:var(--color-text-muted);font-style:italic;">not set</span>';
+          html += '<tr style="border-bottom:1px solid var(--color-border-light);">'
+            + '<td style="padding:10px 12px;font-weight:600;">' + escapeHtml(u.username) + '</td>'
+            + '<td style="padding:10px 12px;">' + emailCell + '</td>'
+            + '<td style="padding:10px 12px;">' + roleBadge + '</td>'
+            + '<td style="padding:10px 12px;"><span style="color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span></td>'
+            + '<td style="padding:10px 12px;font-size:12px;color:var(--color-text-muted);">' + new Date(u.created_at).toLocaleDateString() + '</td>'
+            + '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">'
+            + '<button class="btn btn-secondary" onclick="adminSetEmail(' + u.id + ',\'' + escapeHtml(u.username) + '\',\'' + escapeHtml(u.email || '') + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Set email for SSO">&#9993; Email</button>'
+            + '<button class="btn btn-secondary" onclick="adminToggleRole(' + u.id + ',\'' + u.role + '\')" style="font-size:11px;padding:3px 8px;margin-right:4px;" title="Toggle role">' + (u.role === 'admin' ? 'Make Staff' : 'Make Admin') + '</button>'
+            + '<button class="btn" onclick="adminToggleUser(' + u.id + ',' + u.active + ',\'' + escapeHtml(u.username) + '\')" style="font-size:11px;padding:3px 8px;background:' + (u.active ? 'var(--color-danger-bg)' : 'var(--color-success-bg)') + ';color:' + (u.active ? 'var(--color-danger)' : 'var(--color-success)') + ';border:1px solid ' + (u.active ? 'var(--color-danger)' : 'var(--color-success)') + ';">' + (u.active ? 'Disable' : 'Enable') + '</button>'
+            + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (e) { container.innerHTML = 'Failed to load users.'; }
+    }
+
+    function showAddUserModal() {
+      var existing = document.getElementById('addUserModal');
+      if (existing) existing.remove();
+      var modal = document.createElement('div');
+      modal.id = 'addUserModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 6px;font-size:17px;color:var(--color-text);">Add New User</h3>'
+        + '<p style="margin:0 0 16px;font-size:12px;color:var(--color-text-muted);">User will sign in with their Microsoft (Entra) account.</p>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Display Name</label>'
+        + '<input id="newUserName" type="text" placeholder="e.g. Jane Doe" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Email <span style="color:var(--color-text-muted);font-weight:400;">(required for SSO)</span></label>'
+        + '<input id="newUserEmail" type="email" placeholder="user@dcbar.org" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Role</label>'
+        + '<select id="newUserRole" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:16px;">'
+        + '<option value="staff">Staff</option><option value="admin">Admin</option></select>'
+        + '<div id="addUserError" style="display:none;color:var(--color-danger);font-size:13px;margin-bottom:12px;"></div>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button class="btn btn-secondary" onclick="document.getElementById(\'addUserModal\').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button class="btn btn-primary" onclick="submitAddUser()" style="font-size:13px;padding:8px 18px;">Add User</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+      document.getElementById('newUserName').focus();
+    }
+
+    async function submitAddUser() {
+      var username = document.getElementById('newUserName').value.trim();
+      var email = document.getElementById('newUserEmail').value.trim().toLowerCase();
+      var role = document.getElementById('newUserRole').value;
+      var errEl = document.getElementById('addUserError');
+      if (!username || !email) { errEl.textContent = 'Display name and email are required.'; errEl.style.display = 'block'; return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
+      try {
+        var r = await fetch('/api/records/admin/users', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_id: loggedInStaff, username: username, email: email, role: role })
+        });
+        var data = await r.json();
+        if (!data.success) { errEl.textContent = apiErr(data, 'Failed'); errEl.style.display = 'block'; return; }
+        document.getElementById('addUserModal').remove();
+        loadAdminUsers();
+      } catch (e) { errEl.textContent = 'Failed to add user.'; errEl.style.display = 'block'; }
+    }
+
+    async function adminSetEmail(userId, username, currentEmail) {
+      var newEmail = prompt('Set SSO email for ' + username + ':\n(e.g. user@dcbar.org — used for Microsoft sign-in)', currentEmail || '');
+      if (newEmail === null) return;
+      newEmail = newEmail.trim().toLowerCase();
+      var r = await fetch('/api/records/admin/users/email', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, email: newEmail })
+      });
+      var data = await r.json();
+      if (!data.success) { alert('Failed: ' + (apiErr(data, 'Unknown error'))); return; }
+      loadAdminUsers();
+    }
+
+    async function adminResetPin(userId, username) {
+      var newPin = prompt('Enter new PIN for ' + username + ':');
+      if (!newPin || !newPin.trim()) return;
+      await fetch('/api/records/admin/users/reset-pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, new_pin: newPin.trim() })
+      });
+      alert('PIN reset for ' + username);
+    }
+
+    async function adminToggleRole(userId, currentRole) {
+      var newRole = currentRole === 'admin' ? 'staff' : 'admin';
+      await fetch('/api/records/admin/users/role', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, role: newRole })
+      });
+      loadAdminUsers();
+    }
+
+    async function adminToggleUser(userId, currentActive, username) {
+      var action = currentActive ? 'disable' : 'enable';
+      if (!confirm(action.charAt(0).toUpperCase() + action.slice(1) + ' user "' + username + '"?')) return;
+      await fetch('/api/records/admin/users/toggle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_id: loggedInStaff, user_id: userId, active: !currentActive })
+      });
+      loadAdminUsers();
+    }
+
     async function loadAdminPanel() {
+      loadAdminUsers();
       try {
         const r = await fetch('/api/records/admin/overview');
         const data = await r.json();
@@ -2493,21 +2864,29 @@
     });
 
     // ── Help Panel ─────────────────────────────────────────────────────────
-    const helpTopics = [
+    // Entries tagged ruleAnalysis:true are hidden while disciplinary-rule AI analysis
+    // is disabled (see RULE_ANALYSIS_ENABLED), to match the hidden Document Insight /
+    // Discovery controls.
+    const helpTopicsAll = [
+      { section: 'Getting Started', title: 'Signing In', text: 'Sign in with Microsoft (single sign-on) using your dcbar.org account, or with a username and PIN. Click the avatar in the top-right header to see your name and sign out.' },
+      { section: 'Getting Started', title: 'Tabs Overview', text: 'The app has these tabs:\n• Dashboard — your home view with stats and recent activity\n• Document Insight — analyze documents into a timeline, sub-document index, and duplicates' + (RULE_ANALYSIS_ENABLED ? ', plus a Rule XI comparison' : '') + ' (formerly “Document Timeline”)\n• Translation & Handwriting — translate documents and OCR handwriting/scans\n• AI Detection — check whether text was AI-generated\n• Discovery — track subpoenas and reconcile attorney productions against what was requested\n• Admin — (admins only) manage users and view the full activity log' },
       { section: 'Getting Started', title: 'Dark Mode', text: 'Toggle dark mode using the moon icon button in the top-right header. Your preference is saved across sessions.' },
 
-      { section: 'Document Timeline', title: 'Upload Documents', text: 'Drag and drop PDF or TXT files into the upload area, or click to browse. Multiple files can be uploaded at once. The system extracts text and analyzes all documents together.' },
-      { section: 'Document Timeline', title: 'Extract Timeline', text: 'Click "Extract Timeline" to analyze your uploaded documents. The system extracts dates, events, and people into a chronological timeline. Large documents (500+ pages) are automatically split into chunks and processed in parallel.' },
-      { section: 'Document Timeline', title: 'Handwritten / Scanned Pages', text: 'Pages with little or no selectable text are automatically detected and processed using AI Vision OCR. This works for handwritten notes, scanned documents, and image-based PDFs.' },
-      { section: 'Document Timeline', title: 'Save to My Records', text: 'After extracting a timeline, click the save button to store it. You can name the record, add a case/matter number, and review an auto-generated document summary before saving.' },
-      { section: 'Document Timeline', title: 'My Records', text: 'View all your saved timelines. Features include:\n\u2022 Search by name, notes, or case number\n\u2022 Filter by date range\n\u2022 Sort by clicking column headers\n\u2022 Expand the arrow next to a name to view the document summary\n\u2022 Click the document name to load the full timeline' },
-      { section: 'Document Timeline', title: 'Annotate Events (Add Notes)', text: 'After extracting a timeline, each event has a note icon. Click it to open the "Annotate Event" modal where you can:\n\u2022 Set a flag: Verify this date, Important, or Conflict\n\u2022 Add a free-text note to the event\n\u2022 Remove annotations with the X button\nAnnotations appear inline under the event and are saved when you save the record.' },
-      { section: 'Document Timeline', title: 'Record Actions (Icons)', text: '\u270E Pencil \u2014 Edit the record name and case/matter number\n\ud83d\udc65 People \u2014 Share the record with other staff members\n\ud83d\uddd1 Trash \u2014 Delete the record permanently' },
-      { section: 'Document Timeline', title: 'Export DOCX Formatting', text: 'When exporting a timeline to Word (DOCX):\n\u2022 HIGH significance events are highlighted in yellow with bold text\n\u2022 Annotations appear with an orange left border in italic\n\u2022 Regular events have a plain white background\nThis makes it easy to spot the most important events when reviewing the document.' },
-      { section: 'Document Timeline', title: 'Export Summary (DOCX)', text: 'When viewing a record summary (expanded arrow), click "Export DOCX" to download the summary as a Word document.' },
-      { section: 'Document Timeline', title: 'Merge Records', text: 'Use the checkboxes to select 2 or more records, then click "Merge Selected" to combine their timelines into a single deduplicated record.' },
-      { section: 'Document Timeline', title: 'Ask About This Timeline', text: 'After extracting or loading a timeline, use the Q&A panel to ask questions about the events, dates, parties, and patterns. Supports multi-turn conversation with full context.' },
-      { section: 'Document Timeline', title: 'Activity Log', text: 'View a history of your actions \u2014 saves, deletes, shares, and merges. Searchable by keyword.' },
+      { section: 'Document Insight', title: 'Upload Documents', text: 'Drag and drop PDF or TXT files into the upload area, or click to browse. Multiple files can be uploaded at once. The system extracts text and analyzes all documents together.' },
+      { section: 'Document Insight', title: 'Extract Timeline', text: 'Click "Extract Timeline" to analyze your uploaded documents. The system extracts dates, events, and people into a chronological timeline. Large documents (500+ pages) are automatically split into chunks and processed in parallel.' },
+      { section: 'Document Insight', title: 'Handwritten / Scanned Pages (OCR)', text: 'Pages with little or no selectable text are automatically detected and OCR’d. The app runs local OCR (Tesseract) first — fast and at no API cost — and only falls back to Claude Vision for pages the local engine reads with low confidence. This handles scanned documents, image-based PDFs, and handwriting. Large scanned productions of 1,000+ pages are supported; you’ll see a live “OCR 340 / 1227” progress count.' },
+      { section: 'Document Insight', title: 'Table of Contents (Sub-documents)', text: 'A single PDF often bundles many sub-documents (invoice, engagement letter, bank statement, check, etc.). The analyzer detects each one and builds a clickable Table of Contents grouped by file. Click any entry to open the source PDF at that page — e.g. jump straight to the “engagement contract.”' },
+      { section: 'Document Insight', title: 'Duplicate Content Detection', text: 'The analyzer flags duplicate content blocks — EXACT (identical) and NEAR (highly similar) — within a single file or across files. Each finding lists the page locations (click to open). Useful for spotting repeated pages, re-sent documents, or near-identical statements with small changes.' },
+      { section: 'Document Insight', title: 'Rule XI Comparison', ruleAnalysis: true, text: 'Click “⚖ Rule XI Comparison” to analyze the first uploaded file twice — once without and once with the DC Rules of Professional Conduct / Rule XI as interpretive context — and view the two results side by side. A metrics table shows the differences (sub-documents, events, HIGH-significance events, key dates, conflicts). Use a modestly sized file, as it runs two passes.' },
+      { section: 'Document Insight', title: 'Save to My Records', text: 'After extracting a timeline, click the save button to store it. You can name the record, add a case/matter number, and review an auto-generated document summary before saving.' },
+      { section: 'Document Insight', title: 'My Records', text: 'View all your saved timelines. Features include:\n\u2022 Search by name, notes, or case number\n\u2022 Filter by date range\n\u2022 Sort by clicking column headers\n\u2022 Expand the arrow next to a name to view the document summary\n\u2022 Click the document name to load the full timeline' },
+      { section: 'Document Insight', title: 'Annotate Events (Add Notes)', text: 'After extracting a timeline, each event has a note icon. Click it to open the "Annotate Event" modal where you can:\n\u2022 Set a flag: Verify this date, Important, or Conflict\n\u2022 Add a free-text note to the event\n\u2022 Remove annotations with the X button\nAnnotations appear inline under the event and are saved when you save the record.' },
+      { section: 'Document Insight', title: 'Record Actions (Icons)', text: '\u270E Pencil \u2014 Edit the record name and case/matter number\n\ud83d\udc65 People \u2014 Share the record with other staff members\n\ud83d\uddd1 Trash \u2014 Delete the record permanently' },
+      { section: 'Document Insight', title: 'Export DOCX Formatting', text: 'When exporting a timeline to Word (DOCX):\n\u2022 HIGH significance events are highlighted in yellow with bold text\n\u2022 Annotations appear with an orange left border in italic\n\u2022 Regular events have a plain white background\nThis makes it easy to spot the most important events when reviewing the document.' },
+      { section: 'Document Insight', title: 'Export Summary (DOCX)', text: 'When viewing a record summary (expanded arrow), click "Export DOCX" to download the summary as a Word document.' },
+      { section: 'Document Insight', title: 'Merge Records', text: 'Use the checkboxes to select 2 or more records, then click "Merge Selected" to combine their timelines into a single deduplicated record.' },
+      { section: 'Document Insight', title: 'Ask About This Timeline', text: 'After extracting or loading a timeline, use the Q&A panel to ask questions about the events, dates, parties, and patterns. Supports multi-turn conversation with full context.' },
+      { section: 'Document Insight', title: 'Activity Log', text: 'View a history of your actions \u2014 saves, deletes, shares, and merges. Searchable by keyword.' },
 
       { section: 'Translation', title: 'Translate a Document', text: 'Select a target language (English, Spanish, or Brazilian Portuguese), upload one or more PDF/TXT files, and click "Translate". Large documents are chunked and translated automatically.' },
       { section: 'Translation', title: 'Source Language Detection', text: 'The system automatically detects the source language. For example, uploading a Spanish document and selecting English will translate it to English.' },
@@ -2517,22 +2896,35 @@
       { section: 'Translation', title: 'Ask About This Translation', text: 'After translating or loading a translation, ask questions about terminology, content, or translation choices in the Q&A panel.' },
       { section: 'Translation', title: 'Translation Activity Log', text: 'View a history of your translation saves and deletes. Searchable by keyword.' },
 
-      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Timeline or Translation' },
+      { section: 'Discovery', title: 'What Discovery Does', text: 'The Discovery tab tracks the subpoena → production → review workflow for a disciplinary matter. For each case (docket) you issue a subpoena to the respondent attorney, upload the attorney’s production (client file and/or financial records), and the app reconciles what was produced against what the subpoena demanded — flagging missing items' + (RULE_ANALYSIS_ENABLED ? ', Rule 1.15 trust-record gaps, and drafting a deficiency letter' : '') + '.' },
+      { section: 'Discovery', title: 'Create a Docket (Case)', text: 'Click “+ New Case” and enter the respondent attorney (and optional firm), the client/matter party, and a caption. The app assigns a docket number automatically (e.g. ODC-2026-0001). Cases are listed with their phase and status; click a row to open the case detail.' },
+      { section: 'Discovery', title: 'Issue a Subpoena', text: 'In a case, choose the subpoena type and set the issued + response-due dates, then click “+ Subpoena”. The standard document-request checklist is seeded automatically by type:\n• Client file + Financial records (BOTH) → 12 items\n• Client file only → 5 items\n• Financial records only → 7 items\nThese 12 items come from ODC’s standard subpoena attachment. Match the type to the matter — requesting financial records on a non-financial matter will show those items as “missing.”' },
+      { section: 'Discovery', title: 'Upload & Process a Production', text: 'Click “📤 Upload & process a production” on a subpoena and select the attorney’s PDF. The app runs in the background: extract text → OCR scanned pages (local first, Vision fallback) → index sub-documents → reconcile. You’ll see live status — “OCR 340 / 1227”, “Indexing sub-documents”, then “Reconciling”. Large scanned productions are supported and OCR runs at essentially no API cost.' },
+      { section: 'Discovery', title: 'Reconciliation Results', text: 'When processing finishes, each requested item gets a status badge:\n• RECEIVED — the actual artifact is present\n• PARTIAL — present but incomplete (e.g. some months of statements)\n• MISSING — not produced (note: demand/cover-letter text that merely names an item does NOT count as produced)\n• DEFECTIVE — present but unusable/illegible\nEach received item links to the sub-document that satisfied it.' },
+      { section: 'Discovery', title: 'Rule 1.15 Flags & Deficiency Letter', ruleAnalysis: true, text: 'If trust-record items (general ledger, subsidiary client ledger) are missing or defective on a matter involving client funds, the app raises a Rule 1.15 (Safekeeping Property) flag. When anything is missing/partial/defective, it also drafts a follow-up deficiency letter describing exactly what the attorney must still produce (expand “Draft deficiency letter”).' },
+      { section: 'Discovery', title: 'Discovery Dashboard & Overdue Subpoenas', text: 'The top of the Discovery tab shows case counts by phase and an Overdue widget. A subpoena is overdue when its response deadline (or extended deadline) has passed without a full production. Overdue subpoenas are listed in red.' },
+      { section: 'Discovery', title: 'Delete a Docket or Production', text: 'Click the 🗑 icon on a case row to delete a docket — this permanently removes its subpoenas and productions (saved Document Insight timeline records are preserved, just unlinked). Click the 🗑 on an individual production to remove just that production. Both require confirmation and are recorded in the audit log.' },
 
-      { section: 'Records Management', title: 'Status Tracking', text: 'Each record has a status badge: Draft, In Review, Complete, or Flagged.\n\u2022 Click the gear icon (\u2699) next to a record to change its status\n\u2022 Color-coded: gray=Draft, yellow=In Review, green=Complete, red=Flagged' },
+      { section: 'Dashboard', title: 'Dashboard Overview', text: 'The Dashboard is your home tab after logging in. It shows:\n\u2022 4 stat cards: Timeline Records, Translations, Shared With Me, Unread Notifications\n\u2022 Timeline Status breakdown: Draft, In Review, Complete, Flagged counts (hover to see recent files)\n\u2022 Translation Status breakdown: same as above\n\u2022 Recent Activity feed (last 5 actions)\n\u2022 Quick Action buttons to jump to Document Insight or Translation' },
+
+      { section: 'Records Management', title: 'Status Tracking', text: 'Each record has a status badge: Draft, In Review, Complete, or Flagged.\n\u2022 Click the gear icon (\u2699) in the Actions column to change status via a dropdown\n\u2022 Color-coded: gray=Draft, yellow=In Review, green=Complete, red=Flagged\n\u2022 Status is a sortable column in My Records' },
       { section: 'Records Management', title: 'Tags / Labels', text: 'Click the tag icon (\ud83c\udff7) next to any record to add custom labels.\n\u2022 Enter tags as comma-separated values (e.g. "Urgent, Smith Case, 2024")\n\u2022 Tags appear as blue badges on the record\n\u2022 Useful for organizing by topic, case type, or urgency' },
       { section: 'Records Management', title: 'Print Timeline', text: 'Click "Print Timeline" in My Records to open a clean, formatted print page in a new window. Includes all events in a table with key dates.' },
       { section: 'Records Management', title: 'Compare Timelines', text: 'Click "Compare" in My Records to select two records and view them side-by-side in a new window.' },
       { section: 'Records Management', title: 'Bulk Export', text: 'Select multiple records using checkboxes, then click "Bulk Export DOCX" to download them all as a single Word document with separate sections.' },
       { section: 'Records Management', title: 'Notifications', text: 'The bell icon in the tab bar shows your unread notification count.\n\u2022 You get notified when someone shares a record with you\n\u2022 Click the bell to view all notifications\n\u2022 "Mark all read" clears the unread badge' },
 
-      { section: 'Admin', title: 'Admin Panel', text: 'The Admin tab shows:\n\u2022 Records count per staff member (timelines + translations)\n\u2022 Full activity log across all staff (last 200 entries)\n\u2022 Searchable by keyword' },
+      { section: 'Admin', title: 'Admin Panel', text: 'The Admin tab is only visible to admin users (e.g. Abesha). It includes:\n\u2022 User Management: add users, disable/enable accounts, reset PINs, change roles\n\u2022 Records by Staff: timeline and translation counts per staff member\n\u2022 Full activity log across all staff (last 200 entries), searchable by keyword\n\nDisabled users cannot log in and see "Account is disabled".' },
+      { section: 'Admin', title: 'Add / Manage Users', text: 'In the Admin tab, click "+ Add User" to create a new account with a username, PIN, and role (Staff or Admin).\n\u2022 Reset PIN: click the key icon to set a new password for any user\n\u2022 Make Staff / Make Admin: toggle a user\'s role\n\u2022 Disable / Enable: deactivate or reactivate a user account\n\nAll admin actions are recorded in the audit trail.' },
 
       { section: 'Tips', title: 'Session Timeout', text: 'For security, you are automatically logged out after 30 minutes of inactivity. Any mouse, keyboard, click, or scroll activity resets the timer.' },
-      { section: 'Tips', title: 'Large Documents (500+ pages)', text: 'Documents over 500 pages are split into larger chunks (~100 pages each) to optimize processing. You\'ll see a progress bar showing chunk-by-chunk extraction.' },
+      { section: 'Tips', title: 'Large & Scanned Documents', text: 'Documents over 500 pages are split into larger chunks (~100 pages each) and processed in parallel. Fully-scanned/image-only documents (including 1,000+ page productions) are OCR’d locally first (Tesseract) with Claude Vision used only as a fallback for low-confidence pages — fast and at near-zero API cost. You’ll see a live page-by-page progress count during OCR.' },
       { section: 'Tips', title: 'Keyboard Shortcuts', text: 'Enter \u2014 Submit a question in Q&A panels\nShift+Enter \u2014 New line in Q&A text areas\nCtrl+S \u2014 Save the current timeline record' },
       { section: 'Tips', title: 'Source Links in Timelines', text: 'Clickable source links in timeline events open a preview of the original document at the referenced page. If loaded from saved records (file not in session), you\'ll see the source reference info instead.' },
     ];
+
+    // Hide disciplinary-rule AI analysis topics while that capability is disabled.
+    const helpTopics = helpTopicsAll.filter(t => RULE_ANALYSIS_ENABLED || !t.ruleAnalysis);
 
     function toggleHelpPanel() {
       const panel = document.getElementById('helpPanel');
@@ -2582,7 +2974,7 @@
           body: JSON.stringify({ question: query })
         });
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || 'Failed');
+        if (!response.ok || !data.success) throw new Error(apiErr(data, 'Failed'));
 
         container.innerHTML = '<div style="margin-bottom:24px;">'
           + '<div style="font-size:12px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">AI Answer</div>'
@@ -2617,7 +3009,7 @@
         sections[t.section].push(t);
       }
 
-      const sectionIcons = { 'Getting Started': '\ud83d\ude80', 'Dashboard': '\ud83d\udcca', 'Document Timeline': '\ud83d\udcc5', 'Translation': '\ud83c\udf10', 'Records Management': '\ud83d\udcc1', 'Admin': '\ud83d\udd12', 'Tips': '\ud83d\udca1' };
+      const sectionIcons = { 'Getting Started': '\ud83d\ude80', 'Dashboard': '\ud83d\udcca', 'Document Insight': '\ud83d\udcc5', 'Discovery': '\ud83d\udccb', 'Translation': '\ud83c\udf10', 'Records Management': '\ud83d\udcc1', 'Admin': '\ud83d\udd12', 'Tips': '\ud83d\udca1' };
 
       let html = '';
       for (const [section, items] of Object.entries(sections)) {
@@ -2691,6 +3083,277 @@
       document.getElementById('tab-' + tabId).classList.add('active');
       if (tabId === 'admin') loadAdminPanel();
       if (tabId === 'dashboard') loadDashboard();
+      if (tabId === 'discovery') loadDiscovery();
+    }
+
+    // ========================================
+    // Discovery (subpoenas / productions / reconciliation)
+    // ========================================
+    let discoveryCurrentCaseId = null;
+    const DISC_ITEM_LABELS = {}; // id -> label, filled from /checklist
+
+    async function loadDiscovery() {
+      try {
+        if (Object.keys(DISC_ITEM_LABELS).length === 0) {
+          const cl = await (await fetch('/api/discovery/checklist')).json();
+          (cl.checklist || []).forEach(i => { DISC_ITEM_LABELS[i.id] = i.label; });
+        }
+        const [dash, cases] = await Promise.all([
+          (await fetch('/api/discovery/dashboard')).json(),
+          (await fetch('/api/discovery/cases')).json()
+        ]);
+        renderDiscoveryDashboard(dash);
+        renderCasesList(cases.cases || []);
+        if (discoveryCurrentCaseId) openCase(discoveryCurrentCaseId);
+      } catch (e) {
+        document.getElementById('discoveryCasesList').innerHTML = '<p style="color:var(--color-danger,#c0392b);font-size:13px;">Failed to load discovery data.</p>';
+      }
+    }
+
+    function discStatCard(label, value, color) {
+      return '<div style="flex:1;min-width:120px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:12px 14px;">'
+        + '<div style="font-size:24px;font-weight:700;color:' + (color || 'var(--color-text)') + ';">' + value + '</div>'
+        + '<div style="font-size:12px;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.03em;">' + label + '</div></div>';
+    }
+
+    function renderDiscoveryDashboard(d) {
+      const el = document.getElementById('discoveryDashboard');
+      const overdue = d.overdueSubpoenas || [];
+      let html = discStatCard('Cases', d.totalCases || 0)
+        + discStatCard('Overdue subpoenas', overdue.length, overdue.length ? 'var(--color-danger,#c0392b)' : 'var(--color-text)');
+      const phases = d.byPhase || {};
+      Object.keys(phases).forEach(p => html += discStatCard(p.replace(/_/g, ' '), phases[p]));
+      if (overdue.length) {
+        html += '<div style="flex-basis:100%;margin-top:6px;font-size:12px;color:var(--color-danger,#c0392b);">&#9888; Overdue: '
+          + overdue.map(o => escapeHtml(o.docket_number) + ' (' + o.type + ', due ' + (o.deadline || '?') + ')').join(' · ') + '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function renderCasesList(cases) {
+      const el = document.getElementById('discoveryCasesList');
+      if (!cases.length) { el.innerHTML = '<p style="color:var(--color-text-muted);font-size:13px;">No cases yet. Create one to start tracking subpoenas.</p>'; return; }
+      let h = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="text-align:left;border-bottom:2px solid var(--color-border-light);color:var(--color-text-muted);font-size:11px;text-transform:uppercase;">'
+        + '<th style="padding:6px 8px;">Docket</th><th style="padding:6px 8px;">Client / Matter</th><th style="padding:6px 8px;">Phase</th><th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;"></th></tr></thead><tbody>';
+      cases.forEach(c => {
+        h += '<tr class="disc-row" onclick="openCase(' + c.id + ')" style="border-bottom:1px solid var(--color-border-light);">'
+          + '<td style="padding:8px;font-weight:600;">' + escapeHtml(c.docket_number) + '</td>'
+          + '<td style="padding:8px;">' + escapeHtml(c.client_name || c.matter_caption || '—') + '</td>'
+          + '<td style="padding:8px;">' + escapeHtml((c.phase || '').replace(/_/g, ' ')) + '</td>'
+          + '<td style="padding:8px;">' + escapeHtml(c.status || '') + '</td>'
+          + '<td style="padding:8px;text-align:right;"><span onclick="event.stopPropagation();deleteDiscoveryCase(' + c.id + ',\'' + escapeHtml(c.docket_number) + '\')" style="cursor:pointer;font-size:15px;color:var(--color-danger,#c0392b);" title="Delete docket">&#128465;</span></td></tr>';
+      });
+      el.innerHTML = h + '</tbody></table>';
+    }
+
+    async function deleteDiscoveryCase(id, docket) {
+      if (!confirm('Delete docket ' + docket + ' and ALL of its subpoenas and productions?\n\nThis is permanent and will be recorded in the audit log.')) return;
+      try {
+        const r = await fetch('/api/discovery/cases/' + id + '?staff_id=' + encodeURIComponent(loggedInStaff || ''), { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!d.success) throw new Error(apiErr(d, 'HTTP ' + r.status));
+        if (discoveryCurrentCaseId === id) closeCaseDetail();
+        loadDiscovery();
+      } catch (e) { alert('Failed to delete docket: ' + e.message); }
+    }
+
+    async function deleteDiscoveryProduction(id) {
+      if (!confirm('Delete this production and its reconciliation results?\n\nThis is permanent and will be recorded in the audit log.')) return;
+      try {
+        const r = await fetch('/api/discovery/productions/' + id + '?staff_id=' + encodeURIComponent(loggedInStaff || ''), { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!d.success) throw new Error(apiErr(d, 'HTTP ' + r.status));
+        if (discoveryCurrentCaseId) openCase(discoveryCurrentCaseId);
+      } catch (e) { alert('Failed to delete production: ' + e.message); }
+    }
+
+    function toggleNewCaseForm() {
+      const f = document.getElementById('newCaseForm');
+      f.style.display = f.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function createCase() {
+      const err = document.getElementById('newCaseError');
+      err.classList.remove('active');
+      const name = document.getElementById('ncRespondent').value.trim();
+      if (!name) { err.textContent = 'Respondent attorney name is required.'; err.classList.add('active'); return; }
+      try {
+        const resp = await (await fetch('/api/discovery/respondents', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, name, firm: document.getElementById('ncFirm').value.trim() || null })
+        })).json();
+        const cs = await (await fetch('/api/discovery/cases', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, respondent_id: resp.id, client_name: document.getElementById('ncClient').value.trim() || null, matter_caption: document.getElementById('ncCaption').value.trim() || null })
+        })).json();
+        ['ncRespondent','ncFirm','ncClient','ncCaption'].forEach(id => document.getElementById(id).value = '');
+        toggleNewCaseForm();
+        await loadDiscovery();
+        if (cs.id) openCase(cs.id);
+      } catch (e) { err.textContent = 'Failed to create case.'; err.classList.add('active'); }
+    }
+
+    async function openCase(id) {
+      discoveryCurrentCaseId = id;
+      const panel = document.getElementById('discoveryCaseDetail');
+      panel.style.display = 'block';
+      try {
+        const data = await (await fetch('/api/discovery/cases/' + id)).json();
+        renderCaseDetail(data);
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) { panel.innerHTML = '<p style="color:var(--color-danger,#c0392b);">Failed to load case.</p>'; }
+    }
+
+    function closeCaseDetail() {
+      discoveryCurrentCaseId = null;
+      document.getElementById('discoveryCaseDetail').style.display = 'none';
+    }
+
+    function checklistBadge(status) {
+      const s = (status || 'pending').toLowerCase();
+      return '<span class="disc-badge ci-' + s + '">' + s + '</span>';
+    }
+
+    function renderCaseDetail(data) {
+      const c = data.case; const subs = data.subpoenas || [];
+      let h = '<div class="panel-header"><h2 class="panel-title">' + escapeHtml(c.docket_number) + ' — ' + escapeHtml(c.client_name || c.matter_caption || '') + '</h2>'
+        + '<button class="btn btn-secondary" onclick="closeCaseDetail()" style="font-size:11px;padding:3px 10px;">Close</button></div>';
+      h += '<div style="font-size:13px;color:var(--color-text-muted);margin-bottom:14px;">Phase: ' + escapeHtml((c.phase || '').replace(/_/g, ' ')) + ' · Status: ' + escapeHtml(c.status || '') + '</div>';
+
+      // New subpoena form
+      h += '<div style="background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:12px;margin-bottom:14px;">'
+        + '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:10px;align-items:end;">'
+        + '<div><label class="disc-lbl">Subpoena type</label><select id="nsType" class="disc-sel"><option value="BOTH">Client file + Financial records</option><option value="CLIENT_FILE">Client file only</option><option value="FINANCIAL_RECORDS">Financial records only</option></select></div>'
+        + '<div><label class="disc-lbl">Issued</label><input id="nsIssued" type="date" class="disc-in"></div>'
+        + '<div><label class="disc-lbl">Response due</label><input id="nsDue" type="date" class="disc-in"></div>'
+        + '<div><button class="btn btn-primary" onclick="createSubpoena(' + c.id + ')" style="font-size:12px;padding:8px 14px;">+ Subpoena</button></div>'
+        + '</div></div>';
+
+      if (!subs.length) {
+        h += '<p style="color:var(--color-text-muted);font-size:13px;">No subpoenas yet. Issue one above, then upload the attorney\'s production to reconcile it.</p>';
+      }
+      subs.forEach(s => {
+        h += '<div style="border:1px solid var(--color-border-light);border-radius:8px;padding:14px;margin-bottom:12px;">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
+          + '<div style="font-weight:600;font-size:14px;">Subpoena #' + s.id + ' · ' + s.subpoena_type.replace(/_/g, ' ') + '</div>'
+          + '<div style="font-size:12px;color:var(--color-text-muted);">Issued ' + (s.issuance_date || '—') + ' · Due ' + (s.extended_deadline || s.response_deadline || '—') + ' · <strong>' + escapeHtml(s.status) + '</strong></div></div>';
+        h += '<div style="font-size:12px;color:var(--color-text-muted);margin:6px 0;">' + (s.requested_items || []).length + ' items requested</div>';
+        h += '<button class="btn btn-primary" onclick="startNewProduction(' + s.id + ')" style="font-size:12px;padding:6px 12px;">&#128228; Upload &amp; process a production</button>';
+
+        (s.productions || []).forEach(p => {
+          h += '<div style="margin-top:12px;border-top:1px dashed var(--color-border-light);padding-top:10px;">';
+          h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+            + '<div id="prodStatus-' + p.id + '" style="font-size:12px;color:var(--color-text-muted);margin-bottom:6px;">'
+            + 'Production v' + p.version_number + (p.received_date ? ' · received ' + p.received_date : '')
+            + ' · <strong>' + escapeHtml(p.status) + '</strong>'
+            + (p.page_count ? ' · ' + p.page_count + ' pp' : '')
+            + (p.is_image_only ? ' · <span title="scanned, OCR\'d">image-only/OCR</span>' : '')
+            + '</div>'
+            + '<span onclick="deleteDiscoveryProduction(' + p.id + ')" style="cursor:pointer;font-size:14px;color:var(--color-danger,#c0392b);flex-shrink:0;" title="Delete production">&#128465;</span>'
+            + '</div>';
+          const items = p.items || [];
+          if (items.length) {
+            h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">';
+            items.forEach(it => {
+              h += '<tr style="border-bottom:1px solid var(--color-border-light);">'
+                + '<td style="padding:5px 6px;width:62px;">' + checklistBadge(it.status) + '</td>'
+                + '<td style="padding:5px 6px;">' + escapeHtml(DISC_ITEM_LABELS[it.item_type] || it.item_type) + '</td>'
+                + '<td style="padding:5px 6px;color:var(--color-text-muted);">' + escapeHtml(it.source_section_id || '') + '</td></tr>';
+            });
+            h += '</table>';
+          }
+          // Rule 1.15 flags + deficiency-letter draft — disciplinary-rule AI analysis,
+          // hidden unless RULE_ANALYSIS_ENABLED. The mechanical produced-vs-requested
+          // reconciliation above stays visible.
+          if (RULE_ANALYSIS_ENABLED) {
+            let flags = []; try { flags = JSON.parse(p.rule115_flags || '[]'); } catch (e) {}
+            if (flags.length) {
+              h += '<div style="margin-top:8px;background:#fde8e8;border:1px solid #f5c6cb;border-radius:6px;padding:8px 10px;font-size:12px;color:#c0392b;">'
+                + '<strong>&#9888; Rule 1.15 flags</strong><ul style="margin:4px 0 0;padding-left:18px;">'
+                + flags.map(f => '<li>' + escapeHtml(f) + '</li>').join('') + '</ul></div>';
+            }
+            if (p.follow_up) {
+              h += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--color-primary);">Draft deficiency letter</summary>'
+                + '<div style="white-space:pre-wrap;font-size:12px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:6px;padding:10px;margin-top:6px;">' + escapeHtml(p.follow_up) + '</div></details>';
+            }
+          }
+          h += '</div>';
+        });
+        h += '</div>';
+      });
+      document.getElementById('discoveryCaseDetail').innerHTML = h;
+    }
+
+    async function createSubpoena(caseId) {
+      try {
+        await fetch('/api/discovery/cases/' + caseId + '/subpoenas', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, subpoena_type: document.getElementById('nsType').value, issuance_date: document.getElementById('nsIssued').value || null, response_deadline: document.getElementById('nsDue').value || null })
+        });
+        openCase(caseId);
+        loadDiscovery();
+      } catch (e) { alert('Failed to create subpoena.'); }
+    }
+
+    let _pendingProductionSubpoena = null;
+    function startNewProduction(subpoenaId) {
+      _pendingProductionSubpoena = subpoenaId;
+      let input = document.getElementById('discProdFileInput');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'file'; input.id = 'discProdFileInput'; input.accept = '.pdf'; input.style.display = 'none';
+        input.onchange = onProductionFileChosen;
+        document.body.appendChild(input);
+      }
+      input.value = '';
+      input.click();
+    }
+
+    async function onProductionFileChosen(ev) {
+      const file = ev.target.files[0];
+      const subpoenaId = _pendingProductionSubpoena;
+      if (!file || !subpoenaId) return;
+      try {
+        if (!loggedInStaff) throw new Error('You are not signed in. Refresh the page and sign in again.');
+        // 1) create the production record
+        const createResp = await fetch('/api/discovery/subpoenas/' + subpoenaId + '/productions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, received_date: new Date().toISOString().slice(0, 10) })
+        });
+        const prod = await createResp.json().catch(() => ({}));
+        if (!prod.id) {
+          throw new Error((apiErr(prod, 'could not create production'))
+            + ' [HTTP ' + createResp.status + ', signed in as "' + loggedInStaff + '", subpoena ' + subpoenaId + ']');
+        }
+        // 2) upload + process
+        const fd = new FormData();
+        fd.append('staff_id', loggedInStaff);
+        fd.append('file', file);
+        const procResp = await fetch('/api/discovery/productions/' + prod.id + '/process', { method: 'POST', body: fd });
+        const started = await procResp.json().catch(() => ({}));
+        if (!started.success) throw new Error((apiErr(started, 'processing did not start')) + ' [HTTP ' + procResp.status + ']');
+        openCase(discoveryCurrentCaseId);
+        pollProductionJob(prod.id);
+      } catch (e) { alert('Upload/processing failed: ' + e.message); }
+    }
+
+    async function pollProductionJob(productionId) {
+      let done = false, tries = 0;
+      while (!done && tries < 400) {
+        tries++;
+        await new Promise(r => setTimeout(r, 4000));
+        let job;
+        try { job = (await (await fetch('/api/discovery/productions/' + productionId + '/job')).json()).job; } catch (e) { continue; }
+        if (!job) continue;
+        const el = document.getElementById('prodStatus-' + productionId);
+        if (el) el.innerHTML = '<span class="loading-spinner" style="width:12px;height:12px;display:inline-block;vertical-align:middle;"></span> ' + escapeHtml(job.status) + ' — ' + escapeHtml(job.message || '');
+        if (job.status === 'done' || job.status === 'failed') {
+          done = true;
+          if (job.status === 'failed' && el) el.innerHTML = '<span style="color:var(--color-danger,#c0392b);">Processing failed: ' + escapeHtml(job.error || '') + '</span>';
+          openCase(discoveryCurrentCaseId);
+          loadDiscovery();
+        }
+      }
     }
 
     // ========================================
@@ -2746,7 +3409,7 @@
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Request failed');
+          throw new Error(apiErr(data, 'Request failed'));
         }
 
         // Add to conversation history
@@ -2854,6 +3517,16 @@
 
     // Allow Enter key to submit question (Shift+Enter for new line)
     document.addEventListener('DOMContentLoaded', function() {
+      // Hide disciplinary-rule AI controls when the capability is disabled (see RULE_ANALYSIS_ENABLED).
+      if (!RULE_ANALYSIS_ENABLED) {
+        ['timelineRuleXiLabel', 'ruleXiCompareBtn', 'ruleXiCompareNote'].forEach(function(id) {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+        const rx = document.getElementById('timelineRuleXi');
+        if (rx) rx.checked = false;
+      }
+
       const qaTextarea = document.getElementById('qaQuestion');
       if (qaTextarea) {
         qaTextarea.addEventListener('keydown', function(e) {
@@ -3016,6 +3689,20 @@
       return div.innerHTML;
     }
 
+    // Extract a human-readable message from an API error response. The standard
+    // shape is { error: { code, message } }, but some routes send { error: "..." }
+    // or { message: "..." }. Always returns a string so nothing renders as
+    // "[object Object]".
+    function apiErr(data, fallback) {
+      var fb = fallback || 'Request failed';
+      if (!data || typeof data !== 'object') return fb;
+      var e = data.error;
+      if (e && typeof e === 'object') e = e.message;
+      var msg = e || data.message;
+      if (msg && typeof msg !== 'string') msg = JSON.stringify(msg);
+      return msg || fb;
+    }
+
     function renderTimelineSource(source) {
       let filename, page, quote;
 
@@ -3077,7 +3764,7 @@
       if (!fileEntry) {
         const pageHtml = page ? '<div style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 12px;">Page ' + page + '</div>' : '';
         const quoteHtml = quote ? '<div style="margin-top: 12px; padding: 14px 18px; background: var(--color-bg); border-left: 3px solid var(--color-primary); border-radius: 4px; font-size: 14px; color: var(--color-text); line-height: 1.6; font-style: italic;">' + escapeHtml(quote) + '</div>' : '';
-        const reuploadHtml = '<div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-light); font-size: 12px; color: var(--color-text-muted);">To view the full document, re-upload it in the Document Timeline tab.</div>';
+        const reuploadHtml = '<div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-light); font-size: 12px; color: var(--color-text-muted);">To view the full document, re-upload it in the Document Insight tab.</div>';
         pageIndicatorEl.textContent = page ? 'Page ' + page : '';
         bodyEl.innerHTML = '<div style="padding: 28px 24px;">'
           + '<div style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">Source Reference</div>'
@@ -3147,14 +3834,17 @@
     }
 
     document.addEventListener('click', function(event) {
-      if (event.target.classList.contains('source-link')) {
+      const link = event.target.closest('.source-link');
+      if (link) {
         event.preventDefault();
-        const filename = event.target.dataset.filename;
-        const page = event.target.dataset.page ? parseInt(event.target.dataset.page) : null;
-        const quote = event.target.dataset.quote || '';
+        const filename = link.dataset.filename;
+        const page = link.dataset.page ? parseInt(link.dataset.page) : null;
+        const quote = link.dataset.quote || '';
 
-        // If we have source texts, open the source panel and highlight
-        if (lastSourceTexts.length > 0) {
+        // Table-of-Contents entries always jump to the PDF page, never the text panel
+        const isTocEntry = link.classList.contains('toc-entry');
+
+        if (!isTocEntry && lastSourceTexts.length > 0) {
           openSourceWithHighlight(filename, quote);
         } else {
           openFilePreview(filename, page, quote);
@@ -3271,6 +3961,8 @@ ${a.summary || 'No summary available'}
         });
       }
 
+      // Potential rule violations omitted from export unless disciplinary-rule AI analysis is enabled (see RULE_ANALYSIS_ENABLED).
+      if (RULE_ANALYSIS_ENABLED) {
       text += `POTENTIAL RULE VIOLATIONS (${a.potentialViolations?.length || 0})
 ───────────────────────────────────────────────────────────────
 `;
@@ -3290,6 +3982,7 @@ Likelihood Rationale: ${v.likelihoodRationale}
         }
         text += '\n';
       });
+      }
 
       text += `AGGRAVATING & MITIGATING FACTORS
 ───────────────────────────────────────────────────────────────
@@ -3414,7 +4107,7 @@ All conclusions require human review and professional judgment.
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Analysis failed');
+          throw new Error(apiErr(data, 'Analysis failed'));
         }
 
         displayResults(data.analysis, data.usage);
@@ -3511,8 +4204,8 @@ All conclusions require human review and professional judgment.
         `;
       }
 
-      // POTENTIAL VIOLATIONS
-      html += `
+      // POTENTIAL VIOLATIONS — hidden unless disciplinary-rule AI analysis is enabled (see RULE_ANALYSIS_ENABLED).
+      if (RULE_ANALYSIS_ENABLED) html += `
         <div class="section">
           <div class="section-header">
             <span class="section-icon">&#9888;</span>
@@ -3796,82 +4489,183 @@ All conclusions require human review and professional judgment.
       progressFill.style.width = '0%';
 
       try {
-        const formData = new FormData();
-        timelineUploadedFiles.forEach((f) => {
-          formData.append('files', f.file);
-        });
-        if (additionalContext) {
-          formData.append('additionalContext', additionalContext);
+        // Upload each file in small chunks so no single request is large enough
+        // to hit the load balancer's request timeout (big productions can take
+        // minutes to transfer). Chunks are appended server-side into one temp
+        // file, then /process reads the assembled file and streams results.
+        const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per chunk — smaller = gentler on a flaky link, less to re-send
+        const uploads = [];
+        let totalBytes = 0;
+        timelineUploadedFiles.forEach((f) => { totalBytes += f.file.size; });
+        let sentBytes = 0;
+        progressText.textContent = 'Uploading documents...';
+        progressBar.style.display = 'block';
+        progressFill.style.width = '0%';
+
+        for (const f of timelineUploadedFiles) {
+          const file = f.file;
+          const uploadId = (window.crypto && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+          const numChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+          for (let i = 0; i < numChunks; i++) {
+            const blob = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
+            // Upload this chunk, retrying transient failures (network blips such as
+            // ERR_NETWORK_CHANGED / dropped connections, or 5xx) so one hiccup over
+            // a long multi-chunk upload doesn't fail the whole thing. Re-sending is
+            // safe: the server only appends a chunk after receiving it in full.
+            let attempt = 0;
+            const MAX_ATTEMPTS = 8;
+            for (;;) {
+              attempt++;
+              let retriable = false;
+              let errMsg = '';
+              try {
+                const fd = new FormData();
+                fd.append('uploadId', uploadId);
+                fd.append('filename', file.name);
+                // Absolute byte offset of this chunk — the server writes at this
+                // position so a retried chunk overwrites (not duplicates) its bytes.
+                fd.append('offset', String(i * CHUNK_SIZE));
+                fd.append('chunk', blob, 'chunk');
+                const up = await fetch('/api/timeline/upload', { method: 'POST', body: fd });
+                if (up.ok) break;
+                errMsg = 'HTTP ' + up.status;
+                try {
+                  const j = await up.json();
+                  errMsg = (j && j.error && (j.error.message || j.error)) || errMsg;
+                } catch (_) { /* keep default */ }
+                retriable = up.status >= 500; // server-side transient; 4xx won't change on retry
+              } catch (e) {
+                // fetch() rejected = network error (ERR_NETWORK_CHANGED, reset) — retriable
+                retriable = true;
+                errMsg = (e && e.message) ? e.message : String(e);
+              }
+              if (!retriable || attempt >= MAX_ATTEMPTS) {
+                throw new Error('Upload of "' + file.name + '" failed around ' +
+                  Math.round((i / numChunks) * 100) + '% — ' + errMsg +
+                  (retriable ? ' (after ' + attempt + ' attempts; check your network and retry)' : ''));
+              }
+              // Back off increasingly (capped at 8s) so a brief network/DNS
+              // outage of up to ~30s is ridden out instead of aborting the upload.
+              const backoff = Math.min(attempt * 1500, 8000);
+              progressDetail.textContent = 'Network dropped — retrying chunk ' + (i + 1) +
+                ' of ' + numChunks + ' in ' + Math.round(backoff / 1000) + 's (attempt ' +
+                (attempt + 1) + ' of ' + MAX_ATTEMPTS + ')...';
+              await new Promise((r) => setTimeout(r, backoff));
+            }
+            sentBytes += blob.size;
+            const pct = totalBytes ? Math.round((sentBytes / totalBytes) * 100) : 100;
+            progressFill.style.width = pct + '%';
+            progressDetail.textContent = 'Uploading ' + file.name + ' (' + pct + '%)';
+            if (progressCount) progressCount.textContent = pct + '% uploaded';
+          }
+          uploads.push({ uploadId: uploadId, filename: file.name, size: file.size });
         }
 
-        const response = await fetch('/api/timeline', {
-          method: 'POST',
-          body: formData
-        });
+        // All bytes uploaded — now run analysis over the assembled files.
+        progressText.textContent = 'Extracting timeline...';
+        progressDetail.textContent = 'Starting analysis...';
+        progressBar.style.display = 'none';
+        progressFill.style.width = '0%';
 
-        // Parse SSE stream
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        const ruleXiEl = document.getElementById('timelineRuleXi');
+        // Start processing as a background job and poll for progress + result.
+        // (A long-lived streaming response gets reset by the load balancer on big
+        // documents; short poll requests don't.)
+        const startResp = await fetch('/api/timeline/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uploads: uploads,
+            additionalContext: additionalContext || undefined,
+            ruleContext: !!(ruleXiEl && ruleXiEl.checked)
+          })
+        });
+        if (!startResp.ok) {
+          let m = 'Failed to start processing (HTTP ' + startResp.status + ').';
+          try { const j = await startResp.json(); m = (j && j.error && (j.error.message || j.error)) || m; } catch (_) { /* keep default */ }
+          throw new Error(m);
+        }
+        const startData = await startResp.json();
+        const jobId = startData.jobId;
+
+        // Applies one buffered progress/complete/error event to the UI.
         let totalChunks = 0;
         let resultData = null;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              var currentEvent = line.slice(7).trim();
-            }
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
-
-              if (currentEvent === 'progress') {
-                progressDetail.textContent = data.message;
-
-                if (data.step === 'extract_text') {
-                  progressText.textContent = 'Extracting text...';
-                } else if (data.step === 'text_extracted') {
-                  progressText.textContent = 'Text extracted';
-                } else if (data.step === 'chunked') {
-                  totalChunks = data.totalChunks || 0;
-                  progressText.textContent = 'Processing ' + totalChunks + ' chunks...';
-                  if (totalChunks > 1) {
-                    progressBar.style.display = 'block';
-                    progressFill.style.width = '0%';
-                    progressCount.textContent = '0 / ' + totalChunks + ' chunks';
-                  }
-                } else if (data.step === 'chunk_done') {
-                  const completed = data.completedChunks;
-                  const total = data.totalChunks || totalChunks;
-                  const pct = Math.round((completed / total) * 100);
-                  progressFill.style.width = pct + '%';
-                  progressCount.textContent = completed + ' / ' + total + ' chunks extracted';
-                  progressText.textContent = 'Extracting chunks (' + pct + '%)...';
-                } else if (data.step === 'merging' || data.step === 'final_merge') {
-                  progressText.textContent = 'Merging timelines...';
-                  progressBar.style.display = 'none';
-                } else if (data.step === 'cleanup') {
-                  progressText.textContent = 'Final cleanup...';
-                }
-              } else if (currentEvent === 'complete') {
-                resultData = data;
-              } else if (currentEvent === 'error') {
-                throw new Error(data.message);
+        const handleEvent = (ev) => {
+          if (ev.type === 'progress') {
+            const data = ev.data;
+            progressDetail.textContent = data.message;
+            if (data.step === 'extract_text') {
+              progressText.textContent = 'Extracting text...';
+            } else if (data.step === 'text_extracted') {
+              progressText.textContent = 'Text extracted';
+            } else if (data.step === 'chunked') {
+              totalChunks = data.totalChunks || 0;
+              progressText.textContent = 'Processing ' + totalChunks + ' chunks...';
+              if (totalChunks > 1) {
+                progressBar.style.display = 'block';
+                progressFill.style.width = '0%';
+                progressCount.textContent = '0 / ' + totalChunks + ' chunks';
               }
+            } else if (data.step === 'chunk_done') {
+              const completed = data.completedChunks;
+              const total = data.totalChunks || totalChunks;
+              const pct = Math.round((completed / total) * 100);
+              progressFill.style.width = pct + '%';
+              progressCount.textContent = completed + ' / ' + total + ' chunks extracted';
+              progressText.textContent = 'Extracting chunks (' + pct + '%)...';
+            } else if (data.step === 'merging' || data.step === 'final_merge') {
+              progressText.textContent = 'Merging timelines...';
+              progressBar.style.display = 'none';
+            } else if (data.step === 'cleanup') {
+              progressText.textContent = 'Final cleanup...';
             }
+          } else if (ev.type === 'complete') {
+            resultData = ev.data;
+          } else if (ev.type === 'error') {
+            throw new Error(ev.data.message);
           }
+        };
+
+        // Poll until the job finishes. Transient poll failures are tolerated.
+        let cursor = 0;
+        let pollFails = 0;
+        let notFound = 0;
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 2000));
+          let poll;
+          try {
+            poll = await fetch('/api/timeline/process/' + encodeURIComponent(jobId) + '?cursor=' + cursor);
+          } catch (e) {
+            if (++pollFails > 30) throw new Error('Lost connection while processing the document. Please try again.');
+            continue;
+          }
+          if (poll.status === 404) {
+            // Tolerate transient 404s: during a deploy/rollout there can briefly be
+            // two pods, and a poll may hit the one that isn't running this job. Keep
+            // polling (~30s) — once the other pod finishes draining, every poll hits
+            // the pod that owns the job. Only give up if it stays missing.
+            if (++notFound > 15) throw new Error('The processing job was lost (the server may have restarted mid-job). Please try again.');
+            continue;
+          }
+          if (!poll.ok) {
+            if (++pollFails > 30) throw new Error('Processing status error (HTTP ' + poll.status + ').');
+            continue;
+          }
+          pollFails = 0;
+          notFound = 0;
+          const upd = await poll.json();
+          cursor = upd.nextCursor;
+          for (const ev of (upd.events || [])) handleEvent(ev);
+          if (upd.status === 'complete' || upd.status === 'error') break;
         }
 
-        if (!resultData) throw new Error('No result received from server');
+        if (!resultData) throw new Error('Processing finished without returning a result. This can happen on very large or image-heavy PDFs. Try a smaller file or fewer pages.');
 
         lastSourceTexts = resultData.sourceTexts || [];
-        displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults);
+        displayTimeline(resultData.timeline, resultData.usage, resultData.ocrResults, resultData.duplicates);
       } catch (err) {
         showTimelineError(err.message);
       } finally {
@@ -3887,8 +4681,15 @@ All conclusions require human review and professional judgment.
       document.getElementById('timelinePlaceholder').style.display = 'block';
     }
 
-    function displayTimeline(t, usage, ocrResults) {
+    function displayTimeline(t, usage, ocrResults, duplicates) {
       const results = document.getElementById('timelineResults');
+      // Persist duplicates onto the timeline so internal re-renders (annotation,
+      // drag/drop, date edit, …) and saved-record round-trips keep the panel.
+      if (duplicates !== undefined) {
+        t.duplicates = duplicates;
+      } else if (t && t.duplicates) {
+        duplicates = t.duplicates;
+      }
       lastTimeline = t;
       document.getElementById('timelineExportButtons').style.display = 'flex';
       // Show the Q&A panel now that we have a timeline
@@ -3897,17 +4698,46 @@ All conclusions require human review and professional judgment.
 
       let html = '';
 
-      // OCR Quality warnings
+      // OCR Quality & Vision Clarity
       if (ocrResults && ocrResults.length > 0) {
-        const warnings = ocrResults.filter(r => r.quality !== 'good');
+        // Show Vision clarity for any file that used Vision OCR
+        const visionFiles = ocrResults.filter(r => r.visionPages > 0);
+        if (visionFiles.length > 0) {
+          html += '<div class="section" style="margin-bottom:16px;">';
+          visionFiles.forEach(r => {
+            const clarity = r.visionClarity != null ? r.visionClarity : 0;
+            let clarityColor, clarityLabel, clarityBg;
+            if (clarity >= 81) { clarityColor = '#10b981'; clarityLabel = 'Excellent'; clarityBg = '#ecfdf5'; }
+            else if (clarity >= 61) { clarityColor = '#3b82f6'; clarityLabel = 'Good'; clarityBg = '#eff6ff'; }
+            else if (clarity >= 41) { clarityColor = '#f59e0b'; clarityLabel = 'Fair'; clarityBg = '#fffbeb'; }
+            else if (clarity >= 21) { clarityColor = '#f97316'; clarityLabel = 'Poor'; clarityBg = '#fff7ed'; }
+            else { clarityColor = '#ef4444'; clarityLabel = 'Illegible'; clarityBg = '#fef2f2'; }
+            html += `
+              <div style="padding:12px 16px;margin-bottom:6px;background:${clarityBg};border:1px solid ${clarityColor};border-radius:8px;font-size:13px;display:flex;align-items:center;gap:14px;">
+                <div style="text-align:center;min-width:60px;padding:8px;background:${clarityColor};border-radius:8px;">
+                  <div style="font-size:20px;font-weight:700;color:#fff;">${clarity}%</div>
+                  <div style="font-size:9px;color:rgba(255,255,255,0.85);font-weight:600;">CLARITY</div>
+                </div>
+                <div>
+                  <strong>${escapeHtml(r.filename)}</strong>
+                  <span style="color:${clarityColor};font-weight:600;margin-left:6px;">${clarityLabel} readability</span>
+                  <div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">${r.visionPages} page(s) processed with Vision OCR</div>
+                  ${clarity < 41 ? '<div style="font-size:12px;color:var(--color-danger);margin-top:2px;">&#9888; Handwriting may be too unclear for accurate extraction — verify against original.</div>' : ''}
+                </div>
+              </div>`;
+          });
+          html += '</div>';
+        }
+
+        const warnings = ocrResults.filter(r => r.quality !== 'good' && !(r.visionPages > 0));
         if (warnings.length > 0) {
-          html += `<div class="section" style="margin-bottom:16px;">`;
+          html += '<div class="section" style="margin-bottom:16px;">';
           warnings.forEach(r => {
             const color = r.quality === 'poor' ? 'var(--color-danger)' : 'var(--color-warning)';
             const bg = r.quality === 'poor' ? 'var(--color-danger-bg)' : 'var(--color-warning-bg)';
             html += `
               <div style="padding:10px 14px;margin-bottom:6px;background:${bg};border:1px solid ${color};border-radius:8px;font-size:13px;display:flex;align-items:center;gap:10px;">
-                <span style="font-size:18px;">${r.quality === 'poor' ? '&#9888;' : '&#9888;'}</span>
+                <span style="font-size:18px;">&#9888;</span>
                 <div>
                   <strong style="color:${color};">${r.quality === 'poor' ? 'Low' : 'Fair'} scan quality</strong> for <strong>${escapeHtml(r.filename)}</strong>
                   <span style="color:var(--color-text-muted);"> (score: ${r.score}/100)</span>
@@ -3919,10 +4749,143 @@ All conclusions require human review and professional judgment.
         }
       }
 
-      // DOCUMENTS SUMMARY
+      // JUMP TO (in-page anchor nav)
+      const dupCount = duplicates && duplicates.matches ? duplicates.matches.length : 0;
+      html += `
+        <div class="section" style="background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">&#129517; Jump to</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;">
+            ${dupCount > 0 ? '<a href="#doc-insight-duplicates" style="color:var(--color-primary);text-decoration:none;">Duplicate Content (' + dupCount + ')</a>' : ''}
+            ${t.sections && t.sections.length > 0 ? '<a href="#doc-insight-toc" style="color:var(--color-primary);text-decoration:none;">Table of Contents (' + t.sections.length + ')</a>' : ''}
+            ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-files" style="color:var(--color-primary);text-decoration:none;">File Summaries</a>' : ''}
+            ${t.documents && t.documents.length > 0 ? '<a href="#doc-insight-docs" style="color:var(--color-primary);text-decoration:none;">Documents Analyzed (' + t.documents.length + ')</a>' : ''}
+            ${t.timelineSpan ? '<a href="#doc-insight-span" style="color:var(--color-primary);text-decoration:none;">Timeline Span</a>' : ''}
+            ${t.keyDates && t.keyDates.length > 0 ? '<a href="#doc-insight-keydates" style="color:var(--color-primary);text-decoration:none;">Key Dates (' + t.keyDates.length + ')</a>' : ''}
+            ${t.timeline && t.timeline.length > 0 ? '<a href="#doc-insight-timeline" style="color:var(--color-primary);text-decoration:none;">Chronological Timeline (' + t.timeline.length + ')</a>' : ''}
+            ${t.conflicts && t.conflicts.length > 0 ? '<a href="#doc-insight-conflicts" style="color:var(--color-primary);text-decoration:none;">Conflicts (' + t.conflicts.length + ')</a>' : ''}
+            ${t.notes && t.notes.length > 0 ? '<a href="#doc-insight-notes" style="color:var(--color-primary);text-decoration:none;">Notes</a>' : ''}
+          </div>
+        </div>
+      `;
+
+      // DUPLICATE CONTENT BLOCKS
+      if (duplicates && duplicates.matches && duplicates.matches.length > 0) {
+        const dupRow = (b) => {
+          const pageAttr = b.page != null ? 'data-page="' + b.page + '"' : '';
+          const pg = b.page != null ? 'p. ' + b.page : '';
+          return `<a class="source-link toc-entry" data-filename="${escapeHtml(b.filename)}" ${pageAttr} data-quote=""
+                     style="display:flex;gap:10px;padding:6px 10px;background:var(--color-surface);border:1px solid var(--color-border-light);border-radius:6px;text-decoration:none;color:inherit;cursor:pointer;align-items:flex-start;">
+                    <span style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--color-primary);min-width:48px;flex-shrink:0;">${pg}</span>
+                    <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;">${escapeHtml(b.filename)}</div><div style="font-size:12px;color:var(--color-text-muted);">${escapeHtml(b.preview)}…</div></div>
+                  </a>`;
+        };
+        html += `
+          <div class="section" id="doc-insight-duplicates">
+            <div class="section-header"><span class="section-icon">&#128203;</span><h3>Duplicate Content (${duplicates.matches.length})</h3></div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">Identical or near-identical content blocks detected within or across files. Click a location to open the source page.${duplicates.note ? ' <em>' + escapeHtml(duplicates.note) + '</em>' : ''}</div>
+            ${duplicates.matches.map(m => `
+              <div style="margin-bottom:10px;border:1px solid var(--color-border-light);border-radius:8px;padding:10px 12px;">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                  <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;${m.type === 'EXACT' ? 'background:#fde8e8;color:#c0392b;' : 'background:#fff4e0;color:#9a6700;'}">${m.type === 'EXACT' ? 'Exact duplicate' : 'Near duplicate (' + Math.round(m.similarity * 100) + '%)'}</span>
+                  <span style="font-size:11px;color:var(--color-text-muted);">${m.scope === 'cross-file' ? 'across files' : 'within a file'} · ${m.blocks.length} locations</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;">${m.blocks.map(dupRow).join('')}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // TABLE OF CONTENTS (sub-document index)
+      if (t.sections && t.sections.length > 0) {
+        // Group sections by filename so the TOC reads naturally per file
+        const sectionsByFile = {};
+        t.sections.forEach(s => {
+          const fn = s.filename || 'Unknown file';
+          if (!sectionsByFile[fn]) sectionsByFile[fn] = [];
+          sectionsByFile[fn].push(s);
+        });
+        // Sort each file's sections by startPage
+        Object.keys(sectionsByFile).forEach(fn => {
+          sectionsByFile[fn].sort((a, b) => (a.startPage || 0) - (b.startPage || 0));
+        });
+
+        const formatPageRange = (s) => {
+          if (s.startPage == null && s.endPage == null) return '';
+          if (s.startPage != null && s.endPage != null && s.startPage !== s.endPage) {
+            return 'p. ' + s.startPage + '–' + s.endPage;
+          }
+          return 'p. ' + (s.startPage != null ? s.startPage : s.endPage);
+        };
+
+        html += `
+          <div class="section" id="doc-insight-toc">
+            <div class="section-header">
+              <span class="section-icon">&#128214;</span>
+              <h3>Table of Contents (${t.sections.length})</h3>
+            </div>
+            <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">
+              Sub-documents detected inside the uploaded file${Object.keys(sectionsByFile).length > 1 ? 's' : ''}. Click any entry to open the source PDF at that page.
+            </div>
+            ${Object.keys(sectionsByFile).map(fn => `
+              <div style="margin-bottom:14px;">
+                ${Object.keys(sectionsByFile).length > 1 ? `<div style="font-size:12px;font-weight:700;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">${escapeHtml(fn)}</div>` : ''}
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  ${sectionsByFile[fn].map(s => {
+                    const pageRange = formatPageRange(s);
+                    const pageAttr = s.startPage != null ? 'data-page="' + s.startPage + '"' : '';
+                    return `
+                      <a class="source-link toc-entry" data-filename="${escapeHtml(fn)}" ${pageAttr} data-quote=""
+                         style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--color-surface);border:1px solid var(--color-border-light);border-radius:6px;text-decoration:none;color:inherit;cursor:pointer;transition:all 0.15s;"
+                         onmouseover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-bg)';"
+                         onmouseout="this.style.borderColor='var(--color-border-light)';this.style.background='var(--color-surface)';">
+                        ${pageRange ? `<span style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--color-primary);min-width:70px;flex-shrink:0;">${pageRange}</span>` : ''}
+                        <span style="font-size:10px;font-weight:600;padding:2px 7px;background:var(--color-primary);color:#fff;border-radius:10px;text-transform:uppercase;letter-spacing:0.03em;flex-shrink:0;">${escapeHtml(s.sectionType || 'OTHER')}</span>
+                        <div style="flex:1;min-width:0;">
+                          <div style="font-size:14px;font-weight:600;color:var(--color-text);line-height:1.4;">${escapeHtml(s.title || '(untitled section)')}</div>
+                          <div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px 12px;">
+                            ${s.date ? `<span>&#128197; ${escapeHtml(s.date)}</span>` : ''}
+                            ${s.parties ? `<span>&#128101; ${escapeHtml(s.parties)}</span>` : ''}
+                          </div>
+                          ${s.summary ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;line-height:1.5;">${escapeHtml(s.summary)}</div>` : ''}
+                        </div>
+                      </a>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // PER-FILE SUMMARIES (one card per uploaded file)
       if (t.documents && t.documents.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-files">
+            <div class="section-header">
+              <span class="section-icon">&#128221;</span>
+              <h3>File Summaries (${t.documents.length})</h3>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              ${t.documents.map((d, i) => `
+                <div style="border:1px solid var(--color-border-light);border-radius:8px;padding:14px 18px;background:var(--color-surface);">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+                    <span style="font-size:11px;font-weight:600;padding:2px 8px;background:var(--color-primary);color:#fff;border-radius:10px;text-transform:uppercase;letter-spacing:0.03em;">File ${i + 1}</span>
+                    <strong style="font-size:15px;color:var(--color-text);">${escapeHtml(d.filename)}</strong>
+                    ${d.documentType ? `<span style="font-size:10px;font-weight:600;padding:2px 7px;background:var(--color-bg);color:var(--color-text-secondary);border-radius:10px;text-transform:uppercase;">${escapeHtml(d.documentType)}</span>` : ''}
+                  </div>
+                  ${d.title ? `<div style="font-size:13px;font-weight:600;color:var(--color-text-secondary);margin-bottom:4px;">${escapeHtml(d.title)}</div>` : ''}
+                  ${d.dateRange ? `<div style="font-size:12px;font-family:var(--font-mono);color:var(--color-text-muted);margin-bottom:6px;">&#128197; ${escapeHtml(d.dateRange)}</div>` : ''}
+                  ${d.summary ? `<div style="font-size:13px;color:var(--color-text);line-height:1.6;">${escapeHtml(d.summary)}</div>` : '<div style="font-size:12px;color:var(--color-text-muted);font-style:italic;">No summary available.</div>'}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+
+        html += `
+          <div class="section" id="doc-insight-docs">
             <div class="section-header">
               <span class="section-icon">&#128195;</span>
               <h3>Documents Analyzed (${t.documents.length})</h3>
@@ -3945,7 +4908,7 @@ All conclusions require human review and professional judgment.
       // TIMELINE SPAN
       if (t.timelineSpan) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-span">
             <div class="timeline-span">
               <span class="span-dates">${escapeHtml(t.timelineSpan.earliest || '?')} &rarr; ${escapeHtml(t.timelineSpan.latest || '?')}</span>
               <span class="span-duration">${escapeHtml(t.timelineSpan.totalDuration || '')}</span>
@@ -3957,7 +4920,7 @@ All conclusions require human review and professional judgment.
       // KEY DATES
       if (t.keyDates && t.keyDates.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-keydates">
             <div class="section-header">
               <span class="section-icon">&#128204;</span>
               <h3>Key Dates</h3>
@@ -3978,10 +4941,11 @@ All conclusions require human review and professional judgment.
       // CHRONOLOGICAL TIMELINE
       if (t.timeline && t.timeline.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-timeline">
             <div class="section-header">
               <span class="section-icon">&#128197;</span>
               <h3>Chronological Timeline (${t.timeline.length} events)</h3>
+              <button class="btn btn-primary" onclick="addCustomEvent()" style="font-size:12px;padding:4px 12px;margin-left:12px;" title="Add custom event">+ Add Event</button>
             </div>
             <div class="timeline" id="timelineEventsContainer">
               ${t.timeline.map((e, idx) => `
@@ -4008,7 +4972,7 @@ All conclusions require human review and professional judgment.
       // CONFLICTS
       if (t.conflicts && t.conflicts.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-conflicts">
             <div class="section-header">
               <span class="section-icon">&#9888;</span>
               <h3>Conflicts Between Documents (${t.conflicts.length})</h3>
@@ -4034,7 +4998,7 @@ All conclusions require human review and professional judgment.
       // NOTES
       if (t.notes && t.notes.length > 0) {
         html += `
-          <div class="section">
+          <div class="section" id="doc-insight-notes">
             <div class="section-header">
               <span class="section-icon">&#128221;</span>
               <h3>Notes</h3>
@@ -4114,6 +5078,325 @@ All conclusions require human review and professional judgment.
       } else {
         panel.style.display = 'none';
         btn.innerHTML = '&#128196; View Source Text';
+      }
+    }
+
+    // ── AI Content Detection ────────────────────────────────────────────────
+
+    let lastAiDetectResults = [];
+
+    async function runAiDetection(sourceTexts) {
+      const panel = document.getElementById('aiDetectPanel');
+      if (!panel) return;
+      panel.innerHTML = '<div class="section" style="padding:14px 18px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-muted);">'
+        + '<div class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></div>'
+        + 'Running AI content analysis...</div></div>';
+
+      lastAiDetectResults = [];
+      var resultsHtml = '';
+
+      for (var i = 0; i < sourceTexts.length; i++) {
+        var src = sourceTexts[i];
+        if (!src.text || src.text.length < 100) continue;
+        try {
+          var r = await fetch('/api/ai-detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: src.text, filename: src.filename })
+          });
+          var data = await r.json();
+          if (data.success) {
+            lastAiDetectResults.push(data);
+            resultsHtml += renderAiDetectResult(data);
+          }
+        } catch (e) { /* skip */ }
+      }
+
+      if (!resultsHtml) {
+        panel.innerHTML = '';
+        return;
+      }
+
+      panel.innerHTML = '<div class="section">'
+        + '<div class="section-header" onclick="toggleCollapsible(\'aiDetectBody\')" style="cursor:pointer;user-select:none;">'
+        + '<span class="section-icon">&#128269;</span>'
+        + '<h3>AI Content Analysis</h3>'
+        + '<span class="collapse-arrow" id="aiDetectBodyArrow" style="margin-left:8px;font-size:10px;">&#9660;</span>'
+        + '</div>'
+        + '<div id="aiDetectBody">' + resultsHtml + '</div></div>';
+    }
+
+    function renderAiDetectResult(data) {
+      var score = data.overallScore || 0;
+      var color, label, bg;
+      if (score <= 30) { color = '#10b981'; label = 'Low'; bg = '#ecfdf5'; }
+      else if (score <= 60) { color = '#f59e0b'; label = 'Moderate'; bg = '#fffbeb'; }
+      else { color = '#ef4444'; label = 'High'; bg = '#fef2f2'; }
+
+      var cats = data.categories || {};
+      var isGPTZero = data.provider && data.provider.indexOf('GPTZero') !== -1;
+
+      var catNames = isGPTZero ? [
+        { key: 'aiProbability', label: 'AI Probability' },
+        { key: 'humanProbability', label: 'Human Probability' },
+        { key: 'mixedProbability', label: 'Mixed (AI + Human)' },
+        { key: 'completelyGenerated', label: 'Completely Generated' },
+      ] : [
+        { key: 'sentenceUniformity', label: 'Sentence Uniformity' },
+        { key: 'aiVocabulary', label: 'AI Vocabulary' },
+        { key: 'paragraphConsistency', label: 'Paragraph Consistency' },
+        { key: 'hedgingLanguage', label: 'Hedging Language' },
+        { key: 'naturalness', label: 'Naturalness & Voice' },
+        { key: 'structuralPatterns', label: 'Structural Patterns' },
+        { key: 'overallPolish', label: 'Overall Polish' },
+      ];
+
+      var uid = 'aidet_' + (data.filename || '').replace(/[^a-zA-Z0-9]/g, '_') + '_' + Math.floor(Math.random() * 100000);
+
+      var barsHtml = catNames.map(function(c) {
+        var val = cats[c.key];
+        if (val === null || val === undefined) return '';
+        val = Number(val) || 0;
+        var barColor;
+        if (c.key === 'humanProbability') {
+          barColor = val >= 70 ? '#10b981' : val >= 40 ? '#f59e0b' : '#ef4444';
+        } else {
+          barColor = val <= 30 ? '#10b981' : val <= 60 ? '#f59e0b' : '#ef4444';
+        }
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'
+          + '<span style="font-size:12px;color:var(--color-text-secondary);min-width:170px;">' + c.label + '</span>'
+          + '<div style="flex:1;height:10px;background:var(--color-border-light);border-radius:5px;overflow:hidden;position:relative;">'
+          + '<div style="width:' + val + '%;height:100%;background:' + barColor + ';border-radius:5px;min-width:' + (val > 0 ? '3px' : '0') + ';"></div></div>'
+          + '<span style="font-size:13px;font-weight:700;min-width:40px;text-align:right;color:' + barColor + ';">' + val + '%</span></div>';
+      }).join('');
+
+      // Per-sentence highlighting (GPTZero)
+      var sentencesHtml = '';
+      if (data.sentences && data.sentences.length > 0) {
+        sentencesHtml = '<div style="margin-top:14px;"><div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Per-Sentence Analysis</div>'
+          + '<div style="padding:12px 14px;background:var(--color-surface);border-radius:6px;font-size:13px;line-height:1.7;max-height:300px;overflow-y:auto;">';
+        data.sentences.forEach(function(s) {
+          var p = s.generatedProb || 0;
+          var bgC, txtC;
+          if (p >= 0.7) { bgC = 'rgba(239, 68, 68, 0.18)'; txtC = '#991b1b'; }
+          else if (p >= 0.4) { bgC = 'rgba(245, 158, 11, 0.18)'; txtC = '#92400e'; }
+          else { bgC = 'transparent'; txtC = 'var(--color-text)'; }
+          sentencesHtml += '<span style="background:' + bgC + ';color:' + txtC + ';padding:1px 2px;border-radius:2px;" title="AI probability: ' + Math.round(p * 100) + '%">' + escapeHtml(s.text) + '</span> ';
+        });
+        sentencesHtml += '</div>'
+          + '<div style="font-size:11px;color:var(--color-text-muted);margin-top:6px;">'
+          + '<span style="display:inline-block;width:10px;height:10px;background:rgba(239, 68, 68, 0.4);border-radius:2px;margin-right:4px;"></span>Likely AI (70%+) &nbsp;'
+          + '<span style="display:inline-block;width:10px;height:10px;background:rgba(245, 158, 11, 0.4);border-radius:2px;margin-right:4px;"></span>Possibly AI (40-69%)'
+          + '</div></div>';
+      }
+
+      var providerBadge = data.provider
+        ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:' + (isGPTZero ? '#3b82f6' : '#8b5cf6') + ';color:#fff;margin-left:6px;">' + escapeHtml(data.provider) + '</span>'
+        : '';
+
+      return '<div style="border:1px solid var(--color-border-light);border-radius:8px;padding:16px 18px;margin-bottom:10px;background:' + bg + ';">'
+        + '<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">'
+        + '<div style="text-align:center;min-width:70px;padding:10px;background:' + color + ';border-radius:10px;">'
+        + '<div style="font-size:24px;font-weight:700;color:#fff;">' + score + '%</div>'
+        + '<div style="font-size:10px;color:rgba(255,255,255,0.85);font-weight:600;">AI Score</div></div>'
+        + '<div style="flex:1;">'
+        + '<div style="font-size:14px;font-weight:600;color:var(--color-text);margin-bottom:2px;">' + escapeHtml(data.filename || 'Document') + providerBadge + '</div>'
+        + '<div style="font-size:13px;color:' + color + ';font-weight:600;">' + label + ' likelihood of AI-generated content</div>'
+        + '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">Confidence: ' + (data.confidence || 'medium') + '</div>'
+        + '</div></div>'
+        + '<div style="cursor:pointer;font-size:12px;color:var(--color-primary);margin-bottom:8px;" onclick="var el=document.getElementById(\'' + uid + '\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';">&#9654; View Details</div>'
+        + '<div id="' + uid + '" style="display:none;">'
+        + barsHtml
+        + (data.notes ? '<div style="margin-top:10px;padding:10px 14px;background:var(--color-surface);border-radius:6px;font-size:12px;color:var(--color-text-secondary);line-height:1.6;">' + escapeHtml(data.notes) + '</div>' : '')
+        + sentencesHtml
+        + '</div></div>';
+    }
+
+    // ── AI Detection Tab ────────────────────────────────────────────────────
+    let aiDetectFiles = [];
+
+    function handleAiDetectDragOver(e) { e.preventDefault(); document.getElementById('aiDetectUploadZone').classList.add('drag-over'); }
+    function handleAiDetectDragLeave(e) { document.getElementById('aiDetectUploadZone').classList.remove('drag-over'); }
+    function handleAiDetectDrop(e) {
+      e.preventDefault();
+      document.getElementById('aiDetectUploadZone').classList.remove('drag-over');
+      processAiDetectFiles(Array.from(e.dataTransfer.files));
+    }
+    function handleAiDetectFileSelect(e) { processAiDetectFiles(Array.from(e.target.files)); }
+
+    function processAiDetectFiles(files) {
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        if ((f.name.endsWith('.pdf') || f.name.endsWith('.txt')) && !aiDetectFiles.some(function(x) { return x.name === f.name; })) {
+          aiDetectFiles.push(f);
+        }
+      }
+      updateAiDetectFileList();
+    }
+
+    function removeAiDetectFile(idx) {
+      aiDetectFiles.splice(idx, 1);
+      updateAiDetectFileList();
+    }
+
+    function updateAiDetectFileList() {
+      var el = document.getElementById('aiDetectFileList');
+      if (!aiDetectFiles.length) { el.innerHTML = ''; return; }
+      el.innerHTML = aiDetectFiles.map(function(f, i) {
+        return '<div class="file-item"><span class="file-name">' + escapeHtml(f.name) + '</span>'
+          + '<button class="file-remove" onclick="removeAiDetectFile(' + i + ')">&times;</button></div>';
+      }).join('');
+    }
+
+    async function runAiDetectionTab() {
+      var btn = document.getElementById('aiDetectBtn');
+      var loading = document.getElementById('aiDetectLoading');
+      var results = document.getElementById('aiDetectResults');
+      var error = document.getElementById('aiDetectError');
+      var placeholder = document.getElementById('aiDetectPlaceholder');
+
+      if (aiDetectFiles.length === 0) {
+        error.textContent = 'Please upload at least one document.';
+        error.classList.add('active');
+        return;
+      }
+
+      error.classList.remove('active');
+      placeholder.style.display = 'none';
+      results.classList.remove('active');
+      btn.disabled = true;
+      loading.classList.add('active');
+
+      try {
+        var resultsHtml = '';
+        for (var i = 0; i < aiDetectFiles.length; i++) {
+          var file = aiDetectFiles[i];
+          var text = '';
+
+          if (file.name.endsWith('.txt')) {
+            text = await file.text();
+          } else if (file.name.endsWith('.pdf')) {
+            // Extract via backend
+            var fd = new FormData();
+            fd.append('file', file);
+            var extractResp = await fetch('/api/ai-detect/extract', { method: 'POST', body: fd });
+            if (!extractResp.ok) throw new Error('Failed to extract text from ' + file.name);
+            var extractData = await extractResp.json();
+            text = extractData.text || '';
+          }
+
+          if (!text || text.length < 100) {
+            resultsHtml += '<div style="padding:14px 18px;background:var(--color-warning-bg);border:1px solid var(--color-warning);border-radius:8px;margin-bottom:10px;font-size:13px;"><strong>' + escapeHtml(file.name) + '</strong>: Not enough text to analyze (minimum 100 characters).</div>';
+            continue;
+          }
+
+          var r = await fetch('/api/ai-detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, filename: file.name })
+          });
+          var data = await r.json();
+          if (data.success) {
+            resultsHtml += renderAiDetectResult(data);
+          } else {
+            resultsHtml += '<div style="padding:14px 18px;background:var(--color-danger-bg);border:1px solid var(--color-danger);border-radius:8px;margin-bottom:10px;font-size:13px;"><strong>' + escapeHtml(file.name) + '</strong>: ' + escapeHtml(apiErr(data, 'Analysis failed')) + '</div>';
+          }
+        }
+        results.innerHTML = resultsHtml || '<p style="color:var(--color-text-muted);padding:24px;text-align:center;">No results.</p>';
+        results.classList.add('active');
+      } catch (err) {
+        error.textContent = err.message;
+        error.classList.add('active');
+        placeholder.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function clearAiDetectionTab() {
+      aiDetectFiles = [];
+      document.getElementById('aiDetectFileInput').value = '';
+      document.getElementById('aiDetectFileList').innerHTML = '';
+      document.getElementById('aiDetectError').classList.remove('active');
+      document.getElementById('aiDetectResults').classList.remove('active');
+      document.getElementById('aiDetectResults').innerHTML = '';
+      document.getElementById('aiDetectPlaceholder').style.display = 'block';
+    }
+
+    function addCustomEvent() {
+      if (!lastTimeline) return;
+      var existing = document.getElementById('addEventModal');
+      if (existing) existing.remove();
+
+      var modal = document.createElement('div');
+      modal.id = 'addEventModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 14px;font-size:16px;color:var(--color-text);">Add Custom Event</h3>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Date</label>'
+        + '<input id="addEventDate" type="text" placeholder="YYYY-MM-DD or description" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;margin-bottom:12px;" />'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Event Description</label>'
+        + '<textarea id="addEventText" placeholder="Describe the event..." style="width:100%;height:80px;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;resize:vertical;margin-bottom:12px;"></textarea>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Event Type</label>'
+        + '<select id="addEventType" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:12px;">'
+        + '<option value="OTHER">Other</option><option value="FILING">Filing</option><option value="HEARING">Hearing</option><option value="ORDER">Order</option><option value="CORRESPONDENCE">Correspondence</option><option value="DEADLINE">Deadline</option><option value="AGREEMENT">Agreement</option><option value="INCIDENT">Incident</option><option value="ADMINISTRATIVE">Administrative</option></select>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Significance</label>'
+        + '<select id="addEventSignificance" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);cursor:pointer;margin-bottom:16px;">'
+        + '<option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="LOW">Low</option></select>'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button class="btn btn-secondary" onclick="document.getElementById(\'addEventModal\').remove()" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button class="btn btn-primary" onclick="submitCustomEvent()" style="font-size:13px;padding:8px 18px;">Add</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+      document.getElementById('addEventDate').focus();
+    }
+
+    function submitCustomEvent() {
+      var date = document.getElementById('addEventDate').value.trim();
+      var text = document.getElementById('addEventText').value.trim();
+      var eventType = document.getElementById('addEventType').value;
+      var significance = document.getElementById('addEventSignificance').value;
+      if (!date || !text) { alert('Date and description are required.'); return; }
+
+      var newEvent = {
+        date: date,
+        event: text,
+        eventType: eventType,
+        significance: significance,
+        source: { filename: 'Manual Entry', page: null, quote: '' },
+        annotation: null,
+        annotationFlag: null
+      };
+
+      // Insert in chronological order
+      if (!lastTimeline.timeline) lastTimeline.timeline = [];
+      var inserted = false;
+      for (var i = 0; i < lastTimeline.timeline.length; i++) {
+        if (date < lastTimeline.timeline[i].date) {
+          lastTimeline.timeline.splice(i, 0, newEvent);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) lastTimeline.timeline.push(newEvent);
+
+      document.getElementById('addEventModal').remove();
+      displayTimeline(lastTimeline, null);
+
+      // Auto-save if editing a loaded record
+      if (loadedRecordId) {
+        fetch('/api/records/update-timeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staff_id: loggedInStaff, record_id: loadedRecordId, timeline: lastTimeline })
+        }).then(function(r) { return r.json(); }).then(function(data) {
+          if (data.success) {
+            showSaveStatus('&#10003; Event added and record auto-saved.', true);
+            loadMyRecords();
+          }
+        }).catch(function() {});
       }
     }
 
@@ -4230,6 +5513,33 @@ Generated: ${new Date().toLocaleString()}
 
 `;
 
+      // Table of Contents (sub-document index)
+      if (t.sections && t.sections.length > 0) {
+        text += `TABLE OF CONTENTS (${t.sections.length})
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+        const byFile = {};
+        t.sections.forEach(s => {
+          const fn = s.filename || 'Unknown file';
+          if (!byFile[fn]) byFile[fn] = [];
+          byFile[fn].push(s);
+        });
+        Object.keys(byFile).forEach(fn => {
+          byFile[fn].sort((a, b) => (a.startPage || 0) - (b.startPage || 0));
+          text += `\n${fn}\n`;
+          byFile[fn].forEach(s => {
+            const range = (s.startPage != null && s.endPage != null && s.startPage !== s.endPage)
+              ? `p. ${s.startPage}-${s.endPage}`
+              : (s.startPage != null ? `p. ${s.startPage}` : (s.endPage != null ? `p. ${s.endPage}` : ''));
+            text += `  ${range ? range + '  ' : ''}[${s.sectionType || 'OTHER'}] ${s.title || '(untitled)'}\n`;
+            if (s.date) text += `    Date: ${s.date}\n`;
+            if (s.parties) text += `    Parties: ${s.parties}\n`;
+            if (s.summary) text += `    ${s.summary}\n`;
+          });
+        });
+        text += '\n';
+      }
+
       // Documents
       if (t.documents && t.documents.length > 0) {
         text += `DOCUMENTS ANALYZED (${t.documents.length})
@@ -4323,7 +5633,7 @@ All dates and events should be verified against original documents.
       const t = lastTimeline;
 
       let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>Document Timeline</title>
+<head><meta charset="utf-8"><title>Document Insight</title>
 <style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#333;}
 h1{font-size:18pt;color:#1e368e;border-bottom:2px solid #1e368e;padding-bottom:6px;}
 h2{font-size:14pt;color:#1e368e;margin-top:18pt;}
@@ -4335,7 +5645,23 @@ th{background:#f0f2f8;font-weight:bold;}
 .disclaimer{margin-top:20pt;padding:10pt;background:#f8f8f8;border:1px solid #ddd;font-size:9pt;color:#666;}
 </style></head><body>`;
 
-      html += `<h1>Document Timeline</h1><p style="color:#666;font-size:9pt;">Generated: ${new Date().toLocaleString()}</p>`;
+      html += `<h1>Document Insight</h1><p style="color:#666;font-size:9pt;">Generated: ${new Date().toLocaleString()}</p>`;
+
+      if (t.sections && t.sections.length > 0) {
+        html += `<h2>Table of Contents (${t.sections.length})</h2><table><tr><th>File</th><th>Pages</th><th>Type</th><th>Title</th><th>Date</th><th>Summary</th></tr>`;
+        const sortedSections = [...t.sections].sort((a, b) => {
+          const fileCmp = (a.filename || '').localeCompare(b.filename || '');
+          if (fileCmp !== 0) return fileCmp;
+          return (a.startPage || 0) - (b.startPage || 0);
+        });
+        sortedSections.forEach(s => {
+          const range = (s.startPage != null && s.endPage != null && s.startPage !== s.endPage)
+            ? `${s.startPage}-${s.endPage}`
+            : (s.startPage != null ? `${s.startPage}` : (s.endPage != null ? `${s.endPage}` : ''));
+          html += `<tr><td>${s.filename || ''}</td><td>${range}</td><td>${s.sectionType || ''}</td><td>${s.title || ''}${s.parties ? '<br><em style="color:#666;font-size:9pt;">' + s.parties + '</em>' : ''}</td><td>${s.date || ''}</td><td>${s.summary || ''}</td></tr>`;
+        });
+        html += '</table>';
+      }
 
       if (t.documents && t.documents.length > 0) {
         html += `<h2>Documents Analyzed (${t.documents.length})</h2><table><tr><th>File</th><th>Type</th><th>Date Range</th><th>Summary</th></tr>`;
@@ -4391,8 +5717,107 @@ th{background:#f0f2f8;font-weight:bold;}
       URL.revokeObjectURL(url);
     }
 
+    // ── Rule XI comparison (with vs without disciplinary-rules context) ──
+    async function compareRuleXI() {
+      const btn = document.getElementById('ruleXiCompareBtn');
+      const loading = document.getElementById('timelineLoading');
+      const results = document.getElementById('timelineResults');
+      const error = document.getElementById('timelineError');
+      const placeholder = document.getElementById('timelinePlaceholder');
+      error.classList.remove('active');
+      if (!loggedInStaff) { showTimelineError('Please sign in first.'); return; }
+      if (!timelineUploadedFiles.length) { showTimelineError('Please upload a document first.'); return; }
+
+      placeholder.style.display = 'none';
+      results.classList.remove('active');
+      btn.disabled = true;
+      document.getElementById('timelineBtn').disabled = true;
+      loading.classList.add('active');
+      document.getElementById('timelineProgressText').textContent = 'Running Rule XI comparison…';
+      document.getElementById('timelineProgressDetail').textContent = 'Analyzing the document twice — with and without Rule XI context. This runs two passes, so it takes longer.';
+      document.getElementById('timelineProgressBar').style.display = 'none';
+
+      try {
+        const entry = timelineUploadedFiles[0];
+        const fileObj = entry && entry.file ? entry.file : entry;
+        if (!fileObj || !fileObj.name) throw new Error('Could not read the uploaded file. Please re-upload and try again.');
+        const fd = new FormData();
+        fd.append('file', fileObj);
+        const resp = await fetch('/api/timeline/compare', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (!data.success) throw new Error(apiErr(data, 'Comparison failed'));
+        renderRuleXICompare(data);
+      } catch (err) {
+        showTimelineError(err.message);
+      } finally {
+        btn.disabled = false;
+        document.getElementById('timelineBtn').disabled = false;
+        loading.classList.remove('active');
+      }
+    }
+
+    function ruleXiMetrics(t) {
+      return {
+        sections: (t.sections || []).length,
+        events: (t.timeline || []).length,
+        keyDates: (t.keyDates || []).length,
+        conflicts: (t.conflicts || []).length,
+        high: (t.timeline || []).filter(e => e.significance === 'HIGH').length,
+      };
+    }
+
+    function renderRuleXICompare(data) {
+      const results = document.getElementById('timelineResults');
+      // Hide the single-analysis-only controls; this is a comparison view.
+      document.getElementById('timelineExportButtons').style.display = 'none';
+      const a = ruleXiMetrics(data.without), b = ruleXiMetrics(data.withRuleXI);
+      const metricRow = (label, av, bv) => {
+        const diff = bv - av;
+        const diffStr = diff === 0 ? '' : (diff > 0 ? ' <span style="color:#1e7e34;">(+' + diff + ')</span>' : ' <span style="color:#c0392b;">(' + diff + ')</span>');
+        return `<tr style="border-bottom:1px solid var(--color-border-light);"><td style="padding:6px 10px;">${label}</td><td style="padding:6px 10px;text-align:center;">${av}</td><td style="padding:6px 10px;text-align:center;font-weight:600;">${bv}${diffStr}</td></tr>`;
+      };
+      const colSections = (t) => (t.sections || []).length
+        ? (t.sections || []).map(s => `<div style="padding:6px 8px;border:1px solid var(--color-border-light);border-radius:5px;margin-bottom:5px;"><span style="font-size:9px;font-weight:700;padding:1px 6px;background:var(--color-primary);color:#fff;border-radius:8px;text-transform:uppercase;">${escapeHtml(s.sectionType || 'OTHER')}</span> <span style="font-size:12px;">${escapeHtml(s.title || '(untitled)')}</span>${s.summary ? '<div style="font-size:11px;color:var(--color-text-muted);margin-top:3px;">' + escapeHtml(s.summary) + '</div>' : ''}</div>`).join('')
+        : '<div style="font-size:12px;color:var(--color-text-muted);">(none)</div>';
+      const colNotes = (t) => (t.notes || []).length
+        ? '<ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:var(--color-text-secondary);">' + (t.notes || []).map(n => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>'
+        : '<div style="font-size:12px;color:var(--color-text-muted);">(none)</div>';
+
+      let html = `
+        <div class="section">
+          <div class="section-header"><span class="section-icon">&#9878;</span><h3>Rule XI Comparison — ${escapeHtml(data.filename)}</h3></div>
+          <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">${data.totalPages} page(s)${data.truncated ? ' — compared the first ' + data.sampledPages + ' pages (a sample, so the two passes return quickly)' : ''}${data.visionPages ? ' · ' + data.visionPages + ' page(s) via Vision OCR' : ''}. Both columns analyze the same extracted text; the right column additionally receives the DC Rules of Professional Conduct &amp; Rule XI as interpretive context.</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px;border:1px solid var(--color-border-light);border-radius:8px;overflow:hidden;">
+            <thead><tr style="background:var(--color-bg);text-align:left;"><th style="padding:8px 10px;">Metric</th><th style="padding:8px 10px;text-align:center;">Without Rule XI</th><th style="padding:8px 10px;text-align:center;">With Rule XI</th></tr></thead>
+            <tbody>
+              ${metricRow('Sub-documents (sections)', a.sections, b.sections)}
+              ${metricRow('Timeline events', a.events, b.events)}
+              ${metricRow('— of which HIGH significance', a.high, b.high)}
+              ${metricRow('Key dates', a.keyDates, b.keyDates)}
+              ${metricRow('Conflicts flagged', a.conflicts, b.conflicts)}
+            </tbody>
+          </table>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <h4 style="font-size:13px;margin:0 0 8px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.04em;">Without Rule XI</h4>
+              ${colSections(data.without)}
+              <div style="font-size:12px;font-weight:700;margin:10px 0 4px;">Notes</div>${colNotes(data.without)}
+            </div>
+            <div style="border-left:2px solid var(--color-primary);padding-left:16px;">
+              <h4 style="font-size:13px;margin:0 0 8px;color:var(--color-primary);text-transform:uppercase;letter-spacing:0.04em;">With Rule XI context</h4>
+              ${colSections(data.withRuleXI)}
+              <div style="font-size:12px;font-weight:700;margin:10px 0 4px;">Notes</div>${colNotes(data.withRuleXI)}
+            </div>
+          </div>
+        </div>`;
+      results.innerHTML = html;
+      results.classList.add('active');
+      results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     function clearTimeline() {
       document.getElementById('timelineContext').value = '';
+      const rx = document.getElementById('timelineRuleXi'); if (rx) rx.checked = false;
       document.getElementById('timelineFileInput').value = '';
       document.getElementById('timelineFileList').innerHTML = '';
       document.getElementById('timelineError').classList.remove('active');
@@ -4407,6 +5832,7 @@ th{background:#f0f2f8;font-weight:bold;}
 
     // ── Authentication ──────────────────────────────────────────────────────
     let loggedInStaff = null;
+    let loggedInRole = null;
 
     async function doLogin() {
       const username = document.getElementById('loginUsername').value.trim();
@@ -4428,7 +5854,7 @@ th{background:#f0f2f8;font-weight:bold;}
         const data = await response.json();
 
         if (!response.ok || !data.success) {
-          errorEl.textContent = data.error || 'Invalid username or password.';
+          errorEl.textContent = apiErr(data, 'Invalid username or password.');
           errorEl.style.display = 'block';
           document.getElementById('loginPassword').value = '';
           document.getElementById('loginPassword').focus();
@@ -4436,7 +5862,9 @@ th{background:#f0f2f8;font-weight:bold;}
         }
 
         loggedInStaff = username;
+        loggedInRole = data.role || 'staff';
         sessionStorage.setItem('loggedInStaff', username);
+        sessionStorage.setItem('loggedInRole', loggedInRole);
         showMainApp();
       } catch (err) {
         errorEl.textContent = 'Login failed. Please try again.';
@@ -4446,7 +5874,9 @@ th{background:#f0f2f8;font-weight:bold;}
 
     function doLogout() {
       loggedInStaff = null;
+      loggedInRole = null;
       sessionStorage.removeItem('loggedInStaff');
+      sessionStorage.removeItem('loggedInRole');
       if (sessionTimer) clearTimeout(sessionTimer);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       resetToLightMode();
@@ -4467,8 +5897,8 @@ th{background:#f0f2f8;font-weight:bold;}
       document.getElementById('auditLogPanel').style.display = 'block';
       document.getElementById('translateRecordsPanel').style.display = 'block';
       document.getElementById('translateAuditLogPanel').style.display = 'block';
-      // Show admin tab (all staff can see it for now; could restrict later)
-      document.getElementById('adminTabBtn').style.display = 'inline-block';
+      // Show admin tab only for admins
+      document.getElementById('adminTabBtn').style.display = loggedInRole === 'admin' ? 'inline-block' : 'none';
       loadMyRecords();
       loadAuditLog();
       loadTranslateRecords();
@@ -4484,8 +5914,10 @@ th{background:#f0f2f8;font-weight:bold;}
     // Auto-login from session
     (function() {
       const saved = sessionStorage.getItem('loggedInStaff');
+      const savedRole = sessionStorage.getItem('loggedInRole');
       if (saved) {
         loggedInStaff = saved;
+        loggedInRole = savedRole || 'staff';
         showMainApp();
       }
     })();
@@ -4541,11 +5973,11 @@ th{background:#f0f2f8;font-weight:bold;}
           const response = await fetch('/api/records', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, summary: summary || null, timeline: lastTimeline })
+            body: JSON.stringify({ staff_id: staffId, record_name: recordName, case_number: caseNumber || null, file_names: fileNames, notes, summary: summary || null, ai_score: lastAiDetectResults.length > 0 ? lastAiDetectResults[0].overallScore : null, timeline: lastTimeline })
           });
 
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Save failed');
+          if (!response.ok) throw new Error(apiErr(data, 'Save failed'));
 
           showSaveStatus('&#10003; Saved successfully to your records.', true);
           loadMyRecords();
@@ -4688,9 +6120,9 @@ th{background:#f0f2f8;font-weight:bold;}
         } else if (myRecordsSortKey === 'created_at') {
           va = a.created_at;
           vb = b.created_at;
-        } else if (myRecordsSortKey === 'timeline_size') {
-          va = a.timeline_size || 0;
-          vb = b.timeline_size || 0;
+        } else if (myRecordsSortKey === 'status') {
+          va = (a.status || 'draft').toLowerCase();
+          vb = (b.status || 'draft').toLowerCase();
         }
         if (va < vb) return myRecordsSortAsc ? -1 : 1;
         if (va > vb) return myRecordsSortAsc ? 1 : -1;
@@ -4718,8 +6150,8 @@ th{background:#f0f2f8;font-weight:bold;}
             <tr style="border-bottom:2px solid var(--color-border);text-align:left;">
               <th style="padding:10px 6px;width:32px;"><input type="checkbox" id="mergeSelectAll" onchange="toggleAllMergeCb(this.checked)" title="Select all" style="cursor:pointer;" /></th>
               <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('record_name')">Name${arrow('record_name')}</th>
+              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('status')">Status${arrow('status')}</th>
               <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('created_at')">Saved${arrow('created_at')}</th>
-              <th style="padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--color-text-secondary);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;" onclick="sortMyRecords('timeline_size')">Size${arrow('timeline_size')}</th>
               <th style="padding:10px 12px;width:1%;white-space:nowrap;"></th>
             </tr>
           </thead>
@@ -4733,17 +6165,17 @@ th{background:#f0f2f8;font-weight:bold;}
                 + '<a href="#" onclick="event.preventDefault(); loadRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">'
                 + escapeHtml(r.record_name || (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names))
                 + '</a>'
-                + ' ' + renderStatusBadge(r.status || 'draft')
-                + '<button onclick="changeRecordStatus(' + r.id + ',\'timeline\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Change status">&#9881;</button>'
-                + (r.case_number ? '<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px;">' + escapeHtml(r.case_number) + '</span>' : '')
+                + (r.ai_score != null ? renderAiScoreBadge(r.ai_score) : '')
                 + '<div style="margin-top:3px;">' + renderTagBadges(r.tags)
+                + (r.case_number ? '<span style="font-size:11px;background:var(--color-primary);color:#fff;padding:1px 6px;border-radius:3px;margin-right:4px;">' + escapeHtml(r.case_number) + '</span>' : '')
                 + '<button onclick="editRecordTags(' + r.id + ',\'timeline\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Edit tags">&#127991; Tags</button>'
                 + '</div>'
                 + (r.notes ? '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">' + escapeHtml(r.notes) + '</div>' : '')
                 + '</td>'
-                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + new Date(r.created_at).toLocaleString() + '</td>'
-                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + formatFileSize(r.timeline_size || 0) + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;">' + renderStatusBadge(r.status || 'draft') + '</td>'
+                + '<td style="padding:10px 12px;white-space:nowrap;color:var(--color-text-secondary);font-size:13px;">' + new Date(r.created_at).toLocaleDateString() + '</td>'
                 + '<td style="padding:10px 12px;white-space:nowrap;">'
+                + '<span onclick="changeRecordStatus(' + r.id + ',\'timeline\')" style="cursor:pointer;font-size:14px;margin-right:8px;" title="Change status">&#9881;</span>'
                 + '<span onclick="renameRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Rename">&#9998;</span>'
                 + '<span onclick="shareRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Share">&#128101;</span>'
                 + '<span onclick="deleteRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;color:var(--color-danger);" title="Delete">&#128465;</span>'
@@ -4855,7 +6287,7 @@ th{background:#f0f2f8;font-weight:bold;}
             body: JSON.stringify({ staff_id: staffId, record_ids: ids, record_name: recordName })
           });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error);
+          if (!response.ok) throw new Error(apiErr(data));
 
           displayTimeline(data.timeline, null);
           showSaveStatus('&#10003; Merged and saved successfully!', true);
@@ -4876,7 +6308,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/${staffId}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
 
         myRecordsData = data.records;
         renderMyRecords();
@@ -4931,7 +6363,7 @@ th{background:#f0f2f8;font-weight:bold;}
             body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_name: newName })
           });
           const d1 = await r1.json();
-          if (!d1.success) { alert('Rename failed: ' + (d1.error || 'Unknown error')); return; }
+          if (!d1.success) { alert('Rename failed: ' + (apiErr(d1, 'Unknown error'))); return; }
 
           // Update case number
           await fetch('/api/records/case', {
@@ -4992,18 +6424,21 @@ th{background:#f0f2f8;font-weight:bold;}
           body: JSON.stringify({ staff_id: staffId, record_id: id, share_with: shareWith })
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         loadMyRecords();
       } catch (err) { alert('Share failed: ' + err.message); }
     }
+
+    let loadedRecordId = null; // track which saved record is currently loaded
 
     async function loadRecord(id) {
       const staffId = loggedInStaff;
       try {
         const response = await fetch(`/api/records/${staffId}/${id}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
 
+        loadedRecordId = id;
         displayTimeline(data.record.timeline, null);
         window.scrollTo({ top: document.getElementById('timelineResults').offsetTop - 80, behavior: 'smooth' });
       } catch (err) {
@@ -5018,7 +6453,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/${staffId}/${id}`, { method: 'DELETE' });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         loadMyRecords();
       } catch (err) {
         alert('Failed to delete record: ' + err.message);
@@ -5061,7 +6496,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch(`/api/records/audit/${staffId}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         auditLogData = data.logs || [];
         if (!auditLogData.length) {
           container.innerHTML = '<div class="placeholder" style="padding:16px 0;"><p class="placeholder-text">No activity yet.</p></div>';
@@ -5107,7 +6542,7 @@ th{background:#f0f2f8;font-weight:bold;}
         });
 
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Request failed');
+        if (!response.ok) throw new Error(apiErr(data, 'Request failed'));
 
         timelineQAHistory.push({ role: 'user', content: question });
         timelineQAHistory.push({ role: 'assistant', content: data.answer });
@@ -5249,7 +6684,7 @@ th{background:#f0f2f8;font-weight:bold;}
             })
           });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Save failed');
+          if (!response.ok) throw new Error(apiErr(data, 'Save failed'));
           showTranslateSaveStatus('&#10003; Saved as "' + escapeHtml(recordName) + '"', true);
           loadTranslateRecords();
           loadTranslateAuditLog();
@@ -5283,7 +6718,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/translations/' + staffId);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
 
         transRecordsData = data.records || [];
         renderTranslateRecords();
@@ -5311,7 +6746,9 @@ th{background:#f0f2f8;font-weight:bold;}
       let filtered = transRecordsData.filter(r => {
         const fileStr = (Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names).toLowerCase();
         const langStr = (r.language_name || '').toLowerCase();
-        const matchesQuery = !query || fileStr.includes(query) || langStr.includes(query);
+        const nameStr = (r.record_name || '').toLowerCase();
+        var tagStr = ''; try { tagStr = JSON.parse(r.tags || '[]').join(' ').toLowerCase(); } catch(e) {}
+        const matchesQuery = !query || fileStr.includes(query) || langStr.includes(query) || nameStr.includes(query) || tagStr.includes(query);
         const created = (r.created_at || '').slice(0, 10);
         const matchesFrom = !dateFrom || created >= dateFrom;
         const matchesTo = !dateTo || created <= dateTo;
@@ -5342,7 +6779,7 @@ th{background:#f0f2f8;font-weight:bold;}
 
       let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
       html += '<thead><tr style="border-bottom:2px solid var(--color-border-light);text-align:left;">';
-      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'file_names\')">Files' + sortArrow('file_names') + '</th>';
+      html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'file_names\')">Name' + sortArrow('file_names') + '</th>';
       html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'language_name\')">Language' + sortArrow('language_name') + '</th>';
       html += '<th style="padding:8px 12px;cursor:pointer;white-space:nowrap;" onclick="sortTranslateRecords(\'created_at\')">Saved' + sortArrow('created_at') + '</th>';
       html += '<th style="padding:8px 12px;text-align:right;">Actions</th>';
@@ -5350,14 +6787,19 @@ th{background:#f0f2f8;font-weight:bold;}
 
       for (const r of filtered) {
         const files = Array.isArray(r.file_names) ? r.file_names.join(', ') : r.file_names;
-        html += '<tr style="border-bottom:1px solid var(--color-border-light);">';
         const displayName = r.record_name || files;
-        html += '<td style="padding:10px 12px;"><a href="#" onclick="event.preventDefault();loadTranslateRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:underline;cursor:pointer;">' + escapeHtml(displayName) + '</a></td>';
+        html += '<tr style="border-bottom:1px solid var(--color-border-light);">';
+        html += '<td style="padding:10px 12px;">';
+        html += '<a href="#" onclick="event.preventDefault();loadTranslateRecord(' + r.id + ')" style="color:var(--color-primary);text-decoration:none;font-weight:600;" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">' + escapeHtml(displayName) + '</a>';
+        html += '<div style="margin-top:3px;">' + renderTagBadges(r.tags);
+        html += '<button onclick="editRecordTags(' + r.id + ',\'translation\')" class="btn btn-secondary" style="font-size:10px;padding:2px 7px;margin-left:4px;cursor:pointer;" title="Edit tags">&#127991; Tags</button>';
+        html += '</div>';
+        html += '</td>';
         html += '<td style="padding:10px 12px;">' + escapeHtml(r.language_name) + '</td>';
-        html += '<td style="padding:10px 12px;white-space:nowrap;">' + new Date(r.created_at).toLocaleString() + '</td>';
+        html += '<td style="padding:10px 12px;white-space:nowrap;">' + new Date(r.created_at).toLocaleDateString() + '</td>';
         html += '<td style="padding:10px 12px;text-align:right;white-space:nowrap;">';
-        html += '<button class="btn btn-secondary" onclick="loadTranslateRecord(' + r.id + ')" style="font-size:11px;padding:4px 10px;">Load</button> ';
-        html += '<button class="btn" onclick="deleteTranslateRecord(' + r.id + ')" style="font-size:11px;padding:4px 10px;background:var(--color-danger-bg);color:var(--color-danger);border:1px solid var(--color-danger);">Delete</button>';
+        html += '<span onclick="renameTranslateRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;margin-right:8px;" title="Rename">&#9998;</span>';
+        html += '<span onclick="deleteTranslateRecord(' + r.id + ')" style="cursor:pointer;font-size:16px;color:var(--color-danger);" title="Delete">&#128465;</span>';
         html += '</td></tr>';
       }
       html += '</tbody></table>';
@@ -5379,7 +6821,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/translations/' + staffId + '/' + id);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         const r = data.record;
         lastTranslation = { language: r.language, languageName: r.language_name, results: r.translation };
         displayTranslation(lastTranslation);
@@ -5389,12 +6831,60 @@ th{background:#f0f2f8;font-weight:bold;}
       } catch (err) { alert('Failed to load: ' + err.message); }
     }
 
+    function renameTranslateRecord(id) {
+      var record = transRecordsData.find(function(r) { return r.id === id; });
+      if (!record) return;
+      var currentName = record.record_name || (Array.isArray(record.file_names) ? record.file_names.join(', ') : record.file_names);
+
+      var existing = document.getElementById('renameTransModal');
+      if (existing) existing.remove();
+
+      var modal = document.createElement('div');
+      modal.id = 'renameTransModal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:var(--color-surface);border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+        + '<h3 style="margin:0 0 16px;font-size:17px;color:var(--color-text);">Edit Translation Record</h3>'
+        + '<label style="font-size:12px;font-weight:600;color:var(--color-text-secondary);display:block;margin-bottom:4px;">Record Name</label>'
+        + '<input id="renameTransInput" type="text" value="' + escapeHtml(currentName) + '" style="width:100%;padding:10px 14px;border:1px solid var(--color-border);border-radius:8px;font-size:14px;font-family:var(--font-sans);color:var(--color-text);background:var(--color-bg);box-sizing:border-box;" />'
+        + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">'
+        + '<button id="renameTransCancel" class="btn btn-secondary" style="font-size:13px;padding:8px 18px;">Cancel</button>'
+        + '<button id="renameTransSave" class="btn btn-primary" style="font-size:13px;padding:8px 18px;">Save</button>'
+        + '</div></div>';
+      document.body.appendChild(modal);
+
+      var input = document.getElementById('renameTransInput');
+      input.select();
+      input.focus();
+
+      var close = function() { modal.remove(); };
+      document.getElementById('renameTransCancel').onclick = close;
+      modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+
+      document.getElementById('renameTransSave').onclick = async function() {
+        var newName = input.value.trim() || currentName;
+        close();
+        try {
+          await fetch('/api/records/translations/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staff_id: loggedInStaff, record_id: id, record_name: newName })
+          });
+          loadTranslateRecords();
+        } catch (err) { alert('Rename failed: ' + err.message); }
+      };
+
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') document.getElementById('renameTransSave').click();
+        if (e.key === 'Escape') close();
+      });
+    }
+
     async function deleteTranslateRecord(id) {
       if (!confirm('Delete this saved translation?')) return;
       try {
         const response = await fetch('/api/records/translations/' + loggedInStaff + '/' + id, { method: 'DELETE' });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         loadTranslateRecords();
         loadTranslateAuditLog();
       } catch (err) { alert('Failed to delete: ' + err.message); }
@@ -5429,7 +6919,7 @@ th{background:#f0f2f8;font-weight:bold;}
           })
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Request failed');
+        if (!response.ok) throw new Error(apiErr(data, 'Request failed'));
 
         translationQAHistory.push({ role: 'user', content: question });
         translationQAHistory.push({ role: 'assistant', content: data.answer });
@@ -5490,7 +6980,7 @@ th{background:#f0f2f8;font-weight:bold;}
       try {
         const response = await fetch('/api/records/audit/' + staffId);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
+        if (!response.ok) throw new Error(apiErr(data));
         // Filter to translation-related actions only
         translateAuditLogData = (data.logs || []).filter(l =>
           l.action === 'save_translation' || l.action === 'delete_translation'
@@ -5588,65 +7078,255 @@ th{background:#f0f2f8;font-weight:bold;}
         </div>`).join('');
     }
 
-    async function runTranslation() {
-      const language = document.getElementById('translateLangSelect').value;
+    // Upload files in small chunks to /api/translate/upload (idempotent positional
+    // writes, per-chunk retry) so large/scanned docs don't hit the LB timeout.
+    async function uploadTranslateFilesInChunks(files, onProgress) {
+      const CHUNK = 8 * 1024 * 1024;
+      const uploads = [];
+      let total = 0; files.forEach(f => { total += f.size; });
+      let sent = 0;
+      for (const file of files) {
+        const uploadId = (window.crypto && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+        const numChunks = Math.max(1, Math.ceil(file.size / CHUNK));
+        for (let i = 0; i < numChunks; i++) {
+          const blob = file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK));
+          let attempt = 0;
+          const MAX_ATTEMPTS = 8;
+          for (;;) {
+            attempt++;
+            let retriable = false, errMsg = '';
+            try {
+              const fd = new FormData();
+              fd.append('uploadId', uploadId);
+              fd.append('filename', file.name);
+              fd.append('offset', String(i * CHUNK));
+              fd.append('chunk', blob, 'chunk');
+              const up = await fetch('/api/translate/upload', { method: 'POST', body: fd });
+              if (up.ok) break;
+              errMsg = 'HTTP ' + up.status;
+              try { const j = await up.json(); errMsg = (j && j.error && (j.error.message || j.error)) || errMsg; } catch (_) {}
+              retriable = up.status >= 500;
+            } catch (e) {
+              retriable = true; errMsg = (e && e.message) ? e.message : String(e);
+            }
+            if (!retriable || attempt >= MAX_ATTEMPTS) {
+              throw new Error('Upload of "' + file.name + '" failed — ' + errMsg + ' (check your network and retry)');
+            }
+            if (onProgress) onProgress('Network hiccup — retrying chunk ' + (i + 1) + ' of ' + numChunks + '...');
+            await new Promise(r => setTimeout(r, Math.min(attempt * 1500, 8000)));
+          }
+          sent += blob.size;
+          if (onProgress) onProgress('Uploading ' + file.name + ' (' + (total ? Math.round(sent / total * 100) : 100) + '%)');
+        }
+        uploads.push({ uploadId: uploadId, filename: file.name, size: file.size });
+      }
+      return uploads;
+    }
+
+    // Poll a translate/convert job until done, applying each buffered event.
+    async function pollTranslateJob(jobId, onEvent) {
+      let cursor = 0, pollFails = 0, notFound = 0;
+      for (;;) {
+        await new Promise(r => setTimeout(r, 2000));
+        let poll;
+        try {
+          poll = await fetch('/api/translate/process/' + encodeURIComponent(jobId) + '?cursor=' + cursor);
+        } catch (e) {
+          if (++pollFails > 30) throw new Error('Lost connection while processing the document. Please try again.');
+          continue;
+        }
+        if (poll.status === 404) {
+          if (++notFound > 15) throw new Error('The job was lost (the server may have restarted). Please try again.');
+          continue;
+        }
+        if (!poll.ok) {
+          if (++pollFails > 30) throw new Error('Processing status error (HTTP ' + poll.status + ').');
+          continue;
+        }
+        pollFails = 0; notFound = 0;
+        const upd = await poll.json();
+        cursor = upd.nextCursor;
+        for (const ev of (upd.events || [])) onEvent(ev);
+        if (upd.status === 'complete' || upd.status === 'error') return;
+      }
+    }
+
+    function runTranslation() { return runTranslateOrConvert('translate'); }
+    function runConvert() { return runTranslateOrConvert('convert'); }
+
+    async function runTranslateOrConvert(mode) {
       const btn = document.getElementById('translateBtn');
+      const convertBtn = document.getElementById('convertBtn');
       const loading = document.getElementById('translateLoading');
       const results = document.getElementById('translateResults');
       const error = document.getElementById('translateError');
       const placeholder = document.getElementById('translatePlaceholder');
+      const title = document.getElementById('translateLoadingTitle');
+      const setProg = (m) => { const el = document.getElementById('translateLoadingMsg'); if (el) el.textContent = m; };
 
       if (!loggedInStaff) { showTranslateError('Please sign in first.'); return; }
-      if (!language) { showTranslateError('Please select a target language.'); return; }
       if (translateUploadedFiles.length === 0) { showTranslateError('Please upload at least one document.'); return; }
 
       error.classList.remove('active');
       btn.disabled = true;
+      if (convertBtn) convertBtn.disabled = true;
+      if (title) title.textContent = mode === 'convert' ? 'Converting handwriting to text...' : 'Translating...';
+      setProg('Uploading...');
       loading.classList.add('active');
       results.classList.remove('active');
       placeholder.style.display = 'none';
 
       try {
-        const formData = new FormData();
-        formData.append('language', language);
-        translateUploadedFiles.forEach(f => formData.append('files', f));
+        const uploads = await uploadTranslateFilesInChunks(translateUploadedFiles, setProg);
+        setProg(mode === 'convert' ? 'Transcribing document...' : 'Starting translation...');
 
-        const response = await fetch('/api/translate', { method: 'POST', body: formData });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Translation failed');
+        const startResp = await fetch('/api/translate/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode, uploads: uploads })
+        });
+        if (!startResp.ok) {
+          let m = 'Failed to start (HTTP ' + startResp.status + ').';
+          try { const j = await startResp.json(); m = (j && j.error && (j.error.message || j.error)) || m; } catch (_) {}
+          throw new Error(m);
+        }
+        const startData = await startResp.json();
 
-        lastTranslation = data;
-        displayTranslation(data);
+        let resultData = null;
+        await pollTranslateJob(startData.jobId, (ev) => {
+          if (ev.type === 'progress') { setProg((ev.data && ev.data.message) || ''); }
+          else if (ev.type === 'complete') { resultData = ev.data; }
+          else if (ev.type === 'error') { throw new Error(ev.data.message); }
+        });
+
+        if (!resultData) throw new Error('Finished without returning a result. Please try again.');
+
+        lastTranslateSourceTexts = resultData.sourceTexts || [];
+        lastTranslateOcrInfo = resultData.ocrInfo || [];
+        if (mode === 'convert') {
+          displayConvert(resultData);
+        } else {
+          lastTranslation = resultData;
+          displayTranslation(resultData);
+        }
       } catch (err) {
         showTranslateError(err.message);
         placeholder.style.display = 'block';
       } finally {
         btn.disabled = false;
+        if (convertBtn) convertBtn.disabled = false;
         loading.classList.remove('active');
       }
     }
 
+    let lastTranslateSourceTexts = [];
+    let lastTranslateOcrInfo = [];
+
     function displayTranslation(data) {
       const results = document.getElementById('translateResults');
+      const detected = data.results
+        .map(function(r) { return r.detectedLanguage; })
+        .filter(function(v, i, a) { return v && a.indexOf(v) === i; });
+      const detectedLabel = detected.length === 1 ? ' (from ' + detected[0] + ')' : '';
       document.getElementById('translateResultTitle').textContent =
-        `Translation — ${data.languageName}`;
+        'Translation \u2014 ' + data.languageName + detectedLabel;
       document.getElementById('translateExportButtons').style.display = 'flex';
 
       let html = '';
+
+      // Vision Clarity panel
+      if (lastTranslateOcrInfo.length > 0) {
+        html += '<div style="margin-bottom:16px;">';
+        lastTranslateOcrInfo.forEach(function(r) {
+          var clarity = r.visionClarity != null ? r.visionClarity : 0;
+          var clarityColor, clarityLabel, clarityBg;
+          if (clarity >= 81) { clarityColor = '#10b981'; clarityLabel = 'Excellent'; clarityBg = '#ecfdf5'; }
+          else if (clarity >= 61) { clarityColor = '#3b82f6'; clarityLabel = 'Good'; clarityBg = '#eff6ff'; }
+          else if (clarity >= 41) { clarityColor = '#f59e0b'; clarityLabel = 'Fair'; clarityBg = '#fffbeb'; }
+          else if (clarity >= 21) { clarityColor = '#f97316'; clarityLabel = 'Poor'; clarityBg = '#fff7ed'; }
+          else { clarityColor = '#ef4444'; clarityLabel = 'Illegible'; clarityBg = '#fef2f2'; }
+          html += '<div style="padding:12px 16px;margin-bottom:6px;background:' + clarityBg + ';border:1px solid ' + clarityColor + ';border-radius:8px;font-size:13px;display:flex;align-items:center;gap:14px;">'
+            + '<div style="text-align:center;min-width:60px;padding:8px;background:' + clarityColor + ';border-radius:8px;">'
+            + '<div style="font-size:20px;font-weight:700;color:#fff;">' + clarity + '%</div>'
+            + '<div style="font-size:9px;color:rgba(255,255,255,0.85);font-weight:600;">CLARITY</div></div>'
+            + '<div><strong>' + escapeHtml(r.filename) + '</strong>'
+            + '<span style="color:' + clarityColor + ';font-weight:600;margin-left:6px;">' + clarityLabel + ' readability</span>'
+            + '<div style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">' + r.visionPages + ' page(s) processed with Vision OCR</div>'
+            + (clarity < 41 ? '<div style="font-size:12px;color:var(--color-danger);margin-top:2px;">&#9888; Handwriting may be too unclear for accurate translation — verify against original.</div>' : '')
+            + '</div></div>';
+        });
+        html += '</div>';
+      }
+
+
       for (const r of data.results) {
         if (data.results.length > 1) {
-          html += `<div style="font-weight:700; font-size:14px; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--color-border-light);">
-            ${escapeHtml(r.filename)}${r.pages ? ` &mdash; ${r.pages} pages` : ''}
-          </div>`;
+          html += '<div style="font-weight:700; font-size:14px; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--color-border-light);">'
+            + escapeHtml(r.filename) + (r.pages ? ' \u2014 ' + r.pages + ' pages' : '')
+            + (r.detectedLanguage ? ' \u2014 from ' + escapeHtml(r.detectedLanguage) : '')
+            + '</div>';
         }
-        html += `<div style="margin-bottom:32px;">${escapeHtml(r.translation)}</div>`;
+        const body = (r.translation == null ? '' : String(r.translation)).trim();
+        html += '<div style="margin-bottom:32px;">'
+          + (body
+              ? escapeHtml(r.translation)
+              : '<em style="color:var(--color-text-muted);">No readable text could be extracted from this document. If it is handwritten or a low-quality scan, the image may be too unclear — try a clearer scan.</em>')
+          + '</div>';
       }
 
       results.innerHTML = html;
       results.classList.add('active');
-      // Show Q&A panel when translation is displayed
       document.getElementById('translationQAPanel').style.display = 'block';
       clearTranslationQA();
+    }
+
+    // Handwriting/scanned → readable text. Reuses the translation renderer (and
+    // therefore export / save / Q&A) by mapping the transcription onto the same
+    // `translation` field, then relabels the result title.
+    function displayConvert(data) {
+      const norm = Object.assign({}, data, {
+        results: (data.results || []).map(function (r) {
+          return Object.assign({}, r, { translation: r.text != null ? r.text : r.translation });
+        }),
+      });
+      lastTranslation = norm;
+      displayTranslation(norm);
+      const t = document.getElementById('translateResultTitle');
+      if (t) t.textContent = 'Readable Text (transcribed)';
+    }
+
+    async function runTranslateAiDetection(sourceTexts) {
+      var panel = document.getElementById('translateAiDetectPanel');
+      if (!panel) return;
+      panel.innerHTML = '<div style="padding:14px 18px;background:var(--color-bg);border:1px solid var(--color-border-light);border-radius:8px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-muted);">'
+        + '<div class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></div>'
+        + 'Running AI content analysis...</div></div>';
+
+      var resultsHtml = '';
+      for (var i = 0; i < sourceTexts.length; i++) {
+        var src = sourceTexts[i];
+        if (!src.text || src.text.length < 100) continue;
+        try {
+          var r = await fetch('/api/ai-detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: src.text, filename: src.filename })
+          });
+          var data = await r.json();
+          if (data.success) resultsHtml += renderAiDetectResult(data);
+        } catch (e) { /* skip */ }
+      }
+
+      if (!resultsHtml) { panel.innerHTML = ''; return; }
+      panel.innerHTML = '<div style="margin-bottom:16px;">'
+        + '<div style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;margin-bottom:8px;" onclick="var el=document.getElementById(\'translateAiDetBody\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';">'
+        + '<span style="font-size:16px;">&#128269;</span>'
+        + '<strong style="font-size:14px;color:var(--color-text);">AI Content Analysis</strong>'
+        + '<span style="font-size:10px;color:var(--color-text-muted);">&#9660;</span></div>'
+        + '<div id="translateAiDetBody">' + resultsHtml + '</div></div>';
     }
 
     function showTranslateError(message) {
@@ -5737,8 +7417,11 @@ th{background:#f0f2f8;font-weight:bold;}
       document.getElementById('translateExportButtons').style.display = 'none';
       document.getElementById('translatePlaceholder').style.display = 'block';
       document.getElementById('translateResultTitle').textContent = 'Translation';
-      document.getElementById('translateLangSelect').value = '';
     }
   </script>
+
+  <div style="background:var(--color-bg);border-top:1px solid var(--color-border-light);padding:8px 24px;text-align:center;font-size:13px;color:var(--color-text-muted);">
+    If you have any questions, please contact <a href="mailto:rmaru@dcbar.org" style="color:var(--color-primary);font-weight:600;text-decoration:none;">rmaru@dcbar.org</a>
+  </div>
 </body>
 </html>

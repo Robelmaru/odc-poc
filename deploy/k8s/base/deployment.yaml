@@ -1,0 +1,81 @@
+apiVersion: apps/v1  
+kind: Deployment
+metadata:
+  name: odc-poc
+  labels:
+    app: odc-poc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: odc-poc
+  template:
+    metadata:
+      labels:
+        app: odc-poc
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull # image-pull secret for ghcr.io, created out-of-band (see ../../README.md)
+      containers:
+        - name: app
+          # TAG is set per environment by each overlay's `images:` entry (kustomize),
+          # bumped to the built commit SHA by the promotion PR.
+          image: ghcr.io/dc-bar-web/odc-poc:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: odc-poc-secrets # manually-managed K8s Secret: DATABASE_URL, ANTHROPIC_API_KEY, ENTRA_*, GPTZERO_API_KEY, PIN_* (see ../../README.md)
+          env:
+            - name: NODE_ENV
+              value: production
+            # Large scanned productions: accept up to 1 GB uploads and process
+            # PDFs up to 5000 pages (mirrors the app defaults; keep the ingress
+            # proxy-body-size in sync). See backend/.env.example.
+            - name: UPLOAD_MAX_MB
+              value: "1024"
+            - name: MAX_PDF_PAGES
+              value: "5000"
+            # Disciplinary-rule AI legal analysis (Rule XI lens, complaint
+            # rule-violation analysis, Rule 1.15 flags, deficiency-letter drafting)
+            # is OFF: ODC is not permitted to use AI for that analysis during
+            # testing. Absent/false = off; set to "true" (and flip the frontend
+            # RULE_ANALYSIS_ENABLED flag) to re-enable. See backend/src/config/features.ts.
+            - name: RULE_ANALYSIS_ENABLED
+              value: "false"
+            # Give V8 heap headroom for multi-thousand-page extractions while
+            # leaving room under the container limit for the off-heap file buffer.
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=3072"
+          # Readiness: full health incl. DB ping. A pod that can't reach the DB is
+          # pulled from the Service (not killed), so traffic only goes to pods that
+          # can actually serve it.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Liveness: process-only check (no DB, no dependencies), deliberately
+          # tolerant. A large scanned PDF (CPU-bound OCR) or a multi-pass Claude
+          # request can keep the single-threaded event loop busy and a transient DB
+          # blip is not a reason to restart — so this targets the dependency-free
+          # /api/health/live and allows ~120s (6 × 20s) of missed probes before a
+          # restart, preventing the kubelet from killing the pod mid-upload.
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # Sized for large scanned PDFs: the whole upload (up to ~1 GB) is
+          # buffered in memory and OCR is CPU-heavy. Tune from observed usage.
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"

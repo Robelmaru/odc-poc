@@ -1,0 +1,27 @@
+# Argo CD Application — odc-poc (production)
+#
+# Register once with the cluster's Argo CD:
+#   kubectl apply -n argocd -f argocd/applications-production.yaml
+#
+# PRODUCTION uses MANUAL sync: there is deliberately NO syncPolicy.automated block,
+# so an authorized operator triggers the sync after the staging -> main PR has its
+# 2 promotion authorizations (CIO / Director of Data and Delivery / Director of Web
+# and Integrations).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: odc-poc-production
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/DC-Bar-web/odc-poc.git
+    targetRevision: main
+    path: deploy/k8s/overlays/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: odc-poc-production
+  syncPolicy:
+    # PRODUCTION: no `automated` block — sync is triggered manually (the human gate).
+    syncOptions:
+      - CreateNamespace=true

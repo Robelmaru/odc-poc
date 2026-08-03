@@ -1,0 +1,100 @@
+name: Build and push image
+
+# Builds the application image and pushes it to the GitHub Container Registry
+# (GHCR / GitHub Packages) on merge to staging or main, tagged by commit SHA.
+# Images are NOT built on the servers. Deployment is GitOps: bump the image tag
+# in the target environment's manifests in the promotion PR.
+
+on:
+  push:
+    branches: [staging, main, Development-Tim]
+    # Image Updater's write-back commit only touches deploy manifests; don't
+    # rebuild on manifest/docs-only commits (also breaks the write-back→build loop).
+    paths-ignore:
+      - 'deploy/**'
+      - 'argocd/**'
+      - '**.md'
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      # write: the dev-tim write-back step (last step) commits the new image tag back to git.
+      contents: write
+      packages: write # required to push to GHCR with GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR repository names must be lowercase; ${{ github.repository }} preserves
+      # the org's casing (DC-Bar-web), so lowercase it explicitly.
+      - name: Compute lowercase image name
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      # Always push the immutable commit-SHA tag (prod promotes by SHA).
+      # On the staging branch, ALSO move the mutable :staging tag that
+      # Argo CD Image Updater tracks via the digest strategy.
+      - name: Compute image tags
+        id: tags
+        run: |
+          {
+            echo "list<<TAGS"
+            echo "${{ steps.img.outputs.name }}:${{ github.sha }}"
+            if [ "${{ github.ref_name }}" = "staging" ]; then
+              echo "${{ steps.img.outputs.name }}:staging"
+            fi
+            # Also move the mutable :development-tim tag as a convenience "latest dev
+            # build" pointer. The deployment tracks the immutable SHA instead — the
+            # write-back step below pins that SHA into the overlay.
+            if [ "${{ github.ref_name }}" = "Development-Tim" ]; then
+              echo "${{ steps.img.outputs.name }}:development-tim"
+            fi
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
+      # The root Dockerfile is multi-stage and expects the repo root as context
+      # (it copies backend/ and frontend/).
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+
+      # Auto-deploy for Tim's dev environment: pin the just-built commit SHA into the
+      # dev-tim overlay and commit it back. Argo CD reconciles the overlay, so this
+      # write-back is what actually rolls the new image onto the cluster (it replaces
+      # the never-installed Argo CD Image Updater). Only Development-Tim auto-promotes
+      # this way; staging/main bump the tag via promotion PRs.
+      #
+      # No build->write-back->build loop: the commit touches only deploy/** (which is
+      # path-ignored above) AND is authored by GITHUB_TOKEN (whose pushes never trigger
+      # workflows). Either guard alone is sufficient.
+      - name: Write back image tag to dev-tim overlay
+        if: github.ref_name == 'Development-Tim'
+        env:
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          file=deploy/k8s/overlays/dev-tim/kustomization.yaml
+          # Rewrite the single, indented `newTag:` key. Comment lines start with '#',
+          # so the leading-whitespace anchor cannot match them.
+          sed -i -E "s|^([[:space:]]+newTag:).*|\1 ${SHA}|" "$file"
+          grep -q "newTag: ${SHA}" "$file" || { echo "::error::newTag rewrite failed"; exit 1; }
+          git add "$file"
+          if git diff --cached --quiet; then
+            echo "Overlay already at ${SHA}; nothing to write back."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "deploy(dev-tim): roll overlay to ${SHA} [skip ci]"
+          git push origin "HEAD:${BRANCH}"
