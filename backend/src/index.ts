@@ -4,7 +4,6 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
-import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { fileURLToPath } from "node:url";
@@ -25,6 +24,7 @@ import aiDetect from "./routes/ai-detect.js";
 import auth from "./routes/auth.js";
 import discovery from "./routes/discovery.js";
 import session from "./routes/session.js";
+import { registerFrontend } from "./frontend.js";
 
 const uploadMaxBytes = (Number(process.env.UPLOAD_MAX_MB) || 1024) * 1024 * 1024;
 
@@ -175,10 +175,7 @@ await app.register(discovery, { prefix: "/api/discovery" });
 await app.register(auth, { prefix: "/auth" });
 
 // ── Static frontend (registered last so explicit routes win) ─────────────────
-await app.register(fastifyStatic, {
-  root: fileURLToPath(new URL("../../frontend", import.meta.url)),
-  prefix: "/",
-});
+await registerFrontend(app, fileURLToPath(new URL("../../frontend", import.meta.url)));
 
 const port = Number(process.env.PORT) || 3000;
 
