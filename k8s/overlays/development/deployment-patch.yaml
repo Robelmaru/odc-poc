@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-analyzer
+spec:
+  template:
+    spec:
+      containers:
+        - name: doc-analyzer
+          volumeMounts:
+            - name: kv-secret
+              mountPath: /mnt/secrets
+              readOnly: true
+            - name: doc-analyzer-dev-storage
+              mountPath: /data
+      volumes:
+        - name: kv-secret
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: dcbar-docanalyzer-dev-kv
+            nodePublishSecretRef:
+              name: secrets-store-creds
+        - name: doc-analyzer-dev-storage
+          persistentVolumeClaim:
+            claimName: doc-analyzer-dev-storage

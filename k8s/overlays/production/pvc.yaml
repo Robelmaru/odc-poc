@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: doc-analyzer-production-storage
+  labels:
+    app: doc-analyzer
+    env: production
+spec:
+  accessModes:
+    - ReadWriteMany
+  volumeMode: Filesystem
+  storageClassName: nfs-dynamic
+  resources:
+    requests:
+      storage: 1Gi

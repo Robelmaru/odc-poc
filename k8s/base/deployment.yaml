@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-analyzer
+  labels:
+    app: doc-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doc-analyzer
+  template:
+    metadata:
+      labels:
+        app: doc-analyzer
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: doc-analyzer
+          image: ghcr.io/dc-bar-web/odc-poc:sha-7bc8882
+          ports:
+            - containerPort: 3000
+          # Readiness: full health incl. DB ping (backend/src/index.ts). A pod that
+          # cannot reach Postgres is pulled from the Service rather than killed.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Liveness: process-only check, no dependencies, deliberately tolerant.
+          # OCR of a large scanned PDF or a multi-pass Claude call can keep the
+          # single-threaded event loop busy, so allow ~120s (6 x 20s) of missed
+          # probes before a restart instead of killing the pod mid-upload.
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

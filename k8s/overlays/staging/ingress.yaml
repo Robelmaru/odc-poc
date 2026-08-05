@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: doc-analyzer
+  labels:
+    app: doc-analyzer
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - staging-doc-analyzer.dcbar.org
+      secretName: staging-doc-analyzer
+  rules:
+    - host: staging-doc-analyzer.dcbar.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: doc-analyzer
+                port:
+                  number: 80

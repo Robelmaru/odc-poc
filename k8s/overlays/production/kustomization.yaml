@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- ingress.yaml
+- secretproviderclass.yaml
+- pvc.yaml
+patches:
+- path: deployment-patch.yaml
+namespace: doc-analyzer-production
+replicas:
+- count: 3
+  name: doc-analyzer
+images:
+- name: ghcr.io/dc-bar-web/odc-poc
+  newTag: sha-7bc8882
