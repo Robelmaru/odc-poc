@@ -26,6 +26,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/backend/node_modules ./node_modules
 COPY backend/package.json ./
 COPY backend/tsconfig.json ./
+COPY backend/.env ./
 COPY backend/src ./src
 COPY backend/migrations ./migrations
 COPY frontend /app/frontend
@@ -45,4 +46,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD node -e "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "--import=tsx", "src/index.ts"]
+CMD ["node", "--env-file=.env", "--import=tsx", "src/index.ts"]

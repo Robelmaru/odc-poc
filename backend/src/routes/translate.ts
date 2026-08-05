@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
-import { translatePrompt, detectLanguagePrompt, TARGET_LANGUAGE } from "../skills/Translate.js";
+import { translatePrompt, detectLanguagePrompt, TARGET_LANGUAGE, buildTextTranslationPrompt, buildTextTranslationRecord } from "../skills/Translate.js";
+import { createAnthropicClient } from "../utils/anthropic.js";
 import { extractTextFromPdf, chunkText } from "../utils/pdfUtils.js";
 import { logger } from "../utils/logger.js";
 import { logTokenUsage } from "../utils/usage.js";
@@ -14,7 +15,6 @@ import {
 } from "../utils/uploadStore.js";
 import { randomUUID } from "node:crypto";
 
-const anthropic = new Anthropic();
 
 type SendFn = (type: string, data: unknown) => void;
 
@@ -41,6 +41,7 @@ function sweepJobs(): void {
 }
 
 async function detectLanguage(text: string): Promise<string> {
+  const anthropic = createAnthropicClient();
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 50,
@@ -54,6 +55,7 @@ async function detectLanguage(text: string): Promise<string> {
 }
 
 async function translateChunk(text: string): Promise<string> {
+  const anthropic = createAnthropicClient();
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
@@ -61,6 +63,20 @@ async function translateChunk(text: string): Promise<string> {
     messages: [{ role: "user", content: text }],
   });
   logTokenUsage("translate", response.usage);
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") throw new Error("No response from Claude");
+  return textBlock.text;
+}
+
+async function translateTextChunk(text: string, sourceLanguage: string, targetLanguage: string): Promise<string> {
+  const anthropic = createAnthropicClient();
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
+    system: buildTextTranslationPrompt(sourceLanguage, targetLanguage),
+    messages: [{ role: "user", content: text.slice(0, 12000) }],
+  });
+  logTokenUsage("translate-text", response.usage);
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") throw new Error("No response from Claude");
   return textBlock.text;
@@ -164,6 +180,43 @@ async function runTranslateJob(
 }
 
 export default async function translate(app: FastifyInstance) {
+  app.post("/text", { schema: { tags: ["translate"] } }, async (request, reply) => {
+    try {
+      const body = (request.body ?? {}) as {
+        text?: string;
+        sourceLanguage?: string;
+        targetLanguage?: string;
+      };
+      const text = body.text?.trim();
+      if (!text) return reply.code(400).send({ error: "Text is required." });
+
+      const sourceLanguage = body.sourceLanguage || "Auto-detect";
+      const targetLanguage = body.targetLanguage || TARGET_LANGUAGE;
+      const detectedLanguage = sourceLanguage === "Auto-detect" ? await detectLanguage(text) : sourceLanguage;
+
+      const translation = await translateTextChunk(text, detectedLanguage, targetLanguage);
+      const record = buildTextTranslationRecord(targetLanguage, translation);
+      return {
+        success: true,
+        detectedLanguage,
+        sourceLanguage,
+        targetLanguage,
+        translation,
+        record,
+      };
+    } catch (error) {
+      logger.error("Text translation error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (error instanceof Anthropic.APIError) {
+        return reply
+          .code((error.status ?? 500) as number)
+          .send({ error: `Claude API error: ${error.message}` });
+      }
+      return reply.code(500).send({ error: "Text translation failed" });
+    }
+  });
+
   app.post("/", { schema: { tags: ["translate"] } }, async (request, reply) => {
     try {
       if (!request.isMultipart()) return reply.code(400).send({ error: "File upload required." });

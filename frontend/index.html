@@ -2051,7 +2051,39 @@
 
         <div style="margin-bottom: 20px; padding: 10px 14px; background: var(--color-bg); border: 1px solid var(--color-border-light); border-radius: 6px; font-size: 13px; color: var(--color-text-secondary);">
           &#127760; <strong>Translate to English</strong> — the source language is detected automatically and the document is translated into <strong>English</strong>.<br>
-          &#9997;&#65039; <strong>Convert Handwriting to Text</strong> — transcribe handwritten or scanned pages into readable digital text, in the original language (no translation).
+          &#9997;&#65039; <strong>Convert Handwriting to Text</strong> — transcribe handwritten or scanned pages into readable digital text, in the original language (no translation).<br>
+          ✍️ <strong>Type or paste text</strong> — translate a short snippet with source/target language controls, similar to Google Translate.
+        </div>
+
+        <div style="margin-bottom: 18px; padding: 14px; border: 1px solid var(--color-border-light); border-radius: 8px; background: var(--color-surface);">
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+            <label style="font-size:13px; font-weight:600; color:var(--color-text-secondary);">Source</label>
+            <select id="textTranslateSourceLang" style="padding:8px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface);">
+              <option value="Auto-detect">Auto-detect</option>
+              <option value="English">English</option>
+              <option value="Spanish">Spanish</option>
+              <option value="French">French</option>
+              <option value="German">German</option>
+              <option value="Italian">Italian</option>
+              <option value="Portuguese">Portuguese</option>
+              <option value="Arabic">Arabic</option>
+              <option value="Mandarin Chinese">Mandarin Chinese</option>
+            </select>
+            <label style="font-size:13px; font-weight:600; color:var(--color-text-secondary);">Target</label>
+            <select id="textTranslateTargetLang" style="padding:8px 10px; border:1px solid var(--color-border); border-radius:6px; font-size:13px; font-family:var(--font-sans); color:var(--color-text); background:var(--color-surface);">
+              <option value="English">English</option>
+              <option value="Spanish">Spanish</option>
+              <option value="French">French</option>
+              <option value="German">German</option>
+              <option value="Italian">Italian</option>
+              <option value="Portuguese">Portuguese</option>
+              <option value="Arabic">Arabic</option>
+              <option value="Mandarin Chinese">Mandarin Chinese</option>
+            </select>
+            <button class="btn btn-primary" onclick="runTextTranslation()" style="padding:8px 14px; font-size:12px;">Translate Text</button>
+          </div>
+          <textarea id="textTranslateInput" placeholder="Type or paste text here..." style="height: 170px; margin-bottom:10px;"></textarea>
+          <div id="textTranslateOutput" style="min-height: 120px; padding: 12px 14px; border: 1px solid var(--color-border-light); border-radius: 6px; background: var(--color-bg); color: var(--color-text-secondary); white-space: pre-wrap; font-size: 14px;"></div>
         </div>
 
         <!-- File Upload -->
@@ -7156,6 +7188,61 @@ th{background:#f0f2f8;font-weight:bold;}
     function runTranslation() { return runTranslateOrConvert('translate'); }
     function runConvert() { return runTranslateOrConvert('convert'); }
 
+    async function runTextTranslation() {
+      const input = document.getElementById('textTranslateInput');
+      const output = document.getElementById('textTranslateOutput');
+      const sourceLang = document.getElementById('textTranslateSourceLang').value;
+      const targetLang = document.getElementById('textTranslateTargetLang').value;
+      const text = (input && input.value || '').trim();
+
+      if (!loggedInStaff) {
+        output.textContent = 'Please sign in first.';
+        return;
+      }
+      if (!text) {
+        output.textContent = 'Please enter text to translate.';
+        return;
+      }
+
+      output.textContent = 'Translating...';
+      try {
+        const resp = await fetch('/api/translate/text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, sourceLanguage: sourceLang, targetLanguage: targetLang })
+        });
+
+        let data = null;
+        let rawText = '';
+        try {
+          rawText = await resp.text();
+          if (rawText) {
+            data = JSON.parse(rawText);
+          }
+        } catch (_) {
+          data = null;
+        }
+
+        if (resp.status === 401 || resp.status === 403) {
+          throw new Error('Please sign in first to use text translation.');
+        }
+        if (!resp.ok || !data || !data.success) {
+          const serverError = data && data.error ? data.error : rawText;
+          throw new Error(serverError || 'Translation failed.');
+        }
+        output.textContent = data.translation || '';
+        if (data.record) {
+          lastTranslation = { language: data.record.language, languageName: data.record.languageName, results: data.record.results };
+          document.getElementById('translateExportButtons').style.display = 'flex';
+          document.getElementById('translateResultTitle').textContent = 'Typed Translation';
+          document.getElementById('translationQAPanel').style.display = 'block';
+          clearTranslationQA();
+        }
+      } catch (err) {
+        output.textContent = err && err.message ? err.message : 'Translation failed.';
+      }
+    }
+
     async function runTranslateOrConvert(mode) {
       const btn = document.getElementById('translateBtn');
       const convertBtn = document.getElementById('convertBtn');
@@ -7417,6 +7504,10 @@ th{background:#f0f2f8;font-weight:bold;}
       document.getElementById('translateExportButtons').style.display = 'none';
       document.getElementById('translatePlaceholder').style.display = 'block';
       document.getElementById('translateResultTitle').textContent = 'Translation';
+      const textInput = document.getElementById('textTranslateInput');
+      const textOutput = document.getElementById('textTranslateOutput');
+      if (textInput) textInput.value = '';
+      if (textOutput) textOutput.textContent = '';
     }
   </script>
 

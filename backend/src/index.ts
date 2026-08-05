@@ -12,6 +12,7 @@ import { requireAuth } from "./auth/session.js";
 import { pingDb } from "./db/database.js";
 import { logger } from "./utils/logger.js";
 import { ensureCrashTable, recordCrash, recentCrashes } from "./utils/crashLog.js";
+import { getHealthStatus } from "./utils/health.js";
 import analyze from "./routes/analyze.js";
 import qa from "./routes/qa.js";
 import timeline from "./routes/timeline.js";
@@ -25,6 +26,9 @@ import auth from "./routes/auth.js";
 import discovery from "./routes/discovery.js";
 import session from "./routes/session.js";
 import { registerFrontend } from "./frontend.js";
+import { loadEnvFile } from "./loadEnv.js";
+
+loadEnvFile(".env");
 
 const uploadMaxBytes = (Number(process.env.UPLOAD_MAX_MB) || 1024) * 1024 * 1024;
 
@@ -154,10 +158,13 @@ app.get("/api/health", async (_request, reply) => {
   } catch {
     checks.db = "error";
   }
-  const healthy = checks.db === "ok" && checks.anthropic === "ok";
-  return reply
-    .code(healthy ? 200 : 503)
-    .send({ status: healthy ? "ok" : "degraded", checks, mem: memInfo() });
+
+  const health = getHealthStatus(checks);
+  return reply.code(health.httpStatus).send({
+    status: health.status,
+    checks: health.checks,
+    mem: memInfo(),
+  });
 });
 
 // ── API routes ───────────────────────────────────────────────────────────────

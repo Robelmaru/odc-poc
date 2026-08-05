@@ -6,6 +6,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { randomBytes } from "node:crypto";
 import { createSession, getSessionUser, deleteSession } from "../db/database.js";
+import { shouldUseSecureCookie } from "../utils/cookieSecurity.js";
 
 export const SESSION_COOKIE = "odc_session";
 const SESSION_TTL_HOURS = 12;
@@ -38,7 +39,7 @@ export async function issueSession(reply: FastifyReply, user: AuthUser): Promise
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
     maxAge: SESSION_TTL_HOURS * 60 * 60,
   });
 }

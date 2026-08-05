@@ -15,6 +15,27 @@ Guidelines:
 - If the text is already in ${TARGET_LANGUAGE}, return it unchanged`;
 }
 
+export function buildTextTranslationPrompt(sourceLanguage: string, targetLanguage: string): string {
+  const sourceLabel = sourceLanguage && sourceLanguage !== "Auto-detect" ? sourceLanguage : "the source language";
+  return `You are a professional legal translator. Translate the provided text into ${targetLanguage}.
+
+Guidelines:
+- Preserve the full meaning and legal precision of the original text
+- Keep proper nouns, case numbers, party names, and official titles in their original form unless a standard translation exists
+- Use formal legal register appropriate for ${targetLanguage}
+- Translate only the provided text — do not add commentary, explanations, or notes
+- If the text is already in ${targetLanguage}, return it unchanged
+- The source language is ${sourceLabel}.`;
+}
+
+export function buildTextTranslationRecord(targetLanguage: string, translation: string) {
+  return {
+    language: targetLanguage,
+    languageName: targetLanguage,
+    results: [{ filename: "Typed text", translation }],
+  };
+}
+
 export function detectLanguagePrompt(): string {
   return `You are a language identification tool. Identify the primary language of the document text the user provides.
 
