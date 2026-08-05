@@ -29,3 +29,6 @@ coverage/
 # DC Bar code-review output (point-in-time snapshots, not source)
 findings.md
 findings.previous.md
+
+# curl cookie jar from local API testing
+cookies.txt
